@@ -199,7 +199,6 @@ public class NebulaGraphStore implements AutoCloseable {
     }
 
     private void initSchema() {
-        execute("USE " + space);
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +
                 "module_name string, package_name string, class_name string, method_name string, parameter_count int, start_line int, end_line int, status int, " +
