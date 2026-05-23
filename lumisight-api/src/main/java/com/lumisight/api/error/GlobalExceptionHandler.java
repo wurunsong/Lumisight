@@ -45,6 +45,21 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiErrorResponse> handleRuntimeException(
+            RuntimeException ex,
+            HttpServletRequest request
+    ) {
+        log.error("Runtime error, path={}, message={}", request.getRequestURI(), ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiErrorResponse(
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                "RUNTIME_ERROR",
+                ex.getMessage() == null ? "Runtime error" : ex.getMessage(),
+                request.getRequestURI(),
+                Instant.now().toString()
+        ));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleException(
             Exception ex,

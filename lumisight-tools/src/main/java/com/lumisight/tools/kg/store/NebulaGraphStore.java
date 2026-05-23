@@ -2,11 +2,15 @@ package com.lumisight.tools.kg.store;
 
 import com.vesoft.nebula.client.graph.SessionPool;
 import com.vesoft.nebula.client.graph.SessionPoolConfig;
+import com.vesoft.nebula.client.graph.NebulaPoolConfig;
 import com.vesoft.nebula.client.graph.data.HostAddress;
 import com.vesoft.nebula.client.graph.data.ResultSet;
+import com.vesoft.nebula.client.graph.net.NebulaPool;
+import com.vesoft.nebula.client.graph.net.Session;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.UnsupportedEncodingException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +28,7 @@ public class NebulaGraphStore implements AutoCloseable {
 
     public NebulaGraphStore(String host, int port, String user, String password) {
         log.info("Initializing Nebula session pool, host={}, port={}, user={}, space={}", host, port, user, SPACE);
+        ensureSpaceExists(host, port, user, password);
         SessionPoolConfig config = new SessionPoolConfig(
                 List.of(new HostAddress(host, port)),
                 SPACE,
@@ -37,6 +42,25 @@ public class NebulaGraphStore implements AutoCloseable {
         }
         log.info("Nebula session pool initialized successfully, host={}, port={}, space={}", host, port, SPACE);
         initSchema();
+    }
+
+    private void ensureSpaceExists(String host, int port, String user, String password) {
+        NebulaPool pool = new NebulaPool();
+        try {
+            pool.init(Collections.singletonList(new HostAddress(host, port)), new NebulaPoolConfig());
+            try (Session session = pool.getSession(user, password, false)) {
+                ResultSet result = session.execute("CREATE SPACE IF NOT EXISTS " + SPACE + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))");
+                if (!result.isSucceeded()) {
+                    throw new IllegalStateException("Create space failed: " + result.getErrorMessage());
+                }
+                log.info("Ensured Nebula space exists, space={}", SPACE);
+            }
+        } catch (Exception e) {
+            log.error("Ensure Nebula space exists failed, host={}, port={}, space={}", host, port, SPACE, e);
+            throw new IllegalStateException("Failed to ensure Nebula space exists: " + SPACE, e);
+        } finally {
+            pool.close();
+        }
     }
 
     public String currentRepoCommit(String repoName) {
@@ -149,7 +173,6 @@ public class NebulaGraphStore implements AutoCloseable {
     }
 
     private void initSchema() {
-        execute("CREATE SPACE IF NOT EXISTS " + SPACE + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))");
         execute("USE " + SPACE);
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +
