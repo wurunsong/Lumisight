@@ -49,7 +49,8 @@ public class IncrementalGraphBuilder {
                 nebulaProperties.getHost(),
                 nebulaProperties.getPort(),
                 nebulaProperties.getUsername(),
-                nebulaProperties.getPassword()
+                nebulaProperties.getPassword(),
+                repoName
         )) {
             String graphCommit = store.currentRepoCommit(repoName);
             log.info("Current graph baseline commit from repo_meta, repoName={}, graphCommit={}", repoName, graphCommit);

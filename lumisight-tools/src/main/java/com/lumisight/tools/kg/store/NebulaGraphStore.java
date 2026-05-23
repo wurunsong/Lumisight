@@ -19,28 +19,32 @@ import java.util.stream.Collectors;
 @Slf4j
 public class NebulaGraphStore implements AutoCloseable {
 
-    private static final String SPACE = "lumisight_kg";
+    private static final String SPACE_PREFIX = "kg_";
     private static final String TAG_KG_NODE = "kg_node";
     private static final String EDGE_KG_REL = "kg_rel";
     private static final String TAG_REPO_META = "repo_meta";
+    private static final int SPACE_MAX_LENGTH = 64;
 
+    private final String space;
     private final SessionPool sessionPool;
 
-    public NebulaGraphStore(String host, int port, String user, String password) {
-        log.info("Initializing Nebula session pool, host={}, port={}, user={}, space={}", host, port, user, SPACE);
+    public NebulaGraphStore(String host, int port, String user, String password, String repoName) {
+        this.space = deriveSpaceName(repoName);
+        log.info("Initializing Nebula session pool, host={}, port={}, user={}, repoName={}, space={}",
+                host, port, user, repoName, space);
         ensureSpaceExists(host, port, user, password);
         SessionPoolConfig config = new SessionPoolConfig(
                 List.of(new HostAddress(host, port)),
-                SPACE,
+                space,
                 user,
                 password
         );
         this.sessionPool = new SessionPool(config);
         if (!sessionPool.init()) {
-            log.error("Nebula session pool init failed, host={}, port={}, user={}, space={}", host, port, user, SPACE);
+            log.error("Nebula session pool init failed, host={}, port={}, user={}, space={}", host, port, user, space);
             throw new IllegalStateException("Failed to init Nebula session pool");
         }
-        log.info("Nebula session pool initialized successfully, host={}, port={}, space={}", host, port, SPACE);
+        log.info("Nebula session pool initialized successfully, host={}, port={}, space={}", host, port, space);
         initSchema();
     }
 
@@ -49,15 +53,15 @@ public class NebulaGraphStore implements AutoCloseable {
         try {
             pool.init(Collections.singletonList(new HostAddress(host, port)), new NebulaPoolConfig());
             try (Session session = pool.getSession(user, password, false)) {
-                ResultSet result = session.execute("CREATE SPACE IF NOT EXISTS " + SPACE + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))");
+                ResultSet result = session.execute("CREATE SPACE IF NOT EXISTS " + space + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))");
                 if (!result.isSucceeded()) {
                     throw new IllegalStateException("Create space failed: " + result.getErrorMessage());
                 }
-                log.info("Ensured Nebula space exists, space={}", SPACE);
+                log.info("Ensured Nebula space exists, space={}", space);
             }
         } catch (Exception e) {
-            log.error("Ensure Nebula space exists failed, host={}, port={}, space={}", host, port, SPACE, e);
-            throw new IllegalStateException("Failed to ensure Nebula space exists: " + SPACE, e);
+            log.error("Ensure Nebula space exists failed, host={}, port={}, space={}", host, port, space, e);
+            throw new IllegalStateException("Failed to ensure Nebula space exists: " + space, e);
         } finally {
             pool.close();
         }
@@ -173,7 +177,7 @@ public class NebulaGraphStore implements AutoCloseable {
     }
 
     private void initSchema() {
-        execute("USE " + SPACE);
+        execute("USE " + space);
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +
                 "module_name string, package_name string, class_name string, method_name string, parameter_count int, start_line int, end_line int, status int, " +
@@ -222,6 +226,21 @@ public class NebulaGraphStore implements AutoCloseable {
 
     private static String metaVid(String repoName) {
         return "repo:" + repoName;
+    }
+
+    private static String deriveSpaceName(String repoName) {
+        String normalized = repoName == null ? "" : repoName.trim().toLowerCase();
+        normalized = normalized.replaceAll("[^a-z0-9_]", "_");
+        normalized = normalized.replaceAll("_+", "_");
+        normalized = normalized.replaceAll("^_+", "").replaceAll("_+$", "");
+        if (normalized.isBlank()) {
+            normalized = "default";
+        }
+        String candidate = SPACE_PREFIX + normalized;
+        if (candidate.length() > SPACE_MAX_LENGTH) {
+            candidate = candidate.substring(0, SPACE_MAX_LENGTH);
+        }
+        return candidate;
     }
 
     @Override
