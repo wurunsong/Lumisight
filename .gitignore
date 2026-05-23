@@ -1,0 +1,17 @@
+ROADMAP.md
+agent-architecture.html
+infra/data/
+
+# IDE
+.idea/
+*.iml
+
+# Maven build outputs
+target/
+**/target/
+
+# OS files
+.DS_Store
+
+CODE_FLOW.md
+.vscode/

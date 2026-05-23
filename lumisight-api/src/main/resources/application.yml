@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: lumisight-api
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+lumisight:
+  nebula:
+    host: 127.0.0.1
+    port: 9669
+    username: root
+    password: nebula
+
+logging:
+  level:
+    com.lumisight: INFO
+    com.lumisight.tools.kg: DEBUG
