@@ -25,6 +25,8 @@ public record PackageNode(
                 packageName,
                 null,
                 null,
+                null,
+                null,
                 null
         );
     }

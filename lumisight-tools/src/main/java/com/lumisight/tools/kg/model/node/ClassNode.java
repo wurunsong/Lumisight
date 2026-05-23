@@ -26,6 +26,8 @@ public record ClassNode(
                 packageName,
                 className,
                 null,
+                null,
+                null,
                 null
         );
     }

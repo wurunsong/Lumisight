@@ -77,6 +77,8 @@ public class JavaCodeGraphParser {
 
             cls.findAll(MethodDeclaration.class).forEach(method -> {
                 String methodQn = classQn + "#" + method.getNameAsString() + "(" + method.getParameters().size() + ")";
+                Integer startLine = method.getBegin().map(p -> p.line).orElse(null);
+                Integer endLine = method.getEnd().map(p -> p.line).orElse(null);
                 GraphNode methodNode = new MethodNode(
                         moduleName,
                         pkg,
@@ -84,6 +86,8 @@ public class JavaCodeGraphParser {
                         method.getNameAsString(),
                         method.getParameters().size(),
                         methodQn,
+                        startLine,
+                        endLine,
                         sourceFile,
                         repoName
                 ).toGraphNode();

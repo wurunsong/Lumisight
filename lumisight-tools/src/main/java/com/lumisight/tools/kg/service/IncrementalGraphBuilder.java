@@ -191,6 +191,8 @@ public class IncrementalGraphBuilder {
         props.put("class_name", node.className());
         props.put("method_name", node.methodName());
         props.put("parameter_count", node.parameterCount() == null ? 0 : node.parameterCount());
+        props.put("start_line", node.startLine() == null ? 0 : node.startLine());
+        props.put("end_line", node.endLine() == null ? 0 : node.endLine());
         props.put("git_branch", gitState.branch());
         props.put("git_commit", gitState.commit());
         store.writeNode(node.id(), props);

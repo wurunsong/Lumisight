@@ -71,7 +71,7 @@ public class NebulaGraphStore implements AutoCloseable {
     }
 
     public void writeNode(String vid, Map<String, Object> props) {
-        String nGql = "INSERT VERTEX " + TAG_KG_NODE + "(node_id, node_type, name, qualified_name, source_file, repo_name, module_name, package_name, class_name, method_name, parameter_count, git_branch, git_commit) VALUES " +
+        String nGql = "INSERT VERTEX " + TAG_KG_NODE + "(node_id, node_type, name, qualified_name, source_file, repo_name, module_name, package_name, class_name, method_name, parameter_count, start_line, end_line, git_branch, git_commit) VALUES " +
                 "\"" + escape(vid) + "\":(" +
                 quoted(props.get("node_id")) + "," +
                 quoted(props.get("node_type")) + "," +
@@ -84,6 +84,8 @@ public class NebulaGraphStore implements AutoCloseable {
                 quoted(props.get("class_name")) + "," +
                 quoted(props.get("method_name")) + "," +
                 integerLiteral(props.get("parameter_count")) + "," +
+                integerLiteral(props.get("start_line")) + "," +
+                integerLiteral(props.get("end_line")) + "," +
                 quoted(props.get("git_branch")) + "," +
                 quoted(props.get("git_commit")) +
                 ")";
@@ -117,7 +119,7 @@ public class NebulaGraphStore implements AutoCloseable {
         execute("USE " + SPACE);
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +
-                "module_name string, package_name string, class_name string, method_name string, parameter_count int, " +
+                "module_name string, package_name string, class_name string, method_name string, parameter_count int, start_line int, end_line int, " +
                 "git_branch string, git_commit string)");
         execute("CREATE EDGE IF NOT EXISTS " + EDGE_KG_REL + "(" +
                 "edge_id string, edge_type string, source_file string, git_branch string, git_commit string)");

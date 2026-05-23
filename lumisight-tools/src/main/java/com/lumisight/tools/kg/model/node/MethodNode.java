@@ -11,6 +11,8 @@ public record MethodNode(
         String methodName,
         int parameterCount,
         String qualifiedMethodName,
+        Integer startLine,
+        Integer endLine,
         String sourceFile,
         String repoName
 ) implements KgNode {
@@ -28,7 +30,9 @@ public record MethodNode(
                 packageName,
                 className,
                 methodName,
-                parameterCount
+                parameterCount,
+                startLine,
+                endLine
         );
     }
 }

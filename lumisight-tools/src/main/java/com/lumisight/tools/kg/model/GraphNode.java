@@ -11,6 +11,8 @@ public record GraphNode(
         String packageName,
         String className,
         String methodName,
-        Integer parameterCount
+        Integer parameterCount,
+        Integer startLine,
+        Integer endLine
 ) {
 }

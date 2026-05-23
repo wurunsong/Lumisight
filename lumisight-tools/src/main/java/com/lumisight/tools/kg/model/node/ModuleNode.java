@@ -24,6 +24,8 @@ public record ModuleNode(
                 null,
                 null,
                 null,
+                null,
+                null,
                 null
         );
     }
