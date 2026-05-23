@@ -15,14 +15,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class NebulaGraphStore implements AutoCloseable {
 
     private static final String SPACE = "lumisight_kg";
-    private static final String STORAGE_HOST = "nebula-storaged";
-    private static final int STORAGE_PORT = 9779;
     private static final String TAG_KG_NODE = "kg_node";
     private static final String EDGE_KG_REL = "kg_rel";
     private static final String TAG_REPO_META = "repo_meta";
@@ -52,25 +49,11 @@ public class NebulaGraphStore implements AutoCloseable {
         try {
             pool.init(Collections.singletonList(new HostAddress(host, port)), new NebulaPoolConfig());
             try (Session session = pool.getSession(user, password, false)) {
-                // 先注册 storage 主机，避免首次创建 space 时出现 Host not enough。
-                executeBootstrap(session, "ADD HOSTS \"" + STORAGE_HOST + "\":" + STORAGE_PORT);
-
-                String createSpace = "CREATE SPACE IF NOT EXISTS " + SPACE + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))";
-                int maxRetries = 12;
-                for (int i = 1; i <= maxRetries; i++) {
-                    ResultSet result = executeBootstrap(session, createSpace);
-                    if (result.isSucceeded()) {
-                        log.info("Ensured Nebula space exists, space={}, retries={}", SPACE, i - 1);
-                        return;
-                    }
-                    String err = result.getErrorMessage() == null ? "" : result.getErrorMessage();
-                    if (!err.contains("Host not enough")) {
-                        throw new IllegalStateException("Create space failed: " + err);
-                    }
-                    log.warn("Create space failed due to hosts not ready, retry={}/{}, error={}", i, maxRetries, err);
-                    TimeUnit.SECONDS.sleep(2);
+                ResultSet result = session.execute("CREATE SPACE IF NOT EXISTS " + SPACE + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))");
+                if (!result.isSucceeded()) {
+                    throw new IllegalStateException("Create space failed: " + result.getErrorMessage());
                 }
-                throw new IllegalStateException("Create space failed: Host not enough! after retries=" + maxRetries);
+                log.info("Ensured Nebula space exists, space={}", SPACE);
             }
         } catch (Exception e) {
             log.error("Ensure Nebula space exists failed, host={}, port={}, space={}", host, port, SPACE, e);
@@ -78,16 +61,6 @@ public class NebulaGraphStore implements AutoCloseable {
         } finally {
             pool.close();
         }
-    }
-
-    private ResultSet executeBootstrap(Session session, String nGql) throws Exception {
-        ResultSet result = session.execute(nGql);
-        if (!result.isSucceeded()) {
-            log.warn("Nebula bootstrap query failed, query={}, error={}", nGql, result.getErrorMessage());
-        } else {
-            log.debug("Nebula bootstrap query succeeded, query={}", nGql);
-        }
-        return result;
     }
 
     public String currentRepoCommit(String repoName) {
