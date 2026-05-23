@@ -5,6 +5,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心能力包括
 ## 第一步：本地启动外挂知识库（Podman）
 
 > 说明：正式开发 Agent 之前，需要先构建并启动 NebulaGraph + Milvus。
+> 当前 `infra/podman-compose.yml` 已使用国内镜像代理前缀（`m.daocloud.io`），用于提升拉取成功率。
 
 ### 1. 启动 Podman machine（如果尚未启动）
 

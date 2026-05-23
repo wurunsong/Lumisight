@@ -1,6 +1,6 @@
 services:
   nebula-metad:
-    image: vesoft/nebula-metad:v3.8.0
+    image: m.daocloud.io/docker.io/vesoft/nebula-metad:v3.8.0
     container_name: lumisight-nebula-metad
     command: ["--meta_server_addrs=nebula-metad:9559", "--local_ip=nebula-metad", "--ws_ip=nebula-metad", "--port=9559", "--data_path=/data/meta"]
     ports:
@@ -11,7 +11,7 @@ services:
       - lumisight-net
 
   nebula-storaged:
-    image: vesoft/nebula-storaged:v3.8.0
+    image: m.daocloud.io/docker.io/vesoft/nebula-storaged:v3.8.0
     container_name: lumisight-nebula-storaged
     command: ["--meta_server_addrs=nebula-metad:9559", "--local_ip=nebula-storaged", "--ws_ip=nebula-storaged", "--port=9779", "--data_path=/data/storage"]
     ports:
@@ -24,7 +24,7 @@ services:
       - lumisight-net
 
   nebula-graphd:
-    image: vesoft/nebula-graphd:v3.8.0
+    image: m.daocloud.io/docker.io/vesoft/nebula-graphd:v3.8.0
     container_name: lumisight-nebula-graphd
     command: ["--meta_server_addrs=nebula-metad:9559", "--local_ip=nebula-graphd", "--ws_ip=nebula-graphd", "--port=9669"]
     ports:
@@ -36,7 +36,7 @@ services:
       - lumisight-net
 
   milvus-etcd:
-    image: quay.io/coreos/etcd:v3.5.18
+    image: m.daocloud.io/quay.io/coreos/etcd:v3.5.18
     container_name: lumisight-milvus-etcd
     command: ["etcd", "-advertise-client-urls=http://127.0.0.1:2379", "-listen-client-urls=http://0.0.0.0:2379", "--data-dir=/etcd"]
     volumes:
@@ -47,7 +47,7 @@ services:
       - lumisight-net
 
   milvus-minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    image: m.daocloud.io/docker.io/minio/minio:RELEASE.2024-12-18T13-15-44Z
     container_name: lumisight-milvus-minio
     command: ["minio", "server", "/minio_data", "--console-address", ":9001"]
     environment:
@@ -62,7 +62,7 @@ services:
       - lumisight-net
 
   milvus-standalone:
-    image: milvusdb/milvus:v2.5.5
+    image: m.daocloud.io/docker.io/milvusdb/milvus:v2.5.5
     container_name: lumisight-milvus-standalone
     command: ["milvus", "run", "standalone"]
     environment:
