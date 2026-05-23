@@ -4,6 +4,7 @@ import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.lumisight.tools.kg.model.EdgeType;
 import com.lumisight.tools.kg.model.GraphEdge;
@@ -59,7 +60,7 @@ public class JavaCodeGraphParser {
         fragment.getNodes().put(packageNode.id(), packageNode);
         addEdge(fragment, moduleNode.id(), packageNode.id(), EdgeType.MODULE_CONTAINS_PACKAGE, sourceFile);
 
-        Map<String, String> methodSimpleKeyToId = new HashMap<>();
+        Map<String, String> importedClassMap = buildImportClassMap(cu);
 
         // 构建层级关系：module -> package -> class -> method。
         cu.findAll(ClassOrInterfaceDeclaration.class).forEach(cls -> {
@@ -93,11 +94,10 @@ public class JavaCodeGraphParser {
                 ).toGraphNode();
                 fragment.getNodes().put(methodNode.id(), methodNode);
                 addEdge(fragment, classNode.id(), methodNode.id(), EdgeType.CLASS_CONTAINS_METHOD, sourceFile);
-                methodSimpleKeyToId.put(method.getNameAsString() + "#" + method.getParameters().size(), methodNode.id());
             });
         });
 
-        // 仅在同文件内建立调用边，按“方法名 + 参数个数”做近似匹配。
+        // 按统一 ID 规则建立方法调用边，允许跨文件先建边后补点。
         cu.findAll(MethodDeclaration.class).forEach(method -> {
             Optional<ClassOrInterfaceDeclaration> ownerClass = method.findAncestor(ClassOrInterfaceDeclaration.class);
             if (ownerClass.isEmpty()) {
@@ -108,15 +108,61 @@ public class JavaCodeGraphParser {
             String fromNodeId = NodeIdUtils.nodeId(NodeType.METHOD, fromMethodQn);
 
             method.findAll(MethodCallExpr.class).forEach(call -> {
-                String targetKey = call.getNameAsString() + "#" + call.getArguments().size();
-                String toNodeId = methodSimpleKeyToId.get(targetKey);
-                if (toNodeId != null) {
-                    addEdge(fragment, fromNodeId, toNodeId, EdgeType.METHOD_CALLS_METHOD, sourceFile);
-                }
+                String targetClassQn = resolveTargetClassQualifiedName(
+                        call.getScope(),
+                        ownerClass.get().getNameAsString(),
+                        pkg,
+                        importedClassMap
+                );
+                String targetMethodQn = targetClassQn + "#" + call.getNameAsString() + "(" + call.getArguments().size() + ")";
+                String toNodeId = NodeIdUtils.nodeId(NodeType.METHOD, targetMethodQn);
+                addEdge(fragment, fromNodeId, toNodeId, EdgeType.METHOD_CALLS_METHOD, sourceFile);
             });
         });
 
         return fragment;
+    }
+
+    private Map<String, String> buildImportClassMap(CompilationUnit cu) {
+        Map<String, String> map = new HashMap<>();
+        cu.getImports().forEach(importDecl -> {
+            if (importDecl.isAsterisk()) {
+                return;
+            }
+            String qn = importDecl.getNameAsString();
+            int idx = qn.lastIndexOf('.');
+            if (idx <= 0 || idx == qn.length() - 1) {
+                return;
+            }
+            String simple = qn.substring(idx + 1);
+            map.put(simple, qn);
+        });
+        return map;
+    }
+
+    private String resolveTargetClassQualifiedName(
+            Optional<Expression> scope,
+            String currentClassName,
+            String pkg,
+            Map<String, String> importedClassMap
+    ) {
+        if (scope.isEmpty()) {
+            return pkg + "." + currentClassName;
+        }
+
+        String scopeText = scope.get().toString();
+        String candidate = scopeText.contains(".")
+                ? scopeText.substring(scopeText.lastIndexOf('.') + 1)
+                : scopeText;
+
+        // 仅把看起来像类名的 scope 作为跨类调用目标，其他情况回退到当前类。
+        if (candidate.isEmpty() || !Character.isUpperCase(candidate.charAt(0))) {
+            return pkg + "." + currentClassName;
+        }
+        if (importedClassMap.containsKey(candidate)) {
+            return importedClassMap.get(candidate);
+        }
+        return pkg + "." + candidate;
     }
 
     private void addEdge(ParsedGraphFragment fragment, String from, String to, EdgeType type, String sourceFile) {
