@@ -71,7 +71,7 @@ podman machine start
 mvn -pl lumisight-tools -am compile
 mvn -pl lumisight-tools -am exec:java \
   -Dexec.mainClass="com.lumisight.tools.kg.cli.KnowledgeGraphBuildMain" \
-  -Dexec.args="/path/to/your/java-repo /path/to/output/snapshot.json"
+  -Dexec.args="/path/to/your/java-repo"
 ```
 
 说明：
@@ -79,3 +79,16 @@ mvn -pl lumisight-tools -am exec:java \
 - 后续运行会根据文件哈希仅解析新增/变更文件，并清理删除文件对应的节点和边。
 - 当前图谱节点：`module/package/class/method`
 - 当前图谱边：`module->package`、`package->class`、`class->method`、`method->method(calls)`
+- 解析结果直接写入 Nebula（不再输出本地快照文件）。
+
+## Nebula Space 约定
+
+- Space 命名规则：`kg_工程名`（示例：工程目录名 `rpc` -> Space `kg_rpc`）。
+- 程序会按该规则自动派生并初始化 Space。
+- 首次排障时也可手工创建：
+
+```bash
+podman run --rm --network infra_lumisight-net m.daocloud.io/docker.io/vesoft/nebula-console:v3.8.0 \
+  -addr nebula-graphd -port 9669 -u root -p nebula \
+  -e 'CREATE SPACE IF NOT EXISTS kg_rpc(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256)); SHOW SPACES;'
+```
