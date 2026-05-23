@@ -16,36 +16,48 @@ import com.lumisight.tools.kg.model.node.MethodNode;
 import com.lumisight.tools.kg.model.node.ModuleNode;
 import com.lumisight.tools.kg.model.node.PackageNode;
 import com.lumisight.tools.kg.util.NodeIdUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 public class JavaCodeGraphParser {
 
     public ParsedGraphFragment parseFile(Path repoRoot, Path javaFile) {
         String sourceFile = repoRoot.relativize(javaFile).toString();
         String moduleName = resolveModuleName(repoRoot, javaFile);
+        log.debug("Parse java file start, sourceFile={}, module={}", sourceFile, moduleName);
         CompilationUnit cu;
         try {
             cu = StaticJavaParser.parse(javaFile);
         } catch (Exception e) {
             // 语法异常文件直接跳过，避免阻断整个构建流程。
+            log.warn("Parse java file failed, sourceFile={}, reason={}", sourceFile, e.getMessage());
             return new ParsedGraphFragment();
         }
-        return parseCompilationUnit(repoRoot, sourceFile, moduleName, cu);
+        ParsedGraphFragment fragment = parseCompilationUnit(repoRoot, sourceFile, moduleName, cu);
+        log.info("Parse java file done, sourceFile={}, nodes={}, edges={}",
+                sourceFile, fragment.getNodes().size(), fragment.getEdges().size());
+        return fragment;
     }
 
     public ParsedGraphFragment parseSource(Path repoRoot, String sourceFile, String sourceContent) {
         String moduleName = resolveModuleName(repoRoot, repoRoot.resolve(sourceFile));
+        log.debug("Parse java source snapshot start, sourceFile={}, module={}", sourceFile, moduleName);
         CompilationUnit cu;
         try {
             cu = StaticJavaParser.parse(sourceContent);
         } catch (Exception e) {
+            log.warn("Parse java source snapshot failed, sourceFile={}, reason={}", sourceFile, e.getMessage());
             return new ParsedGraphFragment();
         }
-        return parseCompilationUnit(repoRoot, sourceFile, moduleName, cu);
+        ParsedGraphFragment fragment = parseCompilationUnit(repoRoot, sourceFile, moduleName, cu);
+        log.debug("Parse java source snapshot done, sourceFile={}, nodes={}, edges={}",
+                sourceFile, fragment.getNodes().size(), fragment.getEdges().size());
+        return fragment;
     }
 
     private ParsedGraphFragment parseCompilationUnit(Path repoRoot, String sourceFile, String moduleName, CompilationUnit cu) {

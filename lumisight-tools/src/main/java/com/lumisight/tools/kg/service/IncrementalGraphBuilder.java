@@ -90,7 +90,10 @@ public class IncrementalGraphBuilder {
                     ParsedGraphFragment fragment = parser.parseFile(repoRoot, javaFile);
                     snapshot.getNodes().putAll(fragment.getNodes());
                     snapshot.getEdges().putAll(fragment.getEdges());
-                    snapshot.getFileHashes().put(repoRoot.relativize(javaFile).toString(), gitState.commit());
+                    String relativePath = repoRoot.relativize(javaFile).toString();
+                    snapshot.getFileHashes().put(relativePath, gitState.commit());
+                    log.info("Full build parsed file, file={}, nodes={}, edges={}",
+                            relativePath, fragment.getNodes().size(), fragment.getEdges().size());
                 }
             } else {
                 log.info("Run incremental KG build, baselineCommit={}, currentCommit={}", graphCommit, gitState.commit());
@@ -108,7 +111,7 @@ public class IncrementalGraphBuilder {
                     return snapshot;
                 }
                 for (JavaFileDiff diff : diffs) {
-                    log.debug("Process java diff, oldPath={}, newPath={}", diff.oldPath(), diff.newPath());
+                    log.info("Process java diff, oldPath={}, newPath={}", diff.oldPath(), diff.newPath());
                     ParsedGraphFragment oldFragment = new ParsedGraphFragment();
                     if (diff.oldPath() != null) {
                         String oldSource = readFileAtCommit(repoRoot, graphCommit, diff.oldPath());
@@ -128,7 +131,7 @@ public class IncrementalGraphBuilder {
                     Set<String> impactedClasses = new HashSet<>();
                     impactedClasses.addAll(extractClassNames(oldFragment));
                     impactedClasses.addAll(extractClassNames(newFragment));
-                    log.debug("Impacted classes count={}, classes={}", impactedClasses.size(), impactedClasses);
+                    log.info("Diff impacted classes, count={}, classes={}", impactedClasses.size(), impactedClasses);
 
                     for (String className : impactedClasses) {
                         Map<String, GraphNode> oldMethods = methodsByClass(oldFragment, className);
