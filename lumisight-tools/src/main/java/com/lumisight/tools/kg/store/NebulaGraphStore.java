@@ -9,6 +9,7 @@ import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 public class NebulaGraphStore implements AutoCloseable {
@@ -114,6 +115,33 @@ public class NebulaGraphStore implements AutoCloseable {
                 .map(v -> "\"" + escape(v) + "\"")
                 .collect(Collectors.joining(", "));
         execute("DELETE VERTEX " + vidList + " WITH EDGE");
+    }
+
+    public void updateNodeStatus(String vid, int status) {
+        execute("UPDATE VERTEX ON " + TAG_KG_NODE + " \"" + escape(vid) + "\" SET status = " + status);
+    }
+
+    public void updateEdgeStatus(String fromVid, String toVid, int status) {
+        execute("UPDATE EDGE ON " + EDGE_KG_REL + " \"" + escape(fromVid) + "\"->\"" + escape(toVid) + "\" SET status = " + status);
+    }
+
+    public void markAdjacentEdgesDeleted(String vid) {
+        ResultSet result = execute(
+                "GO FROM \"" + escape(vid) + "\" OVER " + EDGE_KG_REL + " BIDIRECT " +
+                        "YIELD src(edge) AS src, dst(edge) AS dst"
+        );
+        if (result.rowsSize() == 0) {
+            return;
+        }
+        for (int i = 0; i < result.rowsSize(); i++) {
+            try {
+                String src = result.rowValues(i).get(0).asString();
+                String dst = result.rowValues(i).get(1).asString();
+                updateEdgeStatus(src, dst, 1);
+            } catch (Exception ignored) {
+                // 跳过异常行，避免单条脏数据中断整体构建流程。
+            }
+        }
     }
 
     private void initSchema() {

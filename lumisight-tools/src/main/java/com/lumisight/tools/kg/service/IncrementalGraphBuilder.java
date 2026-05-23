@@ -1,6 +1,7 @@
 package com.lumisight.tools.kg.service;
 
 import com.lumisight.tools.kg.config.NebulaProperties;
+import com.lumisight.tools.kg.model.GraphElementStatus;
 import com.lumisight.tools.kg.model.GraphEdge;
 import com.lumisight.tools.kg.model.GraphNode;
 import com.lumisight.tools.kg.model.GraphSnapshot;
@@ -114,28 +115,36 @@ public class IncrementalGraphBuilder {
                     impactedClasses.addAll(extractClassNames(oldFragment));
                     impactedClasses.addAll(extractClassNames(newFragment));
 
-                    Set<String> deleteNodeIds = collectNodeIdsByClasses(oldFragment, impactedClasses);
-                    deleteNodeIds.addAll(collectNodeIdsByClasses(newFragment, impactedClasses));
-                    store.deleteVertices(deleteNodeIds);
+                    for (String className : impactedClasses) {
+                        Map<String, GraphNode> oldMethods = methodsByClass(oldFragment, className);
+                        Map<String, GraphNode> newMethods = methodsByClass(newFragment, className);
 
-                    for (GraphNode node : newFragment.getNodes().values()) {
-                        if (node.type().name().equals("MODULE") || node.type().name().equals("PACKAGE")
-                                || impactedClasses.contains(node.className())) {
-                            writeNode(store, node, gitState);
-                            snapshot.getNodes().put(node.id(), node);
+                        // 新版本缺失的方法：标记删除。
+                        for (String oldMethodId : oldMethods.keySet()) {
+                            if (!newMethods.containsKey(oldMethodId)) {
+                                store.updateNodeStatus(oldMethodId, GraphElementStatus.DELETED.code());
+                                store.markAdjacentEdgesDeleted(oldMethodId);
+                            }
                         }
-                    }
-                    for (GraphEdge edge : newFragment.getEdges().values()) {
-                        GraphNode fromNode = newFragment.getNodes().get(edge.fromNodeId());
-                        GraphNode toNode = newFragment.getNodes().get(edge.toNodeId());
-                        if (fromNode == null || toNode == null) {
-                            continue;
+
+                        GraphNode oldClassNode = classNodeByName(oldFragment, className);
+                        GraphNode newClassNode = classNodeByName(newFragment, className);
+                        if (newClassNode != null) {
+                            writeNode(store, newClassNode, gitState);
+                            snapshot.getNodes().put(newClassNode.id(), newClassNode);
+                        } else if (oldClassNode != null) {
+                            store.updateNodeStatus(oldClassNode.id(), GraphElementStatus.DELETED.code());
+                            store.markAdjacentEdgesDeleted(oldClassNode.id());
                         }
-                        boolean fromImpacted = fromNode.type().name().equals("MODULE") || fromNode.type().name().equals("PACKAGE")
-                                || impactedClasses.contains(fromNode.className());
-                        boolean toImpacted = toNode.type().name().equals("MODULE") || toNode.type().name().equals("PACKAGE")
-                                || impactedClasses.contains(toNode.className());
-                        if (fromImpacted && toImpacted) {
+
+                        // 该类下方法统一重写（新增和保留都会覆盖写入）。
+                        for (GraphNode methodNode : newMethods.values()) {
+                            writeNode(store, methodNode, gitState);
+                            snapshot.getNodes().put(methodNode.id(), methodNode);
+                        }
+
+                        // 该类相关边统一重写。
+                        for (GraphEdge edge : relevantEdgesForClass(newFragment, className)) {
                             writeEdge(store, edge, gitState);
                             snapshot.getEdges().put(edge.id(), edge);
                         }
@@ -231,18 +240,39 @@ public class IncrementalGraphBuilder {
         return classNames;
     }
 
-    private Set<String> collectNodeIdsByClasses(ParsedGraphFragment fragment, Set<String> classNames) {
-        Set<String> ids = new HashSet<>();
+    private GraphNode classNodeByName(ParsedGraphFragment fragment, String className) {
         for (GraphNode node : fragment.getNodes().values()) {
-            if (node.type().name().equals("MODULE") || node.type().name().equals("PACKAGE")) {
-                ids.add(node.id());
-                continue;
-            }
-            if (node.className() != null && classNames.contains(node.className())) {
-                ids.add(node.id());
+            if (node.type().name().equals("CLASS") && className.equals(node.className())) {
+                return node;
             }
         }
-        return ids;
+        return null;
+    }
+
+    private Map<String, GraphNode> methodsByClass(ParsedGraphFragment fragment, String className) {
+        Map<String, GraphNode> methods = new HashMap<>();
+        for (GraphNode node : fragment.getNodes().values()) {
+            if (node.type().name().equals("METHOD") && className.equals(node.className())) {
+                methods.put(node.id(), node);
+            }
+        }
+        return methods;
+    }
+
+    private List<GraphEdge> relevantEdgesForClass(ParsedGraphFragment fragment, String className) {
+        List<GraphEdge> edges = new ArrayList<>();
+        for (GraphEdge edge : fragment.getEdges().values()) {
+            GraphNode fromNode = fragment.getNodes().get(edge.fromNodeId());
+            GraphNode toNode = fragment.getNodes().get(edge.toNodeId());
+            if (fromNode == null || toNode == null) {
+                continue;
+            }
+            boolean hit = className.equals(fromNode.className()) || className.equals(toNode.className());
+            if (hit) {
+                edges.add(edge);
+            }
+        }
+        return edges;
     }
 
     private GitState resolveGitState(Path repoRoot) {
