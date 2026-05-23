@@ -27,6 +27,8 @@ public class NebulaGraphStore implements AutoCloseable {
     private static final int SPACE_MAX_LENGTH = 64;
     private static final int SESSION_INIT_RETRY_TIMES = 8;
     private static final long SESSION_INIT_RETRY_SLEEP_MS = 500L;
+    private static final int SCHEMA_READY_RETRY_TIMES = 12;
+    private static final long SCHEMA_READY_RETRY_SLEEP_MS = 500L;
 
     private final String space;
     private final SessionPool sessionPool;
@@ -91,7 +93,16 @@ public class NebulaGraphStore implements AutoCloseable {
 
     public String currentRepoCommit(String repoName) {
         String metaVid = metaVid(repoName);
-        ResultSet result = execute("FETCH PROP ON " + TAG_REPO_META + " \"" + metaVid + "\" YIELD " + TAG_REPO_META + ".git_commit");
+        ResultSet result;
+        try {
+            result = execute("FETCH PROP ON " + TAG_REPO_META + " \"" + metaVid + "\" YIELD " + TAG_REPO_META + ".git_commit");
+        } catch (IllegalStateException e) {
+            if (isTagNotFound(e)) {
+                log.warn("repo_meta tag not ready yet, treat as no baseline commit, repoName={}", repoName);
+                return null;
+            }
+            throw e;
+        }
         if (result.rowsSize() == 0) {
             return null;
         }
@@ -208,6 +219,25 @@ public class NebulaGraphStore implements AutoCloseable {
         execute("CREATE TAG IF NOT EXISTS " + TAG_REPO_META + "(" +
                 "repo_name string, repo_root string, git_branch string, git_commit string, " +
                 "tracked_file_count int, node_count int, edge_count int, updated_at datetime)");
+        waitForSchemaReady();
+    }
+
+    private void waitForSchemaReady() {
+        for (int attempt = 1; attempt <= SCHEMA_READY_RETRY_TIMES; attempt++) {
+            try {
+                execute("DESCRIBE TAG " + TAG_REPO_META);
+                execute("DESCRIBE TAG " + TAG_KG_NODE);
+                execute("DESCRIBE EDGE " + EDGE_KG_REL);
+                return;
+            } catch (IllegalStateException e) {
+                if (!(isTagNotFound(e) || isEdgeNotFound(e)) || attempt == SCHEMA_READY_RETRY_TIMES) {
+                    throw e;
+                }
+                log.warn("Nebula schema not ready yet, retry {}/{}, space={}",
+                        attempt, SCHEMA_READY_RETRY_TIMES, space);
+                sleepQuietly(SCHEMA_READY_RETRY_SLEEP_MS);
+            }
+        }
     }
 
     private ResultSet execute(String nGql) {
@@ -253,6 +283,18 @@ public class NebulaGraphStore implements AutoCloseable {
         String message = throwable == null ? "" : String.valueOf(throwable.getMessage());
         String lower = message.toLowerCase(Locale.ROOT);
         return lower.contains("spacenotfound") || lower.contains("space not found");
+    }
+
+    private static boolean isTagNotFound(Throwable throwable) {
+        String message = throwable == null ? "" : String.valueOf(throwable.getMessage());
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("tagnotfound") || lower.contains("tag not found");
+    }
+
+    private static boolean isEdgeNotFound(Throwable throwable) {
+        String message = throwable == null ? "" : String.valueOf(throwable.getMessage());
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("edgenotfound") || lower.contains("edge not found");
     }
 
     private static void sleepQuietly(long millis) {
