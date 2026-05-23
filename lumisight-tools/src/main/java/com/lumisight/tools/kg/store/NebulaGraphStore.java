@@ -8,14 +8,15 @@ import java.io.UnsupportedEncodingException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class NebulaGraphStore implements AutoCloseable {
 
     private static final String SPACE = "lumisight_kg";
     private static final String TAG_KG_NODE = "kg_node";
     private static final String EDGE_KG_REL = "kg_rel";
-    private static final String TAG_KG_STATE = "kg_state";
-    private static final String STATE_VID = "kg_state";
+    private static final String TAG_REPO_META = "repo_meta";
 
     private final SessionPool sessionPool;
 
@@ -33,8 +34,9 @@ public class NebulaGraphStore implements AutoCloseable {
         initSchema();
     }
 
-    public String currentGraphCommit() {
-        ResultSet result = execute("FETCH PROP ON " + TAG_KG_STATE + " \"" + STATE_VID + "\" YIELD " + TAG_KG_STATE + ".git_commit");
+    public String currentRepoCommit(String repoName) {
+        String metaVid = metaVid(repoName);
+        ResultSet result = execute("FETCH PROP ON " + TAG_REPO_META + " \"" + metaVid + "\" YIELD " + TAG_REPO_META + ".git_commit");
         if (result.rowsSize() == 0) {
             return null;
         }
@@ -46,9 +48,26 @@ public class NebulaGraphStore implements AutoCloseable {
         }
     }
 
-    public void writeState(String gitBranch, String gitCommit) {
-        execute("INSERT VERTEX " + TAG_KG_STATE + "(name, git_branch, git_commit, updated_at) VALUES " +
-                "\"" + STATE_VID + "\":(\"kg_state\", \"" + escape(gitBranch) + "\", \"" + escape(gitCommit) + "\", datetime())");
+    public void writeRepoMeta(
+            String repoName,
+            String repoRoot,
+            String gitBranch,
+            String gitCommit,
+            int trackedFileCount,
+            int nodeCount,
+            int edgeCount
+    ) {
+        String metaVid = metaVid(repoName);
+        execute("INSERT VERTEX " + TAG_REPO_META + "(repo_name, repo_root, git_branch, git_commit, tracked_file_count, node_count, edge_count, updated_at) VALUES " +
+                "\"" + metaVid + "\":(" +
+                "\"" + escape(repoName) + "\"," +
+                "\"" + escape(repoRoot) + "\"," +
+                "\"" + escape(gitBranch) + "\"," +
+                "\"" + escape(gitCommit) + "\"," +
+                trackedFileCount + "," +
+                nodeCount + "," +
+                edgeCount + "," +
+                "datetime())");
     }
 
     public void writeNode(String vid, Map<String, Object> props) {
@@ -83,6 +102,16 @@ public class NebulaGraphStore implements AutoCloseable {
         execute(nGql);
     }
 
+    public void deleteVertices(Set<String> vids) {
+        if (vids == null || vids.isEmpty()) {
+            return;
+        }
+        String vidList = vids.stream()
+                .map(v -> "\"" + escape(v) + "\"")
+                .collect(Collectors.joining(", "));
+        execute("DELETE VERTEX " + vidList + " WITH EDGE");
+    }
+
     private void initSchema() {
         execute("CREATE SPACE IF NOT EXISTS " + SPACE + "(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256))");
         execute("USE " + SPACE);
@@ -92,8 +121,9 @@ public class NebulaGraphStore implements AutoCloseable {
                 "git_branch string, git_commit string)");
         execute("CREATE EDGE IF NOT EXISTS " + EDGE_KG_REL + "(" +
                 "edge_id string, edge_type string, source_file string, git_branch string, git_commit string)");
-        execute("CREATE TAG IF NOT EXISTS " + TAG_KG_STATE + "(" +
-                "name string, git_branch string, git_commit string, updated_at datetime)");
+        execute("CREATE TAG IF NOT EXISTS " + TAG_REPO_META + "(" +
+                "repo_name string, repo_root string, git_branch string, git_commit string, " +
+                "tracked_file_count int, node_count int, edge_count int, updated_at datetime)");
     }
 
     private ResultSet execute(String nGql) {
@@ -127,6 +157,10 @@ public class NebulaGraphStore implements AutoCloseable {
 
     private static String escape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static String metaVid(String repoName) {
+        return "repo:" + repoName;
     }
 
     @Override

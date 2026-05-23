@@ -8,7 +8,11 @@ import java.nio.file.Path;
 @Service
 public class KnowledgeGraphBuildService {
 
-    private final IncrementalGraphBuilder incrementalGraphBuilder = new IncrementalGraphBuilder();
+    private final IncrementalGraphBuilder incrementalGraphBuilder;
+
+    public KnowledgeGraphBuildService(IncrementalGraphBuilder incrementalGraphBuilder) {
+        this.incrementalGraphBuilder = incrementalGraphBuilder;
+    }
 
     // 统一构建入口：供 API 调用，也便于后续接入定时任务。
     public KnowledgeGraphBuildResult build(String repoRoot) {

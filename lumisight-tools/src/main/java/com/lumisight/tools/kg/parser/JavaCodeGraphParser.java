@@ -23,23 +23,35 @@ import java.util.Optional;
 public class JavaCodeGraphParser {
 
     public ParsedGraphFragment parseFile(Path repoRoot, Path javaFile) {
-        // 将单个 Java 文件解析为局部图谱片段（节点 + 边）。
-        ParsedGraphFragment fragment = new ParsedGraphFragment();
         String sourceFile = repoRoot.relativize(javaFile).toString();
         String moduleName = resolveModuleName(repoRoot, javaFile);
-        String repoName = repoRoot.getFileName().toString();
-
         CompilationUnit cu;
         try {
             cu = StaticJavaParser.parse(javaFile);
         } catch (Exception e) {
             // 语法异常文件直接跳过，避免阻断整个构建流程。
-            return fragment;
+            return new ParsedGraphFragment();
         }
+        return parseCompilationUnit(repoRoot, sourceFile, moduleName, cu);
+    }
+
+    public ParsedGraphFragment parseSource(Path repoRoot, String sourceFile, String sourceContent) {
+        String moduleName = resolveModuleName(repoRoot, repoRoot.resolve(sourceFile));
+        CompilationUnit cu;
+        try {
+            cu = StaticJavaParser.parse(sourceContent);
+        } catch (Exception e) {
+            return new ParsedGraphFragment();
+        }
+        return parseCompilationUnit(repoRoot, sourceFile, moduleName, cu);
+    }
+
+    private ParsedGraphFragment parseCompilationUnit(Path repoRoot, String sourceFile, String moduleName, CompilationUnit cu) {
+        // 将单个 Java 文件解析为局部图谱片段（节点 + 边）。
+        ParsedGraphFragment fragment = new ParsedGraphFragment();
+        String repoName = repoRoot.getFileName().toString();
 
         String pkg = cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("default");
-        String moduleQn = moduleName;
-        String packageQn = moduleName + ":" + pkg;
 
         GraphNode moduleNode = new ModuleNode(moduleName, sourceFile, repoName).toGraphNode();
         GraphNode packageNode = new PackageNode(moduleName, pkg, sourceFile, repoName).toGraphNode();

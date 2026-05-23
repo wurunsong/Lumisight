@@ -1,5 +1,6 @@
 package com.lumisight.tools.kg.cli;
 
+import com.lumisight.tools.kg.config.NebulaProperties;
 import com.lumisight.tools.kg.model.GraphSnapshot;
 import com.lumisight.tools.kg.service.IncrementalGraphBuilder;
 
@@ -16,7 +17,8 @@ public class KnowledgeGraphBuildMain {
 
         Path repoRoot = Path.of(args[0]).toAbsolutePath().normalize();
 
-        IncrementalGraphBuilder builder = new IncrementalGraphBuilder();
+        NebulaProperties nebulaProperties = new NebulaProperties();
+        IncrementalGraphBuilder builder = new IncrementalGraphBuilder(nebulaProperties);
         GraphSnapshot snapshot = builder.build(repoRoot);
 
         // 输出本次构建统计，便于快速确认增量结果规模。

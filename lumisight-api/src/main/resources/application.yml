@@ -10,3 +10,10 @@ management:
     web:
       exposure:
         include: health,info
+
+lumisight:
+  nebula:
+    host: 127.0.0.1
+    port: 9669
+    username: root
+    password: nebula
