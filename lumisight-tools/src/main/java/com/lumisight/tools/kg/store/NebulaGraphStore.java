@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -24,6 +25,8 @@ public class NebulaGraphStore implements AutoCloseable {
     private static final String EDGE_KG_REL = "kg_rel";
     private static final String TAG_REPO_META = "repo_meta";
     private static final int SPACE_MAX_LENGTH = 64;
+    private static final int SESSION_INIT_RETRY_TIMES = 8;
+    private static final long SESSION_INIT_RETRY_SLEEP_MS = 500L;
 
     private final String space;
     private final SessionPool sessionPool;
@@ -33,19 +36,38 @@ public class NebulaGraphStore implements AutoCloseable {
         log.info("Initializing Nebula session pool, host={}, port={}, user={}, repoName={}, space={}",
                 host, port, user, repoName, space);
         ensureSpaceExists(host, port, user, password);
+        this.sessionPool = createSessionPoolWithRetry(host, port, user, password);
+        log.info("Nebula session pool initialized successfully, host={}, port={}, space={}", host, port, space);
+        initSchema();
+    }
+
+    private SessionPool createSessionPoolWithRetry(String host, int port, String user, String password) {
         SessionPoolConfig config = new SessionPoolConfig(
                 List.of(new HostAddress(host, port)),
                 space,
                 user,
                 password
         );
-        this.sessionPool = new SessionPool(config);
-        if (!sessionPool.init()) {
-            log.error("Nebula session pool init failed, host={}, port={}, user={}, space={}", host, port, user, space);
-            throw new IllegalStateException("Failed to init Nebula session pool");
+        for (int attempt = 1; attempt <= SESSION_INIT_RETRY_TIMES; attempt++) {
+            try {
+                SessionPool pool = new SessionPool(config);
+                if (!pool.init()) {
+                    pool.close();
+                    throw new IllegalStateException("SessionPool init returned false");
+                }
+                return pool;
+            } catch (Exception e) {
+                if (!isSpaceNotReady(e) || attempt == SESSION_INIT_RETRY_TIMES) {
+                    log.error("Nebula session pool init failed, host={}, port={}, space={}, attempt={}",
+                            host, port, space, attempt, e);
+                    throw new IllegalStateException("Failed to init Nebula session pool for space: " + space, e);
+                }
+                log.warn("Nebula space not ready yet, retry session init, space={}, attempt={}/{}",
+                        space, attempt, SESSION_INIT_RETRY_TIMES);
+                sleepQuietly(SESSION_INIT_RETRY_SLEEP_MS);
+            }
         }
-        log.info("Nebula session pool initialized successfully, host={}, port={}, space={}", host, port, space);
-        initSchema();
+        throw new IllegalStateException("Failed to init Nebula session pool for space: " + space);
     }
 
     private void ensureSpaceExists(String host, int port, String user, String password) {
@@ -226,6 +248,21 @@ public class NebulaGraphStore implements AutoCloseable {
 
     private static String metaVid(String repoName) {
         return "repo:" + repoName;
+    }
+
+    private static boolean isSpaceNotReady(Throwable throwable) {
+        String message = throwable == null ? "" : String.valueOf(throwable.getMessage());
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("spacenotfound") || lower.contains("space not found");
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for Nebula space readiness", e);
+        }
     }
 
     private static String deriveSpaceName(String repoName) {
