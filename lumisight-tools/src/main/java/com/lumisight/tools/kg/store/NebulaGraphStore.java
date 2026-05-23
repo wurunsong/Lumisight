@@ -4,14 +4,15 @@ import com.vesoft.nebula.client.graph.SessionPool;
 import com.vesoft.nebula.client.graph.SessionPoolConfig;
 import com.vesoft.nebula.client.graph.data.HostAddress;
 import com.vesoft.nebula.client.graph.data.ResultSet;
-import java.io.UnsupportedEncodingException;
+import lombok.extern.slf4j.Slf4j;
 
+import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.ArrayList;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class NebulaGraphStore implements AutoCloseable {
 
     private static final String SPACE = "lumisight_kg";
@@ -22,6 +23,7 @@ public class NebulaGraphStore implements AutoCloseable {
     private final SessionPool sessionPool;
 
     public NebulaGraphStore(String host, int port, String user, String password) {
+        log.info("Initializing Nebula session pool, host={}, port={}, user={}, space={}", host, port, user, SPACE);
         SessionPoolConfig config = new SessionPoolConfig(
                 List.of(new HostAddress(host, port)),
                 SPACE,
@@ -30,8 +32,10 @@ public class NebulaGraphStore implements AutoCloseable {
         );
         this.sessionPool = new SessionPool(config);
         if (!sessionPool.init()) {
+            log.error("Nebula session pool init failed, host={}, port={}, user={}, space={}", host, port, user, SPACE);
             throw new IllegalStateException("Failed to init Nebula session pool");
         }
+        log.info("Nebula session pool initialized successfully, host={}, port={}, space={}", host, port, SPACE);
         initSchema();
     }
 
@@ -162,10 +166,12 @@ public class NebulaGraphStore implements AutoCloseable {
         try {
             ResultSet result = sessionPool.execute(nGql);
             if (!result.isSucceeded()) {
+                log.error("Nebula execute failed, query={}, error={}", nGql, result.getErrorMessage());
                 throw new IllegalStateException("Nebula execute failed: " + result.getErrorMessage() + ", query=" + nGql);
             }
             return result;
         } catch (Exception e) {
+            log.error("Nebula execute exception, query={}", nGql, e);
             throw new IllegalStateException("Nebula execute failed, query=" + nGql, e);
         }
     }
@@ -197,6 +203,7 @@ public class NebulaGraphStore implements AutoCloseable {
 
     @Override
     public void close() {
+        log.info("Closing Nebula session pool");
         sessionPool.close();
     }
 }

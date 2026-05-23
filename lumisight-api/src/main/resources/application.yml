@@ -17,3 +17,8 @@ lumisight:
     port: 9669
     username: root
     password: nebula
+
+logging:
+  level:
+    com.lumisight: INFO
+    com.lumisight.tools.kg: DEBUG

@@ -1,6 +1,7 @@
 package com.lumisight.api.error;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -10,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -18,6 +20,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+        log.warn("Request error, status={}, path={}, message={}", status.value(), request.getRequestURI(), ex.getReason());
         return ResponseEntity.status(status).body(new ApiErrorResponse(
                 status.value(),
                 "REQUEST_ERROR",
@@ -32,6 +35,7 @@ public class GlobalExceptionHandler {
             IllegalStateException ex,
             HttpServletRequest request
     ) {
+        log.warn("Build error, path={}, message={}", request.getRequestURI(), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
                 "BUILD_ERROR",
@@ -46,6 +50,7 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request
     ) {
+        log.error("Unhandled error, path={}", request.getRequestURI(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 "INTERNAL_ERROR",

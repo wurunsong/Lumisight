@@ -8,6 +8,7 @@ import com.lumisight.tools.kg.model.GraphSnapshot;
 import com.lumisight.tools.kg.parser.JavaCodeGraphParser;
 import com.lumisight.tools.kg.parser.ParsedGraphFragment;
 import com.lumisight.tools.kg.store.NebulaGraphStore;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -26,6 +27,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 @Component
+@Slf4j
 public class IncrementalGraphBuilder {
 
     private final JavaCodeGraphParser parser = new JavaCodeGraphParser();
@@ -37,6 +39,8 @@ public class IncrementalGraphBuilder {
 
     public GraphSnapshot build(Path repoRoot) {
         GitState gitState = resolveGitState(repoRoot);
+        log.info("Start KG build, repoRoot={}, gitBranch={}, gitCommit={}",
+                repoRoot.toAbsolutePath().normalize(), gitState.branch(), gitState.commit());
         validateBranch(gitState.branch());
         String repoName = repoRoot.getFileName().toString();
         String repoRootString = repoRoot.toAbsolutePath().normalize().toString();
@@ -48,6 +52,7 @@ public class IncrementalGraphBuilder {
                 nebulaProperties.getPassword()
         )) {
             String graphCommit = store.currentRepoCommit(repoName);
+            log.info("Current graph baseline commit from repo_meta, repoName={}, graphCommit={}", repoName, graphCommit);
 
             GraphSnapshot skipped = new GraphSnapshot();
             skipped.setRepoRoot(repoRootString);
@@ -57,10 +62,13 @@ public class IncrementalGraphBuilder {
 
             if (graphCommit != null && !graphCommit.isBlank()) {
                 if (graphCommit.equals(gitState.commit())) {
+                    log.info("Skip KG build: graph already at current HEAD, commit={}", gitState.commit());
                     skipped.setBuildSkipReason("No update: graph already at current HEAD");
                     return skipped;
                 }
                 if (!isAncestor(repoRoot, graphCommit, gitState.commit())) {
+                    log.warn("Skip KG build: current commit is not ahead of baseline, baseline={}, current={}",
+                            graphCommit, gitState.commit());
                     skipped.setBuildSkipReason("No update: current branch is not ahead of graph commit");
                     return skipped;
                 }
@@ -73,8 +81,10 @@ public class IncrementalGraphBuilder {
             boolean fullBuild = graphCommit == null || graphCommit.isBlank();
 
             if (fullBuild) {
+                log.info("Run full KG build, repoName={}", repoName);
                 // 首次构建全量解析。
                 List<Path> javaFiles = collectJavaFiles(repoRoot);
+                log.info("Full KG build java file count={}", javaFiles.size());
                 for (Path javaFile : javaFiles) {
                     ParsedGraphFragment fragment = parser.parseFile(repoRoot, javaFile);
                     snapshot.getNodes().putAll(fragment.getNodes());
@@ -82,8 +92,10 @@ public class IncrementalGraphBuilder {
                     snapshot.getFileHashes().put(repoRoot.relativize(javaFile).toString(), gitState.commit());
                 }
             } else {
+                log.info("Run incremental KG build, baselineCommit={}, currentCommit={}", graphCommit, gitState.commit());
                 // 后续仅处理 git diff 变更文件，并按类粒度做删除+重建。
                 List<JavaFileDiff> diffs = collectJavaDiffs(repoRoot, graphCommit, gitState.commit());
+                log.info("Incremental KG build diff java file count={}", diffs.size());
                 if (diffs.isEmpty()) {
                     store.writeRepoMeta(repoName, repoRootString, gitState.branch(), gitState.commit(), -1, -1, -1);
                     snapshot.setRepoRoot(repoRootString);
@@ -95,6 +107,7 @@ public class IncrementalGraphBuilder {
                     return snapshot;
                 }
                 for (JavaFileDiff diff : diffs) {
+                    log.debug("Process java diff, oldPath={}, newPath={}", diff.oldPath(), diff.newPath());
                     ParsedGraphFragment oldFragment = new ParsedGraphFragment();
                     if (diff.oldPath() != null) {
                         String oldSource = readFileAtCommit(repoRoot, graphCommit, diff.oldPath());
@@ -114,6 +127,7 @@ public class IncrementalGraphBuilder {
                     Set<String> impactedClasses = new HashSet<>();
                     impactedClasses.addAll(extractClassNames(oldFragment));
                     impactedClasses.addAll(extractClassNames(newFragment));
+                    log.debug("Impacted classes count={}, classes={}", impactedClasses.size(), impactedClasses);
 
                     for (String className : impactedClasses) {
                         Map<String, GraphNode> oldMethods = methodsByClass(oldFragment, className);
@@ -173,6 +187,8 @@ public class IncrementalGraphBuilder {
             snapshot.setGeneratedAt(Instant.now());
             snapshot.setBuildUpdated(true);
             snapshot.setBuildSkipReason(null);
+            log.info("KG build finished, repoName={}, updated=true, nodes={}, edges={}, files={}",
+                    repoName, snapshot.getNodes().size(), snapshot.getEdges().size(), snapshot.getFileHashes().size());
             return snapshot;
         }
     }
