@@ -193,6 +193,7 @@ public class IncrementalGraphBuilder {
         props.put("parameter_count", node.parameterCount() == null ? 0 : node.parameterCount());
         props.put("start_line", node.startLine() == null ? 0 : node.startLine());
         props.put("end_line", node.endLine() == null ? 0 : node.endLine());
+        props.put("status", node.status() == null ? 0 : node.status().code());
         props.put("git_branch", gitState.branch());
         props.put("git_commit", gitState.commit());
         store.writeNode(node.id(), props);
@@ -203,6 +204,7 @@ public class IncrementalGraphBuilder {
         props.put("edge_id", edge.id());
         props.put("edge_type", edge.type().name());
         props.put("source_file", edge.sourceFile());
+        props.put("status", edge.status() == null ? 0 : edge.status().code());
         props.put("git_branch", gitState.branch());
         props.put("git_commit", gitState.commit());
         store.writeEdge(edge.fromNodeId(), edge.toNodeId(), props);

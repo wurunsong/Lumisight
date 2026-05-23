@@ -7,6 +7,7 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.lumisight.tools.kg.model.EdgeType;
+import com.lumisight.tools.kg.model.GraphElementStatus;
 import com.lumisight.tools.kg.model.GraphEdge;
 import com.lumisight.tools.kg.model.GraphNode;
 import com.lumisight.tools.kg.model.NodeType;
@@ -167,7 +168,7 @@ public class JavaCodeGraphParser {
 
     private void addEdge(ParsedGraphFragment fragment, String from, String to, EdgeType type, String sourceFile) {
         String edgeId = NodeIdUtils.edgeId(from, to, type);
-        fragment.getEdges().put(edgeId, new GraphEdge(edgeId, from, to, type, sourceFile));
+        fragment.getEdges().put(edgeId, new GraphEdge(edgeId, from, to, type, sourceFile, GraphElementStatus.ACTIVE));
     }
 
     private String resolveModuleName(Path repoRoot, Path javaFile) {

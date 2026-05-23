@@ -71,7 +71,7 @@ public class NebulaGraphStore implements AutoCloseable {
     }
 
     public void writeNode(String vid, Map<String, Object> props) {
-        String nGql = "INSERT VERTEX " + TAG_KG_NODE + "(node_id, node_type, name, qualified_name, source_file, repo_name, module_name, package_name, class_name, method_name, parameter_count, start_line, end_line, git_branch, git_commit) VALUES " +
+        String nGql = "INSERT VERTEX " + TAG_KG_NODE + "(node_id, node_type, name, qualified_name, source_file, repo_name, module_name, package_name, class_name, method_name, parameter_count, start_line, end_line, status, git_branch, git_commit) VALUES " +
                 "\"" + escape(vid) + "\":(" +
                 quoted(props.get("node_id")) + "," +
                 quoted(props.get("node_type")) + "," +
@@ -86,6 +86,7 @@ public class NebulaGraphStore implements AutoCloseable {
                 integerLiteral(props.get("parameter_count")) + "," +
                 integerLiteral(props.get("start_line")) + "," +
                 integerLiteral(props.get("end_line")) + "," +
+                integerLiteral(props.get("status")) + "," +
                 quoted(props.get("git_branch")) + "," +
                 quoted(props.get("git_commit")) +
                 ")";
@@ -93,11 +94,12 @@ public class NebulaGraphStore implements AutoCloseable {
     }
 
     public void writeEdge(String fromVid, String toVid, Map<String, Object> props) {
-        String nGql = "INSERT EDGE " + EDGE_KG_REL + "(edge_id, edge_type, source_file, git_branch, git_commit) VALUES " +
+        String nGql = "INSERT EDGE " + EDGE_KG_REL + "(edge_id, edge_type, source_file, status, git_branch, git_commit) VALUES " +
                 "\"" + escape(fromVid) + "\"->\"" + escape(toVid) + "\":(" +
                 quoted(props.get("edge_id")) + "," +
                 quoted(props.get("edge_type")) + "," +
                 quoted(props.get("source_file")) + "," +
+                integerLiteral(props.get("status")) + "," +
                 quoted(props.get("git_branch")) + "," +
                 quoted(props.get("git_commit")) +
                 ")";
@@ -119,10 +121,10 @@ public class NebulaGraphStore implements AutoCloseable {
         execute("USE " + SPACE);
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +
-                "module_name string, package_name string, class_name string, method_name string, parameter_count int, start_line int, end_line int, " +
+                "module_name string, package_name string, class_name string, method_name string, parameter_count int, start_line int, end_line int, status int, " +
                 "git_branch string, git_commit string)");
         execute("CREATE EDGE IF NOT EXISTS " + EDGE_KG_REL + "(" +
-                "edge_id string, edge_type string, source_file string, git_branch string, git_commit string)");
+                "edge_id string, edge_type string, source_file string, status int, git_branch string, git_commit string)");
         execute("CREATE TAG IF NOT EXISTS " + TAG_REPO_META + "(" +
                 "repo_name string, repo_root string, git_branch string, git_commit string, " +
                 "tracked_file_count int, node_count int, edge_count int, updated_at datetime)");

@@ -5,6 +5,7 @@ public record GraphEdge(
         String fromNodeId,
         String toNodeId,
         EdgeType type,
-        String sourceFile
+        String sourceFile,
+        GraphElementStatus status
 ) {
 }

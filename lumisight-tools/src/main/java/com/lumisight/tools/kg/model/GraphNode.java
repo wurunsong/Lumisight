@@ -13,6 +13,7 @@ public record GraphNode(
         String methodName,
         Integer parameterCount,
         Integer startLine,
-        Integer endLine
+        Integer endLine,
+        GraphElementStatus status
 ) {
 }

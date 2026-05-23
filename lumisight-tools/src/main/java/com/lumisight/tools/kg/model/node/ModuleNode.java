@@ -1,5 +1,6 @@
 package com.lumisight.tools.kg.model.node;
 
+import com.lumisight.tools.kg.model.GraphElementStatus;
 import com.lumisight.tools.kg.model.GraphNode;
 import com.lumisight.tools.kg.model.NodeType;
 import com.lumisight.tools.kg.util.NodeIdUtils;
@@ -26,7 +27,8 @@ public record ModuleNode(
                 null,
                 null,
                 null,
-                null
+                null,
+                GraphElementStatus.ACTIVE
         );
     }
 }
