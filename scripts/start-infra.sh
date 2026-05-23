@@ -12,6 +12,23 @@ mkdir -p infra/data/milvus/etcd infra/data/milvus/minio infra/data/milvus/milvus
 # 后台启动 Nebula + Milvus 基础设施。
 podman compose -f infra/podman-compose.yml up -d
 
+# Nebula 首次启动需要注册 storaged host，否则可能出现 Host not enough。
+NEBULA_CONSOLE_IMAGE="m.daocloud.io/docker.io/vesoft/nebula-console:v3.8.0"
+NETWORK_NAME="infra_lumisight-net"
+
+# 等待 graphd 可连接后再执行初始化。
+for i in {1..20}; do
+  if podman run --rm --network "$NETWORK_NAME" "$NEBULA_CONSOLE_IMAGE" \
+    -addr nebula-graphd -port 9669 -u root -p nebula -e 'SHOW HOSTS;' >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+podman run --rm --network "$NETWORK_NAME" "$NEBULA_CONSOLE_IMAGE" \
+  -addr nebula-graphd -port 9669 -u root -p nebula \
+  -e 'ADD HOSTS "nebula-storaged":9779; CREATE SPACE IF NOT EXISTS lumisight_kg(partition_num=10, replica_factor=1, vid_type=FIXED_STRING(256));' >/dev/null
+
 echo "Lumisight 基础设施启动完成。"
 # Nebula Graph 服务端口，用于后续图数据库连接。
 echo "- Nebula GraphD: 127.0.0.1:9669"
