@@ -14,7 +14,6 @@ import com.lumisight.tools.vector.spi.SymbolDocGenerator;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +26,6 @@ import java.util.stream.Stream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
-@Service
 public class VectorIngestService {
 
     private static final String CODE_CHUNK_COLLECTION = "code_chunk";

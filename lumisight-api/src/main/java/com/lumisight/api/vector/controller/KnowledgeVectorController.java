@@ -11,6 +11,7 @@ import com.lumisight.tools.vector.model.VectorBatchIngestResult;
 import com.lumisight.tools.vector.model.VectorIngestResult;
 import com.lumisight.tools.vector.service.VectorIngestService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/lumisight/vector")
 @Slf4j
+@ConditionalOnProperty(prefix = "lumisight.vector", name = "enabled", havingValue = "true")
 public class KnowledgeVectorController {
 
     private final VectorIngestService vectorIngestService;
