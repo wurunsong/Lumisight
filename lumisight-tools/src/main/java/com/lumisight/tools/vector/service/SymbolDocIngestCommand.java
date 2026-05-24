@@ -1,4 +1,4 @@
-package com.lumisight.tools.kg.service;
+package com.lumisight.tools.vector.service;
 
 public record SymbolDocIngestCommand(
         String repoRoot,

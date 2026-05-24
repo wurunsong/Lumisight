@@ -1,4 +1,4 @@
-package com.lumisight.api.kg;
+package com.lumisight.api.vector;
 
 public record SymbolDocIngestRequest(
         String repoRoot,

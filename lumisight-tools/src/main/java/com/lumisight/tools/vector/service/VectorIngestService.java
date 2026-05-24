@@ -1,4 +1,4 @@
-package com.lumisight.tools.kg.service;
+package com.lumisight.tools.vector.service;
 
 import com.lumisight.tools.kg.util.HashUtils;
 import org.springframework.ai.document.Document;

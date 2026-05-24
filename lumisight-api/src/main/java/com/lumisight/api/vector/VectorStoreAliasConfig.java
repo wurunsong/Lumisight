@@ -1,4 +1,4 @@
-package com.lumisight.api.kg;
+package com.lumisight.api.vector;
 
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.annotation.Bean;

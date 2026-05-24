@@ -1,9 +1,9 @@
-package com.lumisight.api.kg;
+package com.lumisight.api.vector;
 
-import com.lumisight.tools.kg.service.CodeChunkIngestCommand;
-import com.lumisight.tools.kg.service.SymbolDocIngestCommand;
-import com.lumisight.tools.kg.service.VectorIngestResult;
-import com.lumisight.tools.kg.service.VectorIngestService;
+import com.lumisight.tools.vector.service.CodeChunkIngestCommand;
+import com.lumisight.tools.vector.service.SymbolDocIngestCommand;
+import com.lumisight.tools.vector.service.VectorIngestResult;
+import com.lumisight.tools.vector.service.VectorIngestService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;

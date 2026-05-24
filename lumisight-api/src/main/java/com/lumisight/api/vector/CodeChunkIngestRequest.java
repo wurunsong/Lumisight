@@ -1,6 +1,6 @@
-package com.lumisight.tools.kg.service;
+package com.lumisight.api.vector;
 
-public record CodeChunkIngestCommand(
+public record CodeChunkIngestRequest(
         String repoRoot,
         String sourceFile,
         String qualifiedName,
