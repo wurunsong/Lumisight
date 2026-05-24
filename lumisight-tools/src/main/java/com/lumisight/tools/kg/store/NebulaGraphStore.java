@@ -215,10 +215,10 @@ public class NebulaGraphStore implements AutoCloseable {
         int safeLimit = Math.max(1, limit);
         ResultSet result = execute(
                 "MATCH (v:" + TAG_KG_NODE + ") " +
-                        "WHERE v.status == 0 " +
-                        "RETURN id(v), v." + TAG_KG_NODE + ".node_type, v." + TAG_KG_NODE + ".name, " +
-                        "v." + TAG_KG_NODE + ".qualified_name, v." + TAG_KG_NODE + ".source_file, " +
-                        "v." + TAG_KG_NODE + ".start_line, v." + TAG_KG_NODE + ".end_line " +
+                        "WHERE properties(v).status == 0 " +
+                        "RETURN id(v), properties(v).node_type, properties(v).name, " +
+                        "properties(v).qualified_name, properties(v).source_file, " +
+                        "properties(v).start_line, properties(v).end_line " +
                         "LIMIT " + safeLimit
         );
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -240,8 +240,8 @@ public class NebulaGraphStore implements AutoCloseable {
         int safeLimit = Math.max(1, limit);
         ResultSet result = execute(
                 "MATCH ()-[e:" + EDGE_KG_REL + "]->() " +
-                        "WHERE e.status == 0 " +
-                        "RETURN src(e), dst(e), e." + EDGE_KG_REL + ".edge_type, e." + EDGE_KG_REL + ".source_file " +
+                        "WHERE properties(e).status == 0 " +
+                        "RETURN src(e), dst(e), properties(e).edge_type, properties(e).source_file " +
                         "LIMIT " + safeLimit
         );
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -259,10 +259,10 @@ public class NebulaGraphStore implements AutoCloseable {
     public Map<String, Object> queryActiveNodeById(String nodeId) {
         ResultSet result = execute(
                 "MATCH (v:" + TAG_KG_NODE + ") " +
-                        "WHERE id(v) == \"" + escape(nodeId) + "\" AND v.status == 0 " +
-                        "RETURN id(v), v." + TAG_KG_NODE + ".node_type, v." + TAG_KG_NODE + ".name, " +
-                        "v." + TAG_KG_NODE + ".qualified_name, v." + TAG_KG_NODE + ".source_file, " +
-                        "v." + TAG_KG_NODE + ".start_line, v." + TAG_KG_NODE + ".end_line " +
+                        "WHERE id(v) == \"" + escape(nodeId) + "\" AND properties(v).status == 0 " +
+                        "RETURN id(v), properties(v).node_type, properties(v).name, " +
+                        "properties(v).qualified_name, properties(v).source_file, " +
+                        "properties(v).start_line, properties(v).end_line " +
                         "LIMIT 1"
         );
         if (result.rowsSize() == 0) {
@@ -282,10 +282,10 @@ public class NebulaGraphStore implements AutoCloseable {
     public Map<String, Object> queryActiveNodeByQualifiedName(String qualifiedName) {
         ResultSet result = execute(
                 "MATCH (v:" + TAG_KG_NODE + ") " +
-                        "WHERE v.status == 0 AND v." + TAG_KG_NODE + ".qualified_name == \"" + escape(qualifiedName) + "\" " +
-                        "RETURN id(v), v." + TAG_KG_NODE + ".node_type, v." + TAG_KG_NODE + ".name, " +
-                        "v." + TAG_KG_NODE + ".qualified_name, v." + TAG_KG_NODE + ".source_file, " +
-                        "v." + TAG_KG_NODE + ".start_line, v." + TAG_KG_NODE + ".end_line " +
+                        "WHERE properties(v).status == 0 AND properties(v).qualified_name == \"" + escape(qualifiedName) + "\" " +
+                        "RETURN id(v), properties(v).node_type, properties(v).name, " +
+                        "properties(v).qualified_name, properties(v).source_file, " +
+                        "properties(v).start_line, properties(v).end_line " +
                         "LIMIT 1"
         );
         if (result.rowsSize() == 0) {
@@ -306,8 +306,8 @@ public class NebulaGraphStore implements AutoCloseable {
         int safeLimit = Math.max(1, limit);
         ResultSet result = execute(
                 "MATCH (a)-[e:" + EDGE_KG_REL + "]-(b) " +
-                        "WHERE id(a) == \"" + escape(nodeId) + "\" AND e.status == 0 " +
-                        "RETURN src(e), dst(e), e." + EDGE_KG_REL + ".edge_type, e." + EDGE_KG_REL + ".source_file " +
+                        "WHERE id(a) == \"" + escape(nodeId) + "\" AND properties(e).status == 0 " +
+                        "RETURN src(e), dst(e), properties(e).edge_type, properties(e).source_file " +
                         "LIMIT " + safeLimit
         );
         List<Map<String, Object>> rows = new ArrayList<>();
