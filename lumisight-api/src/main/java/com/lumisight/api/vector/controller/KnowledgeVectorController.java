@@ -1,9 +1,11 @@
 package com.lumisight.api.vector.controller;
 
 import com.lumisight.api.vector.dto.request.CodeChunkIngestRequest;
+import com.lumisight.api.vector.dto.request.CodeChunkAutoIngestRequest;
 import com.lumisight.api.vector.dto.request.SymbolDocIngestRequest;
 import com.lumisight.tools.vector.model.CodeChunkIngestCommand;
 import com.lumisight.tools.vector.model.SymbolDocIngestCommand;
+import com.lumisight.tools.vector.model.VectorBatchIngestResult;
 import com.lumisight.tools.vector.model.VectorIngestResult;
 import com.lumisight.tools.vector.service.VectorIngestService;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +48,27 @@ public class KnowledgeVectorController {
                 request.gitBranch(),
                 request.gitCommit()
         ));
+    }
+
+    @PostMapping("/code-chunk/ingest-auto")
+    @ResponseStatus(HttpStatus.OK)
+    public VectorBatchIngestResult ingestCodeChunkAuto(@RequestBody CodeChunkAutoIngestRequest request) {
+        validateRequired(request.repoRoot(), "repoRoot");
+        validateRequired(request.sourceFile(), "sourceFile");
+        validateRequired(request.qualifiedName(), "qualifiedName");
+        validateRequired(request.codeText(), "codeText");
+        log.info("Received code chunk auto ingest request, repoRoot={}, sourceFile={}, qualifiedName={}",
+                request.repoRoot(), request.sourceFile(), request.qualifiedName());
+        return vectorIngestService.ingestCodeChunksAuto(
+                request.repoRoot(),
+                request.sourceFile(),
+                request.qualifiedName(),
+                request.codeText(),
+                request.maxChunkChars(),
+                request.overlapChars(),
+                request.gitBranch(),
+                request.gitCommit()
+        );
     }
 
     @PostMapping("/symbol-doc/ingest")
