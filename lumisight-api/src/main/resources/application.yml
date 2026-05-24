@@ -1,6 +1,19 @@
 spring:
   application:
     name: lumisight-api
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      embedding:
+        options:
+          model: text-embedding-3-large
+    vectorstore:
+      milvus:
+        client:
+          host: 127.0.0.1
+          port: 19530
+        initialize-schema: true
+        collection-name: lumisight_vectors
 
 server:
   port: 8080
