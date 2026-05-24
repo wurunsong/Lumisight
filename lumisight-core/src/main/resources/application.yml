@@ -1,10 +1,11 @@
 spring:
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:}
+      api-key: ${CHAT_API_KEY:}
       embedding:
+        api-key: ${EMBEDDING_API_KEY:}
         options:
-          model: text-embedding-3-large
+          model: text-embedding-v3
     vectorstore:
       milvus:
         client:
@@ -14,5 +15,8 @@ spring:
         collection-name: lumisight_vectors
 
 lumisight:
+  ai:
+    chat-api-key: ${CHAT_API_KEY:}
+    embedding-api-key: ${EMBEDDING_API_KEY:}
   vector:
     enabled: false
