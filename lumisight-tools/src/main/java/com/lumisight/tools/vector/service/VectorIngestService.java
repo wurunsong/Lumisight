@@ -13,7 +13,6 @@ import com.lumisight.tools.vector.model.VectorIngestResult;
 import com.lumisight.tools.vector.spi.SymbolDocGenerator;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -33,19 +32,16 @@ public class VectorIngestService {
     private static final String CODE_CHUNK_COLLECTION = "code_chunk";
     private static final String SYMBOL_DOC_COLLECTION = "symbol_doc";
 
-    private final VectorStore codeChunkVectorStore;
-    private final VectorStore symbolDocVectorStore;
+    private final VectorStore vectorStore;
     private final SymbolDocGenerator symbolDocGenerator;
     private final CodeChunkSplitter codeChunkSplitter;
 
     public VectorIngestService(
-            @Qualifier("codeChunkVectorStore") VectorStore codeChunkVectorStore,
-            @Qualifier("symbolDocVectorStore") VectorStore symbolDocVectorStore,
+            VectorStore vectorStore,
             SymbolDocGenerator symbolDocGenerator,
             CodeChunkSplitter codeChunkSplitter
     ) {
-        this.codeChunkVectorStore = codeChunkVectorStore;
-        this.symbolDocVectorStore = symbolDocVectorStore;
+        this.vectorStore = vectorStore;
         this.symbolDocGenerator = symbolDocGenerator;
         this.codeChunkSplitter = codeChunkSplitter;
     }
@@ -69,7 +65,7 @@ public class VectorIngestService {
                         "doc_type", CODE_CHUNK_COLLECTION
                 )
         );
-        codeChunkVectorStore.add(List.of(doc));
+        vectorStore.add(List.of(doc));
         return new VectorIngestResult(CODE_CHUNK_COLLECTION, id, repo, command.qualifiedName());
     }
 
@@ -99,7 +95,7 @@ public class VectorIngestService {
                         "doc_type", SYMBOL_DOC_COLLECTION
                 )
         );
-        symbolDocVectorStore.add(List.of(doc));
+        vectorStore.add(List.of(doc));
         return new VectorIngestResult(SYMBOL_DOC_COLLECTION, id, repo, command.qualifiedName());
     }
 
@@ -140,7 +136,7 @@ public class VectorIngestService {
             ));
         }
         if (!docs.isEmpty()) {
-            codeChunkVectorStore.add(docs);
+            vectorStore.add(docs);
         }
         return new VectorBatchIngestResult(CODE_CHUNK_COLLECTION, repo, sourceFile, docs.size(), ids);
     }
@@ -197,7 +193,7 @@ public class VectorIngestService {
                 }
             } else {
                 for (String relPath : deletedFiles) {
-                    codeChunkVectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
+                    vectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
                 }
                 for (String relPath : changedFiles) {
                     Path javaFile = repo.resolve(relPath);
@@ -205,7 +201,7 @@ public class VectorIngestService {
                         continue;
                     }
                     javaFileCount.incrementAndGet();
-                    codeChunkVectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
+                    vectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
                     parseFileToMethodChunks(
                             repo,
                             repoName,
@@ -223,7 +219,7 @@ public class VectorIngestService {
             throw new IllegalStateException("Failed to incrementally ingest repo code chunks: " + repo, e);
         }
         if (!docs.isEmpty()) {
-            codeChunkVectorStore.add(docs);
+            vectorStore.add(docs);
         }
         writeBaselineCommit(metaFile, currentCommit);
         return new RepoCodeChunkIngestResult(
