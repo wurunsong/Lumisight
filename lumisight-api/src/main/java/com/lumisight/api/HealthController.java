@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/lumisight")
 public class HealthController {
 
     private final OrchestrationService orchestrationService;

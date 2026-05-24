@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
-@RequestMapping("/api/kg")
+@RequestMapping("/api/lumisight/kg")
 @Slf4j
 public class KnowledgeGraphController {
 
