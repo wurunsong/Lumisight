@@ -1,6 +1,8 @@
 spring:
   application:
     name: lumisight-api
+  config:
+    import: optional:classpath:lumisight-core.yml
 
 server:
   port: 8080
@@ -22,3 +24,4 @@ logging:
   level:
     com.lumisight: INFO
     com.lumisight.tools.kg: DEBUG
+    com.lumisight.tools.vector: DEBUG

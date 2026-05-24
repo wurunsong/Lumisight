@@ -7,6 +7,20 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心能力包括
 - JDK 21
 - Maven 3.9+
 
+## 启动前环境变量
+
+启动 `lumisight-api` 前请先配置以下两个 Key（不要写入仓库文件）：
+
+- `CHAT_API_KEY`：聊天模型 Key（DeepSeek）
+- `EMBEDDING_API_KEY`：向量 Embedding Key（阿里云 DashScope）
+
+示例：
+
+```bash
+export CHAT_API_KEY="<your-chat-key>"
+export EMBEDDING_API_KEY="<your-embedding-key>"
+```
+
 ## 第一步：本地启动外挂知识库（Podman）
 
 > 说明：正式开发 Agent 之前，需要先构建并启动 NebulaGraph + Milvus。

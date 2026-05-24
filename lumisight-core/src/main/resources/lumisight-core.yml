@@ -1,28 +1,37 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
   ai:
     model:
-      chat: deepseek-v4-flash
+      chat: openai
       audio:
         speech: none
         transcription: none
       moderation: none
     openai:
-      api-key: ${CHAT_API_KEY:}
+      base-url: ${CHAT_BASE_URL:https://api.deepseek.com}
+      api-key: ${CHAT_API_KEY:${OPENAI_API_KEY:}}
+      chat:
+        options:
+          model: ${CHAT_MODEL:deepseek-chat}
       embedding:
+        base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+        embeddings-path: ${EMBEDDING_PATH:/v1/embeddings}
         api-key: ${EMBEDDING_API_KEY:}
         options:
-          model: text-embedding-v3
+          model: ${EMBEDDING_MODEL:text-embedding-v3}
     vectorstore:
       milvus:
         client:
           host: 127.0.0.1
           port: 19530
         initialize-schema: true
-        collection-name: lumisight_vectors
+        collection-name: lumisight_vectors_1024
 
 lumisight:
   ai:
     chat-api-key: ${CHAT_API_KEY:}
     embedding-api-key: ${EMBEDDING_API_KEY:}
   vector:
-    enabled: false
+    enabled: true

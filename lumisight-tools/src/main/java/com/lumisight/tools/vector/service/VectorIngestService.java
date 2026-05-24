@@ -14,6 +14,8 @@ import com.lumisight.tools.vector.spi.SymbolDocGenerator;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,8 +30,12 @@ import java.io.InputStreamReader;
 
 public class VectorIngestService {
 
+    private static final Logger log = LoggerFactory.getLogger(VectorIngestService.class);
+
     private static final String CODE_CHUNK_COLLECTION = "code_chunk";
     private static final String SYMBOL_DOC_COLLECTION = "symbol_doc";
+    // DashScope-compatible embedding endpoints accept at most 10 inputs per request.
+    private static final int MAX_EMBEDDING_BATCH_SIZE = 10;
 
     private final VectorStore codeChunkVectorStore;
     private final VectorStore symbolDocVectorStore;
@@ -138,7 +144,7 @@ public class VectorIngestService {
             ));
         }
         if (!docs.isEmpty()) {
-            codeChunkVectorStore.add(docs);
+            addInBatches(codeChunkVectorStore, docs, MAX_EMBEDDING_BATCH_SIZE);
         }
         return new VectorBatchIngestResult(CODE_CHUNK_COLLECTION, repo, sourceFile, docs.size(), ids);
     }
@@ -150,12 +156,15 @@ public class VectorIngestService {
             String gitBranch,
             String gitCommit
     ) {
+        log.info("Vector ingest start, repoRoot={}, maxChunkChars={}, overlapChars={}, gitBranch={}, gitCommit={}",
+                repoRoot, maxChunkChars, overlapChars, gitBranch, gitCommit);
         Path repo = Path.of(repoRoot).toAbsolutePath().normalize();
         String repoName = repo.getFileName().toString();
         String currentCommit = resolveCommit(repo, gitCommit);
         Path metaFile = repo.resolve(".lumisight/vector_last_commit.txt");
         String baselineCommit = readBaselineCommit(metaFile);
         if (currentCommit.equals(baselineCommit)) {
+            log.info("Vector ingest skipped: baselineCommit equals currentCommit, commit={}", currentCommit);
             return new RepoCodeChunkIngestResult(
                     CODE_CHUNK_COLLECTION,
                     repo.toString(),
@@ -170,9 +179,12 @@ public class VectorIngestService {
 
         List<String> changedFiles = collectChangedJavaFiles(repo, baselineCommit, currentCommit);
         List<String> deletedFiles = collectDeletedJavaFiles(repo, baselineCommit, currentCommit);
+        log.info("Vector ingest commit diff, baselineCommit={}, currentCommit={}, changedJavaFiles={}, deletedJavaFiles={}",
+                baselineCommit, currentCommit, changedFiles.size(), deletedFiles.size());
         List<Document> docs = new ArrayList<>();
         AtomicInteger javaFileCount = new AtomicInteger();
         AtomicInteger methodCount = new AtomicInteger();
+        AtomicInteger parseErrorCount = new AtomicInteger();
         try {
             if (baselineCommit == null || baselineCommit.isBlank()) {
                 try (Stream<Path> stream = Files.walk(repo)) {
@@ -180,6 +192,7 @@ public class VectorIngestService {
                             .filter(p -> p.toString().endsWith(".java"))
                             .forEach(javaFile -> {
                                 javaFileCount.incrementAndGet();
+                                log.debug("Parsing java file: {}", javaFile);
                                 parseFileToMethodChunks(
                                         repo,
                                         repoName,
@@ -189,12 +202,14 @@ public class VectorIngestService {
                                         gitBranch,
                                         currentCommit,
                                         docs,
-                                        methodCount
+                                        methodCount,
+                                        parseErrorCount
                                 );
                             });
                 }
             } else {
                 for (String relPath : deletedFiles) {
+                    log.debug("Deleting vectors for removed file: {}", relPath);
                     codeChunkVectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
                 }
                 for (String relPath : changedFiles) {
@@ -203,6 +218,7 @@ public class VectorIngestService {
                         continue;
                     }
                     javaFileCount.incrementAndGet();
+                    log.debug("Re-parsing changed file: {}", relPath);
                     codeChunkVectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
                     parseFileToMethodChunks(
                             repo,
@@ -213,17 +229,29 @@ public class VectorIngestService {
                             gitBranch,
                             currentCommit,
                             docs,
-                            methodCount
+                            methodCount,
+                            parseErrorCount
                     );
                 }
             }
         } catch (Exception e) {
             throw new IllegalStateException("Failed to incrementally ingest repo code chunks: " + repo, e);
         }
+
+        // If we had files to process but extracted no chunks, fail fast instead of returning misleading success.
+        if (docs.isEmpty() && (javaFileCount.get() > 0 || !changedFiles.isEmpty())) {
+            throw new IllegalStateException("Vector ingest produced zero chunks. parsedJavaFiles=" + javaFileCount.get()
+                    + ", changedJavaFiles=" + changedFiles.size()
+                    + ", parseErrors=" + parseErrorCount.get());
+        }
+
         if (!docs.isEmpty()) {
-            codeChunkVectorStore.add(docs);
+            log.info("Vector ingest write start, docs={}, batchSize={}", docs.size(), MAX_EMBEDDING_BATCH_SIZE);
+            addInBatches(codeChunkVectorStore, docs, MAX_EMBEDDING_BATCH_SIZE);
         }
         writeBaselineCommit(metaFile, currentCommit);
+        log.info("Vector ingest done, repo={}, javaFiles={}, methods={}, docs={}, deletedFiles={}, parseErrors={}",
+                repo, javaFileCount.get(), methodCount.get(), docs.size(), deletedFiles.size(), parseErrorCount.get());
         return new RepoCodeChunkIngestResult(
                 CODE_CHUNK_COLLECTION,
                 repo.toString(),
@@ -245,13 +273,16 @@ public class VectorIngestService {
             String gitBranch,
             String gitCommit,
             List<Document> docs,
-            AtomicInteger methodCount
+            AtomicInteger methodCount,
+            AtomicInteger parseErrorCount
     ) {
         String sourceFile = repo.relativize(javaFile).toString();
         CompilationUnit cu;
         try {
             cu = StaticJavaParser.parse(javaFile);
         } catch (Exception e) {
+            parseErrorCount.incrementAndGet();
+            log.warn("Skip java file due to parse error, file={}, reason={}", sourceFile, e.getMessage());
             return;
         }
         String pkg = cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("default");
@@ -293,10 +324,21 @@ public class VectorIngestService {
                 ));
             }
         });
+        log.debug("Parsed file done, sourceFile={}, methodsSoFar={}, docsSoFar={}", sourceFile, methodCount.get(), docs.size());
     }
 
     private String stableDocId(String type, String qualifiedName, String gitCommit, String sourceFile) {
-        return type + "_" + HashUtils.sha256Hex(type + "|" + qualifiedName + "|" + gitCommit + "|" + sourceFile);
+        // Keep doc_id short to satisfy existing Milvus VarChar max_length constraints.
+        return HashUtils.sha256Hex(type + "|" + qualifiedName + "|" + gitCommit + "|" + sourceFile)
+                .substring(0, 32);
+    }
+
+    private void addInBatches(VectorStore store, List<Document> docs, int batchSize) {
+        for (int i = 0; i < docs.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, docs.size());
+            log.debug("Vector batch add, from={}, to={}, batchSize={}", i, end, end - i);
+            store.add(docs.subList(i, end));
+        }
     }
 
     private String resolveCommit(Path repo, String gitCommit) {

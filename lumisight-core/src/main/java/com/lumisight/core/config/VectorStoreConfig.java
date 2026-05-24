@@ -19,7 +19,7 @@ public class VectorStoreConfig {
     @Bean("codeChunkVectorStore")
     public VectorStore codeChunkVectorStore(MilvusServiceClient milvusClient, EmbeddingModel embeddingModel) {
         return MilvusVectorStore.builder(milvusClient, embeddingModel)
-                .collectionName("code_chunk")
+                .collectionName("code_chunk_1024")
                 .initializeSchema(true)
                 .build();
     }
@@ -27,7 +27,7 @@ public class VectorStoreConfig {
     @Bean("symbolDocVectorStore")
     public VectorStore symbolDocVectorStore(MilvusServiceClient milvusClient, EmbeddingModel embeddingModel) {
         return MilvusVectorStore.builder(milvusClient, embeddingModel)
-                .collectionName("symbol_doc")
+                .collectionName("symbol_doc_1024")
                 .initializeSchema(true)
                 .build();
     }
