@@ -256,6 +256,72 @@ public class NebulaGraphStore implements AutoCloseable {
         return rows;
     }
 
+    public Map<String, Object> queryActiveNodeById(String nodeId) {
+        ResultSet result = execute(
+                "MATCH (v:" + TAG_KG_NODE + ") " +
+                        "WHERE id(v) == \"" + escape(nodeId) + "\" AND v.status == 0 " +
+                        "RETURN id(v), v." + TAG_KG_NODE + ".node_type, v." + TAG_KG_NODE + ".name, " +
+                        "v." + TAG_KG_NODE + ".qualified_name, v." + TAG_KG_NODE + ".source_file, " +
+                        "v." + TAG_KG_NODE + ".start_line, v." + TAG_KG_NODE + ".end_line " +
+                        "LIMIT 1"
+        );
+        if (result.rowsSize() == 0) {
+            return null;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", valueAt(result, 0, 0));
+        row.put("nodeType", valueAt(result, 0, 1));
+        row.put("name", valueAt(result, 0, 2));
+        row.put("qualifiedName", valueAt(result, 0, 3));
+        row.put("sourceFile", valueAt(result, 0, 4));
+        row.put("startLine", valueAt(result, 0, 5));
+        row.put("endLine", valueAt(result, 0, 6));
+        return row;
+    }
+
+    public Map<String, Object> queryActiveNodeByQualifiedName(String qualifiedName) {
+        ResultSet result = execute(
+                "MATCH (v:" + TAG_KG_NODE + ") " +
+                        "WHERE v.status == 0 AND v." + TAG_KG_NODE + ".qualified_name == \"" + escape(qualifiedName) + "\" " +
+                        "RETURN id(v), v." + TAG_KG_NODE + ".node_type, v." + TAG_KG_NODE + ".name, " +
+                        "v." + TAG_KG_NODE + ".qualified_name, v." + TAG_KG_NODE + ".source_file, " +
+                        "v." + TAG_KG_NODE + ".start_line, v." + TAG_KG_NODE + ".end_line " +
+                        "LIMIT 1"
+        );
+        if (result.rowsSize() == 0) {
+            return null;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", valueAt(result, 0, 0));
+        row.put("nodeType", valueAt(result, 0, 1));
+        row.put("name", valueAt(result, 0, 2));
+        row.put("qualifiedName", valueAt(result, 0, 3));
+        row.put("sourceFile", valueAt(result, 0, 4));
+        row.put("startLine", valueAt(result, 0, 5));
+        row.put("endLine", valueAt(result, 0, 6));
+        return row;
+    }
+
+    public List<Map<String, Object>> queryActiveAdjacentEdges(String nodeId, int limit) {
+        int safeLimit = Math.max(1, limit);
+        ResultSet result = execute(
+                "MATCH (a)-[e:" + EDGE_KG_REL + "]-(b) " +
+                        "WHERE id(a) == \"" + escape(nodeId) + "\" AND e.status == 0 " +
+                        "RETURN src(e), dst(e), e." + EDGE_KG_REL + ".edge_type, e." + EDGE_KG_REL + ".source_file " +
+                        "LIMIT " + safeLimit
+        );
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < result.rowsSize(); i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("from", valueAt(result, i, 0));
+            row.put("to", valueAt(result, i, 1));
+            row.put("edgeType", valueAt(result, i, 2));
+            row.put("sourceFile", valueAt(result, i, 3));
+            rows.add(row);
+        }
+        return rows;
+    }
+
     private void initSchema() {
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +

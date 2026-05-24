@@ -2,6 +2,8 @@ package com.lumisight.api.kg;
 
 import com.lumisight.tools.kg.service.KnowledgeGraphBuildResult;
 import com.lumisight.tools.kg.service.KnowledgeGraphBuildService;
+import com.lumisight.tools.kg.service.KnowledgeGraphQueryResult;
+import com.lumisight.tools.kg.service.KnowledgeGraphQueryService;
 import com.lumisight.tools.kg.service.KnowledgeGraphViewResult;
 import com.lumisight.tools.kg.service.KnowledgeGraphViewService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,10 +22,16 @@ import org.springframework.web.server.ResponseStatusException;
 public class KnowledgeGraphController {
 
     private final KnowledgeGraphBuildService buildService;
+    private final KnowledgeGraphQueryService queryService;
     private final KnowledgeGraphViewService viewService;
 
-    public KnowledgeGraphController(KnowledgeGraphBuildService buildService, KnowledgeGraphViewService viewService) {
+    public KnowledgeGraphController(
+            KnowledgeGraphBuildService buildService,
+            KnowledgeGraphQueryService queryService,
+            KnowledgeGraphViewService viewService
+    ) {
         this.buildService = buildService;
+        this.queryService = queryService;
         this.viewService = viewService;
     }
 
@@ -53,6 +61,35 @@ public class KnowledgeGraphController {
         KnowledgeGraphViewResult result = viewService.view(request.repoRoot(), request.nodeLimit(), request.edgeLimit());
         log.info("KG view request done, gitCommit={}, nodes={}, edges={}",
                 result.gitCommit(), result.nodeCount(), result.edgeCount());
+        return result;
+    }
+
+    @PostMapping("/query")
+    @ResponseStatus(HttpStatus.OK)
+    public KnowledgeGraphQueryResult query(@RequestBody KnowledgeGraphQueryRequest request) {
+        log.info("Received KG query request, repoRoot={}, nodeId={}, qualifiedName={}, edgeLimit={}",
+                request.repoRoot(), request.nodeId(), request.qualifiedName(), request.edgeLimit());
+        if (!StringUtils.hasText(request.repoRoot())) {
+            log.warn("Reject KG query request: repoRoot is empty");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "repoRoot is required");
+        }
+        if (!StringUtils.hasText(request.nodeId()) && !StringUtils.hasText(request.qualifiedName())) {
+            log.warn("Reject KG query request: both nodeId and qualifiedName are empty");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "nodeId or qualifiedName is required");
+        }
+        KnowledgeGraphQueryResult result = queryService.query(
+                request.repoRoot(),
+                request.nodeId(),
+                request.qualifiedName(),
+                request.edgeLimit()
+        );
+        if (result.centerNode() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "node not found");
+        }
+        log.info("KG query request done, gitCommit={}, centerNodeId={}, edges={}",
+                result.gitCommit(),
+                result.centerNode() == null ? null : result.centerNode().get("id"),
+                result.edgeCount());
         return result;
     }
 }
