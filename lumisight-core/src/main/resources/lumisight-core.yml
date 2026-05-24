@@ -1,7 +1,7 @@
 spring:
   ai:
     model:
-      chat: none
+      chat: deepseek-v4-flash
       audio:
         speech: none
         transcription: none
