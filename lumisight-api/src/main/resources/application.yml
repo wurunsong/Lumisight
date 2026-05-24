@@ -1,20 +1,6 @@
 spring:
   application:
     name: lumisight-api
-  config:
-    import: optional:classpath:lumisight-core.yml
-  ai:
-    openai:
-      api-key: ${CHAT_API_KEY:}
-      embedding:
-        api-key: ${EMBEDDING_API_KEY:}
-        options:
-          model: text-embedding-v3
-#  autoconfigure:
-#    exclude:
-#      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
-#      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
-#      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
 
 server:
   port: 8080
