@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 @Service
 public class VectorIngestService {
@@ -152,38 +154,87 @@ public class VectorIngestService {
     ) {
         Path repo = Path.of(repoRoot).toAbsolutePath().normalize();
         String repoName = repo.getFileName().toString();
+        String currentCommit = resolveCommit(repo, gitCommit);
+        Path metaFile = repo.resolve(".lumisight/vector_last_commit.txt");
+        String baselineCommit = readBaselineCommit(metaFile);
+        if (currentCommit.equals(baselineCommit)) {
+            return new RepoCodeChunkIngestResult(
+                    CODE_CHUNK_COLLECTION,
+                    repo.toString(),
+                    baselineCommit,
+                    currentCommit,
+                    0,
+                    0,
+                    0,
+                    0
+            );
+        }
+
+        List<String> changedFiles = collectChangedJavaFiles(repo, baselineCommit, currentCommit);
+        List<String> deletedFiles = collectDeletedJavaFiles(repo, baselineCommit, currentCommit);
         List<Document> docs = new ArrayList<>();
         AtomicInteger javaFileCount = new AtomicInteger();
         AtomicInteger methodCount = new AtomicInteger();
-        try (Stream<Path> stream = Files.walk(repo)) {
-            stream.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".java"))
-                    .forEach(javaFile -> {
-                        javaFileCount.incrementAndGet();
-                        parseFileToMethodChunks(
-                                repo,
-                                repoName,
-                                javaFile,
-                                maxChunkChars,
-                                overlapChars,
-                                gitBranch,
-                                gitCommit,
-                                docs,
-                                methodCount
-                        );
-                    });
+        try {
+            if (baselineCommit == null || baselineCommit.isBlank()) {
+                try (Stream<Path> stream = Files.walk(repo)) {
+                    stream.filter(Files::isRegularFile)
+                            .filter(p -> p.toString().endsWith(".java"))
+                            .forEach(javaFile -> {
+                                javaFileCount.incrementAndGet();
+                                parseFileToMethodChunks(
+                                        repo,
+                                        repoName,
+                                        javaFile,
+                                        maxChunkChars,
+                                        overlapChars,
+                                        gitBranch,
+                                        currentCommit,
+                                        docs,
+                                        methodCount
+                                );
+                            });
+                }
+            } else {
+                for (String relPath : deletedFiles) {
+                    codeChunkVectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
+                }
+                for (String relPath : changedFiles) {
+                    Path javaFile = repo.resolve(relPath);
+                    if (!Files.exists(javaFile)) {
+                        continue;
+                    }
+                    javaFileCount.incrementAndGet();
+                    codeChunkVectorStore.delete("repo_root == '" + escapeFilter(repo.toString()) + "' && source_file == '" + escapeFilter(relPath) + "'");
+                    parseFileToMethodChunks(
+                            repo,
+                            repoName,
+                            javaFile,
+                            maxChunkChars,
+                            overlapChars,
+                            gitBranch,
+                            currentCommit,
+                            docs,
+                            methodCount
+                    );
+                }
+            }
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to ingest repo code chunks: " + repo, e);
+            throw new IllegalStateException("Failed to incrementally ingest repo code chunks: " + repo, e);
         }
         if (!docs.isEmpty()) {
             codeChunkVectorStore.add(docs);
         }
+        writeBaselineCommit(metaFile, currentCommit);
         return new RepoCodeChunkIngestResult(
                 CODE_CHUNK_COLLECTION,
                 repo.toString(),
+                baselineCommit,
+                currentCommit,
                 javaFileCount.get(),
                 methodCount.get(),
-                docs.size()
+                docs.size(),
+                deletedFiles.size()
         );
     }
 
@@ -248,5 +299,111 @@ public class VectorIngestService {
 
     private String stableDocId(String type, String qualifiedName, String gitCommit, String sourceFile) {
         return type + "_" + HashUtils.sha256Hex(type + "|" + qualifiedName + "|" + gitCommit + "|" + sourceFile);
+    }
+
+    private String resolveCommit(Path repo, String gitCommit) {
+        if (gitCommit != null && !gitCommit.isBlank() && !"HEAD".equalsIgnoreCase(gitCommit)) {
+            return gitCommit;
+        }
+        return runGit(repo, "rev-parse", "HEAD");
+    }
+
+    private List<String> collectChangedJavaFiles(Path repo, String baselineCommit, String currentCommit) {
+        if (baselineCommit == null || baselineCommit.isBlank()) {
+            return List.of();
+        }
+        List<String> lines = runGitLines(repo, "diff", "--name-status", baselineCommit + ".." + currentCommit, "--", "*.java");
+        List<String> files = new ArrayList<>();
+        for (String line : lines) {
+            String[] parts = line.split("\\s+");
+            if (parts.length < 2) {
+                continue;
+            }
+            String status = parts[0];
+            if (status.startsWith("D")) {
+                continue;
+            }
+            String path = parts[parts.length - 1];
+            files.add(path);
+        }
+        return files;
+    }
+
+    private List<String> collectDeletedJavaFiles(Path repo, String baselineCommit, String currentCommit) {
+        if (baselineCommit == null || baselineCommit.isBlank()) {
+            return List.of();
+        }
+        List<String> lines = runGitLines(repo, "diff", "--name-status", baselineCommit + ".." + currentCommit, "--", "*.java");
+        List<String> files = new ArrayList<>();
+        for (String line : lines) {
+            String[] parts = line.split("\\s+");
+            if (parts.length < 2) {
+                continue;
+            }
+            if (!parts[0].startsWith("D")) {
+                continue;
+            }
+            files.add(parts[1]);
+        }
+        return files;
+    }
+
+    private String readBaselineCommit(Path metaFile) {
+        try {
+            if (!Files.exists(metaFile)) {
+                return null;
+            }
+            String value = Files.readString(metaFile).trim();
+            return value.isBlank() ? null : value;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void writeBaselineCommit(Path metaFile, String commit) {
+        try {
+            Files.createDirectories(metaFile.getParent());
+            Files.writeString(metaFile, commit == null ? "" : commit);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to write vector baseline commit: " + metaFile, e);
+        }
+    }
+
+    private String runGit(Path repo, String... args) {
+        List<String> lines = runGitLines(repo, args);
+        if (lines.isEmpty()) {
+            throw new IllegalStateException("git output empty: " + String.join(" ", args));
+        }
+        return lines.get(0).trim();
+    }
+
+    private List<String> runGitLines(Path repo, String... args) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder();
+            List<String> cmd = new ArrayList<>();
+            cmd.add("git");
+            cmd.addAll(List.of(args));
+            pb.command(cmd);
+            pb.directory(repo.toFile());
+            Process process = pb.start();
+            List<String> lines = new ArrayList<>();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    lines.add(line);
+                }
+            }
+            int exit = process.waitFor();
+            if (exit != 0) {
+                throw new IllegalStateException("git command failed: " + String.join(" ", cmd));
+            }
+            return lines;
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to run git command", e);
+        }
+    }
+
+    private String escapeFilter(String value) {
+        return value.replace("\\", "\\\\").replace("'", "\\'");
     }
 }
