@@ -1,5 +1,6 @@
 package com.lumisight.tools.kg.service;
 
+import com.lumisight.tools.kg.dto.KnowledgeGraphBuildResult;
 import com.lumisight.tools.kg.model.GraphSnapshot;
 import org.springframework.stereotype.Service;
 

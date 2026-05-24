@@ -1,14 +1,13 @@
-package com.lumisight.tools.kg.service;
+package com.lumisight.tools.kg.dto;
 
 import java.util.List;
 import java.util.Map;
 
-public record KnowledgeGraphViewResult(
+public record KnowledgeGraphQueryResult(
         String repoRoot,
         String gitCommit,
-        int nodeCount,
+        Map<String, Object> centerNode,
         int edgeCount,
-        List<Map<String, Object>> nodes,
         List<Map<String, Object>> edges
 ) {
 }

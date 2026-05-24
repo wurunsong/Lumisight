@@ -1,6 +1,7 @@
 package com.lumisight.tools.kg.service;
 
 import com.lumisight.tools.kg.config.NebulaProperties;
+import com.lumisight.tools.kg.dto.KnowledgeGraphViewResult;
 import com.lumisight.tools.kg.store.NebulaGraphStore;
 import org.springframework.stereotype.Service;
 

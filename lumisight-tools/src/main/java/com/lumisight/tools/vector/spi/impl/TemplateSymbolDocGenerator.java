@@ -1,5 +1,6 @@
-package com.lumisight.tools.vector.service;
+package com.lumisight.tools.vector.spi.impl;
 
+import com.lumisight.tools.vector.spi.SymbolDocGenerator;
 import org.springframework.stereotype.Component;
 
 @Component

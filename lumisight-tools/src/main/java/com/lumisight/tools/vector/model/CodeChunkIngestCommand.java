@@ -1,4 +1,4 @@
-package com.lumisight.tools.vector.service;
+package com.lumisight.tools.vector.model;
 
 public record CodeChunkIngestCommand(
         String repoRoot,

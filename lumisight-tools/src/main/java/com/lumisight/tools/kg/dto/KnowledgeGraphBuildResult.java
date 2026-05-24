@@ -1,4 +1,4 @@
-package com.lumisight.tools.kg.service;
+package com.lumisight.tools.kg.dto;
 
 public record KnowledgeGraphBuildResult(
         String repoRoot,

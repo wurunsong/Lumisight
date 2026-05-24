@@ -1,4 +1,4 @@
-package com.lumisight.api.kg;
+package com.lumisight.api.kg.dto.request;
 
 public record KnowledgeGraphQueryRequest(
         String repoRoot,

@@ -1,4 +1,4 @@
-package com.lumisight.api.vector;
+package com.lumisight.api.vector.dto.request;
 
 public record CodeChunkIngestRequest(
         String repoRoot,

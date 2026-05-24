@@ -1,6 +1,10 @@
 package com.lumisight.tools.vector.service;
 
 import com.lumisight.tools.kg.util.HashUtils;
+import com.lumisight.tools.vector.model.CodeChunkIngestCommand;
+import com.lumisight.tools.vector.model.SymbolDocIngestCommand;
+import com.lumisight.tools.vector.model.VectorIngestResult;
+import com.lumisight.tools.vector.spi.SymbolDocGenerator;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;

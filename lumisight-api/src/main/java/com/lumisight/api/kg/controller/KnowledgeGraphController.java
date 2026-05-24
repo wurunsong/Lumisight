@@ -1,10 +1,13 @@
-package com.lumisight.api.kg;
+package com.lumisight.api.kg.controller;
 
-import com.lumisight.tools.kg.service.KnowledgeGraphBuildResult;
+import com.lumisight.api.kg.dto.request.KnowledgeGraphBuildRequest;
+import com.lumisight.api.kg.dto.request.KnowledgeGraphQueryRequest;
+import com.lumisight.api.kg.dto.request.KnowledgeGraphViewRequest;
+import com.lumisight.tools.kg.dto.KnowledgeGraphBuildResult;
+import com.lumisight.tools.kg.dto.KnowledgeGraphQueryResult;
+import com.lumisight.tools.kg.dto.KnowledgeGraphViewResult;
 import com.lumisight.tools.kg.service.KnowledgeGraphBuildService;
-import com.lumisight.tools.kg.service.KnowledgeGraphQueryResult;
 import com.lumisight.tools.kg.service.KnowledgeGraphQueryService;
-import com.lumisight.tools.kg.service.KnowledgeGraphViewResult;
 import com.lumisight.tools.kg.service.KnowledgeGraphViewService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

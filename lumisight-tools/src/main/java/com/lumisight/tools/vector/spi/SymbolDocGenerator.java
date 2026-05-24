@@ -1,4 +1,4 @@
-package com.lumisight.tools.vector.service;
+package com.lumisight.tools.vector.spi;
 
 public interface SymbolDocGenerator {
 
