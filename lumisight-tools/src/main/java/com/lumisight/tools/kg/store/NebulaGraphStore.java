@@ -11,10 +11,12 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.UnsupportedEncodingException;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Locale;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -209,6 +211,51 @@ public class NebulaGraphStore implements AutoCloseable {
         }
     }
 
+    public List<Map<String, Object>> queryActiveNodes(int limit) {
+        int safeLimit = Math.max(1, limit);
+        ResultSet result = execute(
+                "MATCH (v:" + TAG_KG_NODE + ") " +
+                        "WHERE v.status == 0 " +
+                        "RETURN id(v), v." + TAG_KG_NODE + ".node_type, v." + TAG_KG_NODE + ".name, " +
+                        "v." + TAG_KG_NODE + ".qualified_name, v." + TAG_KG_NODE + ".source_file, " +
+                        "v." + TAG_KG_NODE + ".start_line, v." + TAG_KG_NODE + ".end_line " +
+                        "LIMIT " + safeLimit
+        );
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < result.rowsSize(); i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", valueAt(result, i, 0));
+            row.put("nodeType", valueAt(result, i, 1));
+            row.put("name", valueAt(result, i, 2));
+            row.put("qualifiedName", valueAt(result, i, 3));
+            row.put("sourceFile", valueAt(result, i, 4));
+            row.put("startLine", valueAt(result, i, 5));
+            row.put("endLine", valueAt(result, i, 6));
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    public List<Map<String, Object>> queryActiveEdges(int limit) {
+        int safeLimit = Math.max(1, limit);
+        ResultSet result = execute(
+                "MATCH ()-[e:" + EDGE_KG_REL + "]->() " +
+                        "WHERE e.status == 0 " +
+                        "RETURN src(e), dst(e), e." + EDGE_KG_REL + ".edge_type, e." + EDGE_KG_REL + ".source_file " +
+                        "LIMIT " + safeLimit
+        );
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < result.rowsSize(); i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("from", valueAt(result, i, 0));
+            row.put("to", valueAt(result, i, 1));
+            row.put("edgeType", valueAt(result, i, 2));
+            row.put("sourceFile", valueAt(result, i, 3));
+            rows.add(row);
+        }
+        return rows;
+    }
+
     private void initSchema() {
         execute("CREATE TAG IF NOT EXISTS " + TAG_KG_NODE + "(" +
                 "node_id string, node_type string, name string, qualified_name string, source_file string, repo_name string, " +
@@ -303,6 +350,22 @@ public class NebulaGraphStore implements AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for Nebula space readiness", e);
+        }
+    }
+
+    private static Object valueAt(ResultSet result, int rowIndex, int colIndex) {
+        try {
+            return result.rowValues(rowIndex).get(colIndex).asString();
+        } catch (Exception ignored) {
+            try {
+                return result.rowValues(rowIndex).get(colIndex).asLong();
+            } catch (Exception ignored2) {
+                try {
+                    return result.rowValues(rowIndex).get(colIndex).asBoolean();
+                } catch (Exception ignored3) {
+                    return String.valueOf(result.rowValues(rowIndex).get(colIndex));
+                }
+            }
         }
     }
 
