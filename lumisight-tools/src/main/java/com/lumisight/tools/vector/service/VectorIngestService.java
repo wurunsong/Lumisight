@@ -1,7 +1,12 @@
 package com.lumisight.tools.vector.service;
 
+import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.lumisight.tools.kg.util.HashUtils;
 import com.lumisight.tools.vector.model.CodeChunkIngestCommand;
+import com.lumisight.tools.vector.model.RepoCodeChunkIngestResult;
 import com.lumisight.tools.vector.model.SymbolDocIngestCommand;
 import com.lumisight.tools.vector.model.VectorBatchIngestResult;
 import com.lumisight.tools.vector.model.VectorIngestResult;
@@ -11,9 +16,14 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 @Service
 public class VectorIngestService {
@@ -131,6 +141,109 @@ public class VectorIngestService {
             codeChunkVectorStore.add(docs);
         }
         return new VectorBatchIngestResult(CODE_CHUNK_COLLECTION, repo, sourceFile, docs.size(), ids);
+    }
+
+    public RepoCodeChunkIngestResult ingestRepoCodeChunks(
+            String repoRoot,
+            Integer maxChunkChars,
+            Integer overlapChars,
+            String gitBranch,
+            String gitCommit
+    ) {
+        Path repo = Path.of(repoRoot).toAbsolutePath().normalize();
+        String repoName = repo.getFileName().toString();
+        List<Document> docs = new ArrayList<>();
+        AtomicInteger javaFileCount = new AtomicInteger();
+        AtomicInteger methodCount = new AtomicInteger();
+        try (Stream<Path> stream = Files.walk(repo)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".java"))
+                    .forEach(javaFile -> {
+                        javaFileCount.incrementAndGet();
+                        parseFileToMethodChunks(
+                                repo,
+                                repoName,
+                                javaFile,
+                                maxChunkChars,
+                                overlapChars,
+                                gitBranch,
+                                gitCommit,
+                                docs,
+                                methodCount
+                        );
+                    });
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to ingest repo code chunks: " + repo, e);
+        }
+        if (!docs.isEmpty()) {
+            codeChunkVectorStore.add(docs);
+        }
+        return new RepoCodeChunkIngestResult(
+                CODE_CHUNK_COLLECTION,
+                repo.toString(),
+                javaFileCount.get(),
+                methodCount.get(),
+                docs.size()
+        );
+    }
+
+    private void parseFileToMethodChunks(
+            Path repo,
+            String repoName,
+            Path javaFile,
+            Integer maxChunkChars,
+            Integer overlapChars,
+            String gitBranch,
+            String gitCommit,
+            List<Document> docs,
+            AtomicInteger methodCount
+    ) {
+        String sourceFile = repo.relativize(javaFile).toString();
+        CompilationUnit cu;
+        try {
+            cu = StaticJavaParser.parse(javaFile);
+        } catch (Exception e) {
+            return;
+        }
+        String pkg = cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("default");
+        cu.findAll(MethodDeclaration.class).forEach(method -> {
+            Optional<ClassOrInterfaceDeclaration> ownerClass = method.findAncestor(ClassOrInterfaceDeclaration.class);
+            if (ownerClass.isEmpty()) {
+                return;
+            }
+            methodCount.incrementAndGet();
+            String className = ownerClass.get().getNameAsString();
+            String qualifiedName = pkg + "." + className + "#" + method.getNameAsString() + "(" + method.getParameters().size() + ")";
+            String methodText = method.toString();
+            int methodStartLine = method.getBegin().map(p -> p.line).orElse(0);
+            int methodEndLine = method.getEnd().map(p -> p.line).orElse(methodStartLine);
+            List<CodeChunkSplitter.ChunkSlice> slices = codeChunkSplitter.split(methodText, maxChunkChars, overlapChars);
+            if (slices.isEmpty()) {
+                slices = List.of(new CodeChunkSplitter.ChunkSlice(methodText, 1, Math.max(1, methodEndLine - methodStartLine + 1)));
+            }
+            for (int i = 0; i < slices.size(); i++) {
+                CodeChunkSplitter.ChunkSlice slice = slices.get(i);
+                String chunkQualifiedName = slices.size() == 1 ? qualifiedName : qualifiedName + "#chunk" + (i + 1);
+                int startLine = methodStartLine <= 0 ? 0 : methodStartLine + slice.startLine() - 1;
+                int endLine = methodStartLine <= 0 ? 0 : methodStartLine + slice.endLine() - 1;
+                String id = stableDocId(CODE_CHUNK_COLLECTION, chunkQualifiedName, gitCommit, sourceFile);
+                docs.add(new Document(
+                        id,
+                        slice.text(),
+                        Map.of(
+                                "repo_root", repo.toString(),
+                                "repo_name", repoName,
+                                "source_file", sourceFile,
+                                "qualified_name", chunkQualifiedName,
+                                "start_line", startLine,
+                                "end_line", endLine,
+                                "git_branch", gitBranch == null ? "" : gitBranch,
+                                "git_commit", gitCommit == null ? "" : gitCommit,
+                                "doc_type", CODE_CHUNK_COLLECTION
+                        )
+                ));
+            }
+        });
     }
 
     private String stableDocId(String type, String qualifiedName, String gitCommit, String sourceFile) {

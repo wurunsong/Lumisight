@@ -2,8 +2,10 @@ package com.lumisight.api.vector.controller;
 
 import com.lumisight.api.vector.dto.request.CodeChunkIngestRequest;
 import com.lumisight.api.vector.dto.request.CodeChunkAutoIngestRequest;
+import com.lumisight.api.vector.dto.request.RepoCodeChunkIngestRequest;
 import com.lumisight.api.vector.dto.request.SymbolDocIngestRequest;
 import com.lumisight.tools.vector.model.CodeChunkIngestCommand;
+import com.lumisight.tools.vector.model.RepoCodeChunkIngestResult;
 import com.lumisight.tools.vector.model.SymbolDocIngestCommand;
 import com.lumisight.tools.vector.model.VectorBatchIngestResult;
 import com.lumisight.tools.vector.model.VectorIngestResult;
@@ -64,6 +66,20 @@ public class KnowledgeVectorController {
                 request.sourceFile(),
                 request.qualifiedName(),
                 request.codeText(),
+                request.maxChunkChars(),
+                request.overlapChars(),
+                request.gitBranch(),
+                request.gitCommit()
+        );
+    }
+
+    @PostMapping("/code-chunk/ingest-repo")
+    @ResponseStatus(HttpStatus.OK)
+    public RepoCodeChunkIngestResult ingestRepoCodeChunks(@RequestBody RepoCodeChunkIngestRequest request) {
+        validateRequired(request.repoRoot(), "repoRoot");
+        log.info("Received repo code chunk ingest request, repoRoot={}", request.repoRoot());
+        return vectorIngestService.ingestRepoCodeChunks(
+                request.repoRoot(),
                 request.maxChunkChars(),
                 request.overlapChars(),
                 request.gitBranch(),
