@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -240,12 +241,17 @@ public class CodeAssistantAgentService {
         }
         List<AgentContextItem> results = tool.invoke(args, limit);
         if ("searchHybridVector".equals(toolName)) {
-            results = enrichGraphAndSource(results, limit);
+            results = enrichGraphAndSource(results, limit, decision, toolName);
         }
         return results;
     }
 
-    private List<AgentContextItem> enrichGraphAndSource(List<AgentContextItem> vectorResults, int limit) {
+    private List<AgentContextItem> enrichGraphAndSource(
+            List<AgentContextItem> vectorResults,
+            int limit,
+            ToolDecision decision,
+            String toolName
+    ) {
         List<AgentContextItem> enriched = new ArrayList<>(vectorResults);
         for (AgentContextItem item : vectorResults) {
             Object kgNodeIdValue = item.metadata() == null ? null : item.metadata().get("kg_node_id");
@@ -275,7 +281,11 @@ public class CodeAssistantAgentService {
                 ));
             }
         }
-        return enriched;
+        String userQuestion = stringValue(decision.args() == null ? null : decision.args().get("naturalLanguageQuery"));
+        if (!StringUtils.hasText(userQuestion)) {
+            userQuestion = stringValue(decision.args() == null ? null : decision.args().get("codeQuery"));
+        }
+        return filterRelevantContexts(userQuestion, enriched, limit, toolName);
     }
 
     private List<AgentContextItem> denied(String toolName) {
@@ -299,6 +309,68 @@ public class CodeAssistantAgentService {
             return number.intValue();
         }
         return Integer.parseInt(String.valueOf(value));
+    }
+
+    private List<AgentContextItem> filterRelevantContexts(
+            String userQuestion,
+            List<AgentContextItem> contexts,
+            int limit,
+            String toolName
+    ) {
+        if (!StringUtils.hasText(userQuestion) || contexts.isEmpty()) {
+            return contexts;
+        }
+        String prompt = buildRelevanceFilterPrompt(userQuestion, contexts, limit, toolName);
+        String raw = chatClient.prompt()
+                .system("你是检索重排序器。只输出JSON，不输出其他文本。")
+                .user(prompt)
+                .call()
+                .content();
+        try {
+            List<Integer> indexes = objectMapper.readValue(extractJsonArray(raw), objectMapper.getTypeFactory().constructCollectionType(List.class, Integer.class));
+            if (indexes == null || indexes.isEmpty()) {
+                return contexts;
+            }
+            Set<Integer> selected = new LinkedHashSet<>(indexes);
+            List<AgentContextItem> filtered = new ArrayList<>();
+            for (Integer index : selected) {
+                if (index == null || index < 0 || index >= contexts.size()) {
+                    continue;
+                }
+                filtered.add(contexts.get(index));
+            }
+            return filtered.isEmpty() ? contexts : filtered;
+        } catch (Exception ignored) {
+            return contexts;
+        }
+    }
+
+    private String buildRelevanceFilterPrompt(String userQuestion, List<AgentContextItem> contexts, int limit, String toolName) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("用户问题: ").append(userQuestion).append("\n");
+        builder.append("来源工具: ").append(toolName).append("\n");
+        builder.append("最多保留条数: ").append(Math.max(1, limit * 2)).append("\n\n");
+        builder.append("候选上下文(按数组下标):\n");
+        for (int i = 0; i < contexts.size(); i++) {
+            AgentContextItem item = contexts.get(i);
+            builder.append("[").append(i).append("] ")
+                    .append(item.sourceType()).append(" / ").append(item.sourceId()).append("\n")
+                    .append(item.content()).append("\n");
+        }
+        builder.append("\n请仅返回 JSON 数组，如 [0,3,5]，表示按相关性保留的下标。");
+        return builder.toString();
+    }
+
+    private String extractJsonArray(String raw) {
+        if (raw == null) {
+            return "[]";
+        }
+        int start = raw.indexOf('[');
+        int end = raw.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            return raw.substring(start, end + 1);
+        }
+        return "[]";
     }
 
     private record ToolDecision(
