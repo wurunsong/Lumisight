@@ -1,5 +1,6 @@
 package com.lumisight.core.agent.service;
 
+import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.model.AgentContextItem;
 import com.lumisight.core.agent.port.CommentVectorContextProvider;
 import com.lumisight.core.agent.tool.AgentToolPermission;

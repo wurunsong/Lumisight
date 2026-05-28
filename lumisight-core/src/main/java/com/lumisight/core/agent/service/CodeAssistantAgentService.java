@@ -4,6 +4,7 @@ import com.lumisight.core.agent.model.AgentContextItem;
 import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
+import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.port.KnowledgeGraphContextProvider;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.PermissionedAgentTool;
