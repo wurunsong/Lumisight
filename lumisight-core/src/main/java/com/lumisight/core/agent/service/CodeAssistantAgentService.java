@@ -26,7 +26,8 @@ public class CodeAssistantAgentService {
             AgentToolPermission.COMMENT_VECTOR_READ
     );
     private static final Set<AgentToolPermission> DEFAULT_KG_TOOL_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.KG_ONE_HOP_READ
+            AgentToolPermission.KG_ONE_HOP_READ,
+            AgentToolPermission.METHOD_SOURCE_READ
     );
 
     private final ChatClient chatClient;
