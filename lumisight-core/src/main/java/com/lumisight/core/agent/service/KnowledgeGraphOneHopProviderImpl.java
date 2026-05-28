@@ -14,6 +14,8 @@ import java.util.Map;
 @ConditionalOnMissingBean(KnowledgeGraphOneHopProvider.class)
 public class KnowledgeGraphOneHopProviderImpl implements KnowledgeGraphOneHopProvider {
 
+    private static final String METHOD_NODE_TYPE = "METHOD";
+
     private final KnowledgeGraphQueryService knowledgeGraphQueryService;
 
     public KnowledgeGraphOneHopProviderImpl(KnowledgeGraphQueryService knowledgeGraphQueryService) {
@@ -31,17 +33,48 @@ public class KnowledgeGraphOneHopProviderImpl implements KnowledgeGraphOneHopPro
                     Map.of("repoRoot", repoRoot, "kgNodeId", kgNodeId)
             ));
         }
+        if (!isMethodNode(result.centerNode())) {
+            return List.of(new AgentContextItem(
+                    "knowledge_graph_one_hop",
+                    String.valueOf(result.centerNode().get("id")),
+                    "中心节点不是方法节点，已按限制跳过",
+                    Map.of(
+                            "repoRoot", result.repoRoot(),
+                            "gitCommit", result.gitCommit(),
+                            "requiredNodeType", METHOD_NODE_TYPE,
+                            "actualNodeType", String.valueOf(result.centerNode().get("nodeType"))
+                    )
+            ));
+        }
 
-        String content = "centerNode=" + result.centerNode() + "\n" + "adjacentEdges=" + result.edges();
+        String centerNodeId = String.valueOf(result.centerNode().get("id"));
+        List<Map<String, Object>> methodAdjacentEdges = result.edges().stream()
+                .filter(edge -> isMethodNeighbor(repoRoot, centerNodeId, edge))
+                .toList();
+
+        String content = "centerNode=" + result.centerNode() + "\n" + "adjacentEdges=" + methodAdjacentEdges;
         return List.of(new AgentContextItem(
                 "knowledge_graph_one_hop",
-                String.valueOf(result.centerNode().get("id")),
+                centerNodeId,
                 content,
                 Map.of(
                         "repoRoot", result.repoRoot(),
                         "gitCommit", result.gitCommit(),
-                        "edgeCount", result.edgeCount()
+                        "edgeCount", methodAdjacentEdges.size(),
+                        "nodeTypeFilter", METHOD_NODE_TYPE
                 )
         ));
+    }
+
+    private boolean isMethodNeighbor(String repoRoot, String centerNodeId, Map<String, Object> edge) {
+        String from = String.valueOf(edge.get("from"));
+        String to = String.valueOf(edge.get("to"));
+        String neighborNodeId = centerNodeId.equals(from) ? to : from;
+        KnowledgeGraphQueryResult neighbor = knowledgeGraphQueryService.query(repoRoot, neighborNodeId, null, 1);
+        return neighbor.centerNode() != null && isMethodNode(neighbor.centerNode());
+    }
+
+    private boolean isMethodNode(Map<String, Object> node) {
+        return METHOD_NODE_TYPE.equalsIgnoreCase(String.valueOf(node.get("nodeType")));
     }
 }
