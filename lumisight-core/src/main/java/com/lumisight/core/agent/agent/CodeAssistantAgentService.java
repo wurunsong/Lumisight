@@ -3,8 +3,6 @@ package com.lumisight.core.agent.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.agent.model.AgentContextItem;
 import com.lumisight.core.agent.model.AgentRequest;
-import com.lumisight.core.agent.model.AgentResponse;
-import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.model.ToolDecision;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.support.AgentPromptService;
@@ -16,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -48,18 +47,25 @@ public class CodeAssistantAgentService {
         this.agentPromptService = agentPromptService;
     }
 
-    public AgentResponse run(AgentRequest request) {
+    public Flux<String> run(AgentRequest request) {
         AgentRequestValidators.validate(request);
 
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();
+        String directAnswer = null;
 
-        String answer;
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
-            answer = runManualOrchestration(request, contexts, limit);
+            directAnswer = runManualOrchestration(request, contexts, limit);
         }
-
-        return new AgentResponse(answer, contexts);
+        if (StringUtils.hasText(directAnswer)) {
+            return Flux.just(directAnswer);
+        }
+        String finalPrompt = agentPromptService.buildFinalAnswerPrompt(request, contexts, limit);
+        return llmChatClient.prompt()
+                .system(agentPromptService.systemPrompt(request.taskType()))
+                .user(finalPrompt)
+                .stream()
+                .content();
     }
 
     private String runManualOrchestration(AgentRequest request, List<AgentContextItem> contexts, int limit) {
@@ -86,12 +92,7 @@ public class CodeAssistantAgentService {
             }
             contexts.addAll(toolResult);
         }
-
-        return llmChatClient.prompt()
-                .system(agentPromptService.systemPrompt(request.taskType()))
-                .user(agentPromptService.buildFinalAnswerPrompt(request, contexts, limit))
-                .call()
-                .content();
+        return null;
     }
 
     private Set<AgentToolPermission> enabledPermissions(AgentRequest request) {
