@@ -25,6 +25,9 @@ public class CodeAssistantAgentService {
             AgentToolPermission.CODE_VECTOR_READ,
             AgentToolPermission.COMMENT_VECTOR_READ
     );
+    private static final Set<AgentToolPermission> DEFAULT_KG_TOOL_PERMISSIONS = EnumSet.of(
+            AgentToolPermission.KG_ONE_HOP_READ
+    );
 
     private final ChatClient chatClient;
     private final List<PermissionedAgentTool> permissionedAgentTools;
@@ -88,13 +91,19 @@ public class CodeAssistantAgentService {
 
     private ChatClient.ChatClientRequestSpec buildPrompt(AgentRequest request, int limit) {
         ChatClient.ChatClientRequestSpec spec = chatClient.prompt();
+        Set<AgentToolPermission> enabledPermissions = EnumSet.noneOf(AgentToolPermission.class);
         if (request.includeRagContext()) {
-            Object[] enabledTools = permissionedAgentTools.stream()
-                    .filter(tool -> DEFAULT_RAG_TOOL_PERMISSIONS.contains(tool.permission()))
-                    .toArray();
-            if (enabledTools.length > 0) {
-                spec = spec.tools(enabledTools);
-            }
+            enabledPermissions.addAll(DEFAULT_RAG_TOOL_PERMISSIONS);
+        }
+        if (request.includeKnowledgeGraphContext()) {
+            enabledPermissions.addAll(DEFAULT_KG_TOOL_PERMISSIONS);
+        }
+
+        Object[] enabledTools = permissionedAgentTools.stream()
+                .filter(tool -> enabledPermissions.contains(tool.permission()))
+                .toArray();
+        if (enabledTools.length > 0) {
+            spec = spec.tools(enabledTools);
         }
         return spec.advisors(advisorSpec -> advisorSpec.param("repoRoot", request.repoRoot()).param("contextLimit", limit));
     }
