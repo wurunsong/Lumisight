@@ -1,4 +1,4 @@
-package com.lumisight.core.agent.agent;
+package com.lumisight.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.agent.model.AgentContextItem;

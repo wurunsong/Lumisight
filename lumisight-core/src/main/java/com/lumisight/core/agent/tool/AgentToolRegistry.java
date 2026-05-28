@@ -20,7 +20,7 @@ public class AgentToolRegistry {
         for (AgentToolCategory category : AgentToolCategory.values()) {
             List<PermissionedAgentTool> categoryTools = tools.stream()
                     .filter(tool -> tool.category() == category)
-                    .toList();
+                    .collect(Collectors.toList());
             this.toolsByCategory.put(category, categoryTools);
         }
     }
