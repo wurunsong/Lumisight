@@ -101,6 +101,7 @@ public class KnowledgeVectorController {
                 request.repoRoot(),
                 request.sourceFile(),
                 request.qualifiedName(),
+                request.kgNodeId(),
                 request.symbolSignature(),
                 request.codeContext(),
                 request.symbolDocText(),

@@ -4,6 +4,7 @@ public record SymbolDocIngestCommand(
         String repoRoot,
         String sourceFile,
         String qualifiedName,
+        String kgNodeId,
         String symbolSignature,
         String codeContext,
         String symbolDocText,

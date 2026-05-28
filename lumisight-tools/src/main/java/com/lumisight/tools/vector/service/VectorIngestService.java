@@ -97,6 +97,7 @@ public class VectorIngestService {
                         "repo_name", repoName,
                         "source_file", command.sourceFile(),
                         "qualified_name", command.qualifiedName(),
+                        "kg_node_id", command.kgNodeId() == null ? "" : command.kgNodeId(),
                         "symbol_signature", command.symbolSignature() == null ? "" : command.symbolSignature(),
                         "git_branch", command.gitBranch() == null ? "" : command.gitBranch(),
                         "git_commit", command.gitCommit() == null ? "" : command.gitCommit(),
