@@ -7,7 +7,6 @@ import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.model.ToolDecision;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
-import com.lumisight.core.agent.support.AgentContextEnrichmentService;
 import com.lumisight.core.agent.support.AgentPromptService;
 import com.lumisight.core.agent.support.AgentRequestValidators;
 import com.lumisight.core.agent.tool.AgentToolPermission;
@@ -36,20 +35,17 @@ public class CodeAssistantAgentService {
     private final ChatClient llmChatClient;
     private final AgentToolRegistry agentToolRegistry;
     private final AgentPromptService agentPromptService;
-    private final AgentContextEnrichmentService enrichmentService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public CodeAssistantAgentService(
             ChatClient.Builder chatClientBuilder,
             AgentToolRegistry agentToolRegistry,
-            AgentPromptService agentPromptService,
-            AgentContextEnrichmentService enrichmentService
+            AgentPromptService agentPromptService
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
         this.agentPromptService = agentPromptService;
-        this.enrichmentService = enrichmentService;
     }
 
     public AgentResponse run(AgentRequest request) {
@@ -142,11 +138,7 @@ public class CodeAssistantAgentService {
         if (!enabledPermissions.contains(tool.permission())) {
             return denied(toolName);
         }
-        List<AgentContextItem> results = tool.invoke(args, limit);
-        if ("searchHybridVector".equals(toolName)) {
-            results = enrichmentService.enrichAndFilter(llmChatClient, results, limit, decision.args(), toolName);
-        }
-        return results;
+        return tool.invoke(args, limit);
     }
 
     private List<AgentContextItem> denied(String toolName) {
