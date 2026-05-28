@@ -26,10 +26,11 @@ public class CodeVectorSearchTool implements PermissionedAgentTool {
 
     @Tool(description = "在代码向量库中检索上下文。适用于包含代码片段、报错堆栈、类名/方法名/字段名、调用链、实现细节的问题。若输入偏代码语义，应优先调用该工具。")
     public List<AgentContextItem> searchCodeVector(
-            @ToolParam(description = "代码仓绝对路径，例如 /Users/xxx/project") String repoRoot,
             @ToolParam(description = "代码导向查询内容，可直接传用户问题或代码片段") String query,
             @ToolParam(description = "最多返回多少条上下文，建议 3-10") Integer limit
     ) {
-        return codeVectorContextProvider.retrieveByCode(repoRoot, query, limit);
+        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        int finalLimit = limit == null ? context.defaultLimit() : limit;
+        return codeVectorContextProvider.retrieveByCode(context.repoRoot(), query, finalLimit);
     }
 }

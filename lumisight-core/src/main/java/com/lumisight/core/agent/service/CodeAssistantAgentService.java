@@ -49,11 +49,14 @@ public class CodeAssistantAgentService {
             contexts.addAll(knowledgeGraphContextProvider.retrieve(request.repoRoot(), request.question(), limit));
         }
 
-        String answer = buildPrompt(request, limit)
-                .system(systemPrompt(request.taskType()))
-                .user(buildUserPrompt(request, contexts, limit))
-                .call()
-                .content();
+        String answer;
+        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
+            answer = buildPrompt(request, limit)
+                    .system(systemPrompt(request.taskType()))
+                    .user(buildUserPrompt(request, contexts, limit))
+                    .call()
+                    .content();
+        }
 
         return new AgentResponse(answer, contexts);
     }
