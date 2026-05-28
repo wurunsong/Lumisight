@@ -6,7 +6,6 @@ import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
-import com.lumisight.core.agent.port.KnowledgeGraphContextProvider;
 import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.AgentToolRegistry;
@@ -38,18 +37,15 @@ public class CodeAssistantAgentService {
 
     private final ChatClient chatClient;
     private final AgentToolRegistry agentToolRegistry;
-    private final KnowledgeGraphContextProvider knowledgeGraphContextProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public CodeAssistantAgentService(
             ChatClient.Builder chatClientBuilder,
-            AgentToolRegistry agentToolRegistry,
-            KnowledgeGraphContextProvider knowledgeGraphContextProvider
+            AgentToolRegistry agentToolRegistry
     ) {
         this.chatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
-        this.knowledgeGraphContextProvider = knowledgeGraphContextProvider;
     }
 
     public AgentResponse run(AgentRequest request) {
@@ -57,10 +53,6 @@ public class CodeAssistantAgentService {
 
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();
-
-        if (request.includeKnowledgeGraphContext()) {
-            contexts.addAll(knowledgeGraphContextProvider.retrieve(request.repoRoot(), request.question(), limit));
-        }
 
         String answer;
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
