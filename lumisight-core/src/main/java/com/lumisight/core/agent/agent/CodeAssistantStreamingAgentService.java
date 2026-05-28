@@ -1,9 +1,10 @@
 package com.lumisight.core.agent.agent;
 
 import com.lumisight.core.agent.model.AgentRequest;
+import com.lumisight.core.agent.support.AgentPromptService;
+import com.lumisight.core.agent.support.AgentRequestValidators;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
 @Service
@@ -23,7 +24,7 @@ public class CodeAssistantStreamingAgentService {
     }
 
     public Flux<String> stream(AgentRequest request) {
-        validateRequest(request);
+        AgentRequestValidators.validate(request);
 
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(request, java.util.List.of(), limit);
@@ -35,18 +36,4 @@ public class CodeAssistantStreamingAgentService {
                 .content();
     }
 
-    private void validateRequest(AgentRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("request must not be null");
-        }
-        if (!StringUtils.hasText(request.repoRoot())) {
-            throw new IllegalArgumentException("repoRoot must not be blank");
-        }
-        if (!StringUtils.hasText(request.question())) {
-            throw new IllegalArgumentException("question must not be blank");
-        }
-        if (request.taskType() == null) {
-            throw new IllegalArgumentException("taskType must not be null");
-        }
-    }
 }

@@ -9,6 +9,7 @@ import com.lumisight.core.agent.model.ToolDecision;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.support.AgentContextEnrichmentService;
 import com.lumisight.core.agent.support.AgentPromptService;
+import com.lumisight.core.agent.support.AgentRequestValidators;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.AgentToolRegistry;
 import com.lumisight.core.agent.tool.PermissionedAgentTool;
@@ -52,7 +53,7 @@ public class CodeAssistantAgentService {
     }
 
     public AgentResponse run(AgentRequest request) {
-        validateRequest(request);
+        AgentRequestValidators.validate(request);
 
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();
@@ -63,21 +64,6 @@ public class CodeAssistantAgentService {
         }
 
         return new AgentResponse(answer, contexts);
-    }
-
-    private void validateRequest(AgentRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("request must not be null");
-        }
-        if (!StringUtils.hasText(request.repoRoot())) {
-            throw new IllegalArgumentException("repoRoot must not be blank");
-        }
-        if (!StringUtils.hasText(request.question())) {
-            throw new IllegalArgumentException("question must not be blank");
-        }
-        if (request.taskType() == null) {
-            throw new IllegalArgumentException("taskType must not be null");
-        }
     }
 
     private String runManualOrchestration(AgentRequest request, List<AgentContextItem> contexts, int limit) {
