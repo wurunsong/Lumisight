@@ -1,0 +1,117 @@
+package com.lumisight.core.agent.service;
+
+import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.AgentRequest;
+import com.lumisight.core.agent.model.AgentResponse;
+import com.lumisight.core.agent.model.AgentTaskType;
+import com.lumisight.core.agent.port.KnowledgeGraphContextProvider;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+public class CodeAssistantAgentService {
+
+    private static final int DEFAULT_CONTEXT_LIMIT = 5;
+
+    private final ChatClient chatClient;
+    private final VectorSearchTools vectorSearchTools;
+    private final KnowledgeGraphContextProvider knowledgeGraphContextProvider;
+
+    public CodeAssistantAgentService(
+            ChatClient.Builder chatClientBuilder,
+            VectorSearchTools vectorSearchTools,
+            KnowledgeGraphContextProvider knowledgeGraphContextProvider
+    ) {
+        this.chatClient = chatClientBuilder.build();
+        this.vectorSearchTools = vectorSearchTools;
+        this.knowledgeGraphContextProvider = knowledgeGraphContextProvider;
+    }
+
+    public AgentResponse run(AgentRequest request) {
+        validateRequest(request);
+
+        int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
+        List<AgentContextItem> contexts = new ArrayList<>();
+
+        if (request.includeKnowledgeGraphContext()) {
+            contexts.addAll(knowledgeGraphContextProvider.retrieve(request.repoRoot(), request.question(), limit));
+        }
+
+        String answer = buildPrompt(request, limit)
+                .system(systemPrompt(request.taskType()))
+                .user(buildUserPrompt(request, contexts, limit))
+                .call()
+                .content();
+
+        return new AgentResponse(answer, contexts);
+    }
+
+    private void validateRequest(AgentRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
+        if (!StringUtils.hasText(request.repoRoot())) {
+            throw new IllegalArgumentException("repoRoot must not be blank");
+        }
+        if (!StringUtils.hasText(request.question())) {
+            throw new IllegalArgumentException("question must not be blank");
+        }
+        if (request.taskType() == null) {
+            throw new IllegalArgumentException("taskType must not be null");
+        }
+    }
+
+    private String systemPrompt(AgentTaskType taskType) {
+        if (taskType == AgentTaskType.BUG_FIX) {
+            return "你是一名资深 Java 工程师。请聚焦根因分析、低风险修复方案和可验证的补丁建议。"
+                    + "输出要结构清晰，先给结论，再给依据。";
+        }
+        return "你是一名资深 Java 工程师。请清晰解释代码意图、架构关系、控制流程和关键取舍。"
+                + "解释要贴近工程实践，并尽量给出可落地建议。";
+    }
+
+    private ChatClient.ChatClientRequestSpec buildPrompt(AgentRequest request, int limit) {
+        ChatClient.ChatClientRequestSpec spec = chatClient.prompt();
+        if (request.includeRagContext()) {
+            spec = spec.tools(vectorSearchTools);
+        }
+        return spec.advisors(advisorSpec -> advisorSpec.param("repoRoot", request.repoRoot()).param("contextLimit", limit));
+    }
+
+    private String buildUserPrompt(
+            AgentRequest request,
+            List<AgentContextItem> contexts,
+            int limit
+    ) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("TaskType: ").append(request.taskType()).append("\n");
+        builder.append("RepoRoot: ").append(request.repoRoot()).append("\n");
+        builder.append("ContextLimit: ").append(limit).append("\n");
+        builder.append("用户问题: ").append(request.question()).append("\n\n");
+        if (request.includeRagContext()) {
+            builder.append("工具调用规则:\n");
+            builder.append("- 如果问题是自然语言描述（如“这段逻辑是做什么的”），调用工具 searchCommentVector(repoRoot, query, contextLimit)。\n");
+            builder.append("- 如果问题包含代码片段、报错栈、符号级细节（类名/方法名/字段名），调用工具 searchCodeVector(repoRoot, query, contextLimit)。\n\n");
+        }
+        builder.append("已检索上下文:\n");
+        if (contexts.isEmpty()) {
+            builder.append("- 无\n");
+        } else {
+            for (AgentContextItem context : contexts) {
+                builder.append("- [")
+                        .append(context.sourceType())
+                        .append("] ")
+                        .append(context.sourceId())
+                        .append("\n")
+                        .append(context.content())
+                        .append("\n");
+            }
+        }
+        builder.append("\n请使用中文回答，并给出可执行的下一步建议。");
+        return builder.toString();
+    }
+}
