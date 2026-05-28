@@ -7,12 +7,11 @@ import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.port.KnowledgeGraphContextProvider;
+import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
+import com.lumisight.core.agent.tool.AgentToolRegistry;
 import com.lumisight.core.agent.tool.PermissionedAgentTool;
-import com.lumisight.core.agent.tool.impl.CodeVectorSearchTool;
-import com.lumisight.core.agent.tool.impl.CommentVectorSearchTool;
-import com.lumisight.core.agent.tool.impl.KnowledgeGraphOneHopTool;
-import com.lumisight.core.agent.tool.impl.MethodSourceLookupTool;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -20,7 +19,6 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -39,30 +37,19 @@ public class CodeAssistantAgentService {
     );
 
     private final ChatClient chatClient;
-    private final List<PermissionedAgentTool> permissionedAgentTools;
+    private final AgentToolRegistry agentToolRegistry;
     private final KnowledgeGraphContextProvider knowledgeGraphContextProvider;
-    private final CodeVectorSearchTool codeVectorSearchTool;
-    private final CommentVectorSearchTool commentVectorSearchTool;
-    private final KnowledgeGraphOneHopTool knowledgeGraphOneHopTool;
-    private final MethodSourceLookupTool methodSourceLookupTool;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Autowired
     public CodeAssistantAgentService(
             ChatClient.Builder chatClientBuilder,
-            List<PermissionedAgentTool> permissionedAgentTools,
-            KnowledgeGraphContextProvider knowledgeGraphContextProvider,
-            CodeVectorSearchTool codeVectorSearchTool,
-            CommentVectorSearchTool commentVectorSearchTool,
-            KnowledgeGraphOneHopTool knowledgeGraphOneHopTool,
-            MethodSourceLookupTool methodSourceLookupTool
+            AgentToolRegistry agentToolRegistry,
+            KnowledgeGraphContextProvider knowledgeGraphContextProvider
     ) {
         this.chatClient = chatClientBuilder.build();
-        this.permissionedAgentTools = permissionedAgentTools;
+        this.agentToolRegistry = agentToolRegistry;
         this.knowledgeGraphContextProvider = knowledgeGraphContextProvider;
-        this.codeVectorSearchTool = codeVectorSearchTool;
-        this.commentVectorSearchTool = commentVectorSearchTool;
-        this.knowledgeGraphOneHopTool = knowledgeGraphOneHopTool;
-        this.methodSourceLookupTool = methodSourceLookupTool;
     }
 
     public AgentResponse run(AgentRequest request) {
@@ -212,17 +199,13 @@ public class CodeAssistantAgentService {
 
     private String enabledToolHints(Set<AgentToolPermission> enabledPermissions) {
         StringBuilder builder = new StringBuilder();
-        if (enabledPermissions.contains(AgentToolPermission.CODE_VECTOR_READ)) {
-            builder.append("- searchCodeVector(query, limit): 代码向量召回\n");
-        }
-        if (enabledPermissions.contains(AgentToolPermission.COMMENT_VECTOR_READ)) {
-            builder.append("- searchCommentVector(query, limit): 注释文档向量召回\n");
-        }
-        if (enabledPermissions.contains(AgentToolPermission.KG_ONE_HOP_READ)) {
-            builder.append("- fetchOneHopByKgNodeId(kgNodeId, limit): 图谱一跳\n");
-        }
-        if (enabledPermissions.contains(AgentToolPermission.METHOD_SOURCE_READ)) {
-            builder.append("- fetchMethodSourceByLocation(sourceFile, startLine, endLine): 源码片段回查\n");
+        List<AgentToolCategory> categories = List.of(AgentToolCategory.RAG, AgentToolCategory.GRAPH, AgentToolCategory.SOURCE);
+        for (AgentToolCategory category : categories) {
+            for (PermissionedAgentTool tool : agentToolRegistry.getByCategory(category)) {
+                if (enabledPermissions.contains(tool.permission())) {
+                    builder.append("- ").append(tool.toolName()).append("(...): ").append(category).append(" 类型工具\n");
+                }
+            }
         }
         return builder.toString();
     }
@@ -251,29 +234,19 @@ public class CodeAssistantAgentService {
     private List<AgentContextItem> executeTool(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit) {
         String toolName = decision.toolName() == null ? "" : decision.toolName().trim();
         Map<String, Object> args = decision.args() == null ? Map.of() : decision.args();
-        return switch (toolName) {
-            case "searchCodeVector" -> enabledPermissions.contains(AgentToolPermission.CODE_VECTOR_READ)
-                    ? codeVectorSearchTool.searchCodeVector(stringArg(args, "query"), intArg(args, "limit", limit))
-                    : denied(toolName);
-            case "searchCommentVector" -> enabledPermissions.contains(AgentToolPermission.COMMENT_VECTOR_READ)
-                    ? commentVectorSearchTool.searchCommentVector(stringArg(args, "query"), intArg(args, "limit", limit))
-                    : denied(toolName);
-            case "fetchOneHopByKgNodeId" -> enabledPermissions.contains(AgentToolPermission.KG_ONE_HOP_READ)
-                    ? knowledgeGraphOneHopTool.fetchOneHopByKgNodeId(stringArg(args, "kgNodeId"), intArg(args, "limit", limit))
-                    : denied(toolName);
-            case "fetchMethodSourceByLocation" -> enabledPermissions.contains(AgentToolPermission.METHOD_SOURCE_READ)
-                    ? methodSourceLookupTool.fetchMethodSourceByLocation(
-                    stringArg(args, "sourceFile"),
-                    intArgNullable(args, "startLine"),
-                    intArgNullable(args, "endLine")
-            ) : denied(toolName);
-            default -> List.of(new AgentContextItem(
+        PermissionedAgentTool tool = agentToolRegistry.get(toolName);
+        if (tool == null) {
+            return List.of(new AgentContextItem(
                     "tool_error",
                     "unknown_tool",
                     "未知工具: " + toolName,
                     Map.of("toolName", toolName)
             ));
-        };
+        }
+        if (!enabledPermissions.contains(tool.permission())) {
+            return denied(toolName);
+        }
+        return tool.invoke(args, limit);
     }
 
     private List<AgentContextItem> denied(String toolName) {
@@ -283,31 +256,6 @@ public class CodeAssistantAgentService {
                 "工具未启用: " + toolName,
                 Map.of("toolName", toolName)
         ));
-    }
-
-    private String stringArg(Map<String, Object> args, String key) {
-        Object value = args.get(key);
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private Integer intArg(Map<String, Object> args, String key, int defaultValue) {
-        Integer value = intArgNullable(args, key);
-        return value == null ? defaultValue : value;
-    }
-
-    private Integer intArgNullable(Map<String, Object> args, String key) {
-        Object value = args.get(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        String text = String.valueOf(value).trim().toLowerCase(Locale.ROOT);
-        if (text.isBlank()) {
-            return null;
-        }
-        return Integer.parseInt(text);
     }
 
     private record ToolDecision(
