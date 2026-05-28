@@ -5,29 +5,37 @@ import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.port.KnowledgeGraphContextProvider;
+import com.lumisight.core.agent.tool.AgentToolPermission;
+import com.lumisight.core.agent.tool.PermissionedAgentTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class CodeAssistantAgentService {
 
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
+    private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
+            AgentToolPermission.CODE_VECTOR_READ,
+            AgentToolPermission.COMMENT_VECTOR_READ
+    );
 
     private final ChatClient chatClient;
-    private final VectorSearchTools vectorSearchTools;
+    private final List<PermissionedAgentTool> permissionedAgentTools;
     private final KnowledgeGraphContextProvider knowledgeGraphContextProvider;
 
     public CodeAssistantAgentService(
             ChatClient.Builder chatClientBuilder,
-            VectorSearchTools vectorSearchTools,
+            List<PermissionedAgentTool> permissionedAgentTools,
             KnowledgeGraphContextProvider knowledgeGraphContextProvider
     ) {
         this.chatClient = chatClientBuilder.build();
-        this.vectorSearchTools = vectorSearchTools;
+        this.permissionedAgentTools = permissionedAgentTools;
         this.knowledgeGraphContextProvider = knowledgeGraphContextProvider;
     }
 
@@ -77,7 +85,12 @@ public class CodeAssistantAgentService {
     private ChatClient.ChatClientRequestSpec buildPrompt(AgentRequest request, int limit) {
         ChatClient.ChatClientRequestSpec spec = chatClient.prompt();
         if (request.includeRagContext()) {
-            spec = spec.tools(vectorSearchTools);
+            Object[] enabledTools = permissionedAgentTools.stream()
+                    .filter(tool -> DEFAULT_RAG_TOOL_PERMISSIONS.contains(tool.permission()))
+                    .toArray();
+            if (enabledTools.length > 0) {
+                spec = spec.tools(enabledTools);
+            }
         }
         return spec.advisors(advisorSpec -> advisorSpec.param("repoRoot", request.repoRoot()).param("contextLimit", limit));
     }
