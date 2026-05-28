@@ -6,6 +6,8 @@ import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
+import com.lumisight.core.agent.port.KnowledgeGraphOneHopProvider;
+import com.lumisight.core.agent.port.SourceCodeLookupProvider;
 import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.AgentToolRegistry;
@@ -29,22 +31,24 @@ public class CodeAssistantAgentService {
     private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.HYBRID_VECTOR_READ
     );
-    private static final Set<AgentToolPermission> DEFAULT_KG_TOOL_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.KG_ONE_HOP_READ,
-            AgentToolPermission.METHOD_SOURCE_READ
-    );
 
     private final ChatClient chatClient;
     private final AgentToolRegistry agentToolRegistry;
+    private final KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider;
+    private final SourceCodeLookupProvider sourceCodeLookupProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public CodeAssistantAgentService(
             ChatClient.Builder chatClientBuilder,
-            AgentToolRegistry agentToolRegistry
+            AgentToolRegistry agentToolRegistry,
+            KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider,
+            SourceCodeLookupProvider sourceCodeLookupProvider
     ) {
         this.chatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
+        this.knowledgeGraphOneHopProvider = knowledgeGraphOneHopProvider;
+        this.sourceCodeLookupProvider = sourceCodeLookupProvider;
     }
 
     public AgentResponse run(AgentRequest request) {
@@ -121,9 +125,6 @@ public class CodeAssistantAgentService {
         Set<AgentToolPermission> enabledPermissions = EnumSet.noneOf(AgentToolPermission.class);
         if (request.includeRagContext()) {
             enabledPermissions.addAll(DEFAULT_RAG_TOOL_PERMISSIONS);
-        }
-        if (request.includeKnowledgeGraphContext()) {
-            enabledPermissions.addAll(DEFAULT_KG_TOOL_PERMISSIONS);
         }
         return enabledPermissions;
     }
@@ -237,7 +238,44 @@ public class CodeAssistantAgentService {
         if (!enabledPermissions.contains(tool.permission())) {
             return denied(toolName);
         }
-        return tool.invoke(args, limit);
+        List<AgentContextItem> results = tool.invoke(args, limit);
+        if ("searchHybridVector".equals(toolName)) {
+            results = enrichGraphAndSource(results, limit);
+        }
+        return results;
+    }
+
+    private List<AgentContextItem> enrichGraphAndSource(List<AgentContextItem> vectorResults, int limit) {
+        List<AgentContextItem> enriched = new ArrayList<>(vectorResults);
+        for (AgentContextItem item : vectorResults) {
+            Object kgNodeIdValue = item.metadata() == null ? null : item.metadata().get("kg_node_id");
+            if (!(kgNodeIdValue instanceof String kgNodeId) || kgNodeId.isBlank()) {
+                continue;
+            }
+            List<AgentContextItem> oneHop = knowledgeGraphOneHopProvider.retrieveByNodeId(
+                    AgentToolRuntimeContext.required().repoRoot(),
+                    kgNodeId,
+                    limit
+            );
+            enriched.addAll(oneHop);
+            List<Map<String, Object>> methodNodes = knowledgeGraphOneHopProvider.retrieveMethodNodeLocationsByNodeId(
+                    AgentToolRuntimeContext.required().repoRoot(),
+                    kgNodeId,
+                    limit
+            );
+            for (Map<String, Object> methodNode : methodNodes) {
+                String sourceFile = stringValue(methodNode.get("sourceFile"));
+                Integer startLine = intValue(methodNode.get("startLine"));
+                Integer endLine = intValue(methodNode.get("endLine"));
+                enriched.addAll(sourceCodeLookupProvider.lookupMethodSource(
+                        AgentToolRuntimeContext.required().repoRoot(),
+                        sourceFile,
+                        startLine,
+                        endLine
+                ));
+            }
+        }
+        return enriched;
     }
 
     private List<AgentContextItem> denied(String toolName) {
@@ -247,6 +285,20 @@ public class CodeAssistantAgentService {
                 "工具未启用: " + toolName,
                 Map.of("toolName", toolName)
         ));
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private Integer intValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(String.valueOf(value));
     }
 
     private record ToolDecision(
