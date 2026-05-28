@@ -5,7 +5,10 @@ import com.lumisight.core.agent.model.AgentContextItem;
 import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentResponse;
 import com.lumisight.core.agent.model.AgentTaskType;
+import com.lumisight.core.agent.model.ToolDecision;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
+import com.lumisight.core.agent.support.AgentContextEnrichmentService;
+import com.lumisight.core.agent.support.AgentPromptService;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.AgentToolRegistry;
 import com.lumisight.core.agent.tool.PermissionedAgentTool;
@@ -167,15 +170,5 @@ public class CodeAssistantAgentService {
                 "工具未启用: " + toolName,
                 Map.of("toolName", toolName)
         ));
-    }
-
-
-    private record ToolDecision(
-            String action,
-            String toolName,
-            Map<String, Object> args,
-            String finalAnswer,
-            String reason
-    ) {
     }
 }
