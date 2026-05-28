@@ -27,8 +27,7 @@ public class CodeAssistantAgentService {
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
     private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.CODE_VECTOR_READ,
-            AgentToolPermission.COMMENT_VECTOR_READ
+            AgentToolPermission.HYBRID_VECTOR_READ
     );
     private static final Set<AgentToolPermission> DEFAULT_KG_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.KG_ONE_HOP_READ,
