@@ -1,6 +1,7 @@
 package com.lumisight.core.agent.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumisight.common.util.ValueParsers;
 import com.lumisight.core.agent.model.AgentContextItem;
 import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentResponse;
@@ -270,9 +271,9 @@ public class CodeAssistantAgentService {
                     limit
             );
             for (Map<String, Object> methodNode : methodNodes) {
-                String sourceFile = stringValue(methodNode.get("sourceFile"));
-                Integer startLine = intValue(methodNode.get("startLine"));
-                Integer endLine = intValue(methodNode.get("endLine"));
+                String sourceFile = ValueParsers.asString(methodNode.get("sourceFile"));
+                Integer startLine = ValueParsers.asInteger(methodNode.get("startLine"));
+                Integer endLine = ValueParsers.asInteger(methodNode.get("endLine"));
                 enriched.addAll(sourceCodeLookupProvider.lookupMethodSource(
                         AgentToolRuntimeContext.required().repoRoot(),
                         sourceFile,
@@ -281,9 +282,9 @@ public class CodeAssistantAgentService {
                 ));
             }
         }
-        String userQuestion = stringValue(decision.args() == null ? null : decision.args().get("naturalLanguageQuery"));
+        String userQuestion = ValueParsers.asString(decision.args() == null ? null : decision.args().get("naturalLanguageQuery"));
         if (!StringUtils.hasText(userQuestion)) {
-            userQuestion = stringValue(decision.args() == null ? null : decision.args().get("codeQuery"));
+            userQuestion = ValueParsers.asString(decision.args() == null ? null : decision.args().get("codeQuery"));
         }
         return filterRelevantContexts(userQuestion, enriched, limit, toolName);
     }
@@ -295,20 +296,6 @@ public class CodeAssistantAgentService {
                 "工具未启用: " + toolName,
                 Map.of("toolName", toolName)
         ));
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private Integer intValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return Integer.parseInt(String.valueOf(value));
     }
 
     private List<AgentContextItem> filterRelevantContexts(
@@ -338,7 +325,7 @@ public class CodeAssistantAgentService {
             Set<Integer> selected = new LinkedHashSet<>();
             int maxKeep = Math.max(1, limit * 2);
             for (Map<String, Object> item : scoredItems) {
-                Integer idx = intValue(item.get("index"));
+                Integer idx = ValueParsers.asInteger(item.get("index"));
                 if (idx != null) {
                     selected.add(idx);
                 }
