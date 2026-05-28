@@ -33,7 +33,7 @@ public class CodeAssistantAgentService {
             AgentToolPermission.HYBRID_VECTOR_READ
     );
 
-    private final ChatClient chatClient;
+    private final ChatClient llmChatClient;
     private final AgentToolRegistry agentToolRegistry;
     private final KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider;
     private final SourceCodeLookupProvider sourceCodeLookupProvider;
@@ -46,7 +46,7 @@ public class CodeAssistantAgentService {
             KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider,
             SourceCodeLookupProvider sourceCodeLookupProvider
     ) {
-        this.chatClient = chatClientBuilder.build();
+        this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
         this.knowledgeGraphOneHopProvider = knowledgeGraphOneHopProvider;
         this.sourceCodeLookupProvider = sourceCodeLookupProvider;
@@ -93,7 +93,7 @@ public class CodeAssistantAgentService {
     private String runManualOrchestration(AgentRequest request, List<AgentContextItem> contexts, int limit) {
         Set<AgentToolPermission> enabledPermissions = enabledPermissions(request);
         for (int round = 1; round <= MAX_TOOL_ROUNDS; round++) {
-            String decisionRaw = chatClient.prompt()
+            String decisionRaw = llmChatClient.prompt()
                     .system(orchestratorSystemPrompt(request.taskType(), enabledPermissions))
                     .user(orchestratorUserPrompt(request, contexts, limit, round))
                     .call()
@@ -115,7 +115,7 @@ public class CodeAssistantAgentService {
             contexts.addAll(toolResult);
         }
 
-        return chatClient.prompt()
+        return llmChatClient.prompt()
                 .system(systemPrompt(request.taskType()))
                 .user(buildFinalAnswerPrompt(request, contexts, limit))
                 .call()
@@ -321,17 +321,31 @@ public class CodeAssistantAgentService {
             return contexts;
         }
         String prompt = buildRelevanceFilterPrompt(userQuestion, contexts, limit, toolName);
-        String raw = chatClient.prompt()
+        String raw = llmChatClient.prompt()
                 .system("你是检索重排序器。只输出JSON，不输出其他文本。")
                 .user(prompt)
                 .call()
                 .content();
         try {
-            List<Integer> indexes = objectMapper.readValue(extractJsonArray(raw), objectMapper.getTypeFactory().constructCollectionType(List.class, Integer.class));
-            if (indexes == null || indexes.isEmpty()) {
+            List<Map<String, Object>> scoredItems = objectMapper.readValue(
+                    extractJsonArray(raw),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class)
+            );
+            if (scoredItems == null || scoredItems.isEmpty()) {
                 return contexts;
             }
-            Set<Integer> selected = new LinkedHashSet<>(indexes);
+            scoredItems.sort((a, b) -> Double.compare(scoreOf(b), scoreOf(a)));
+            Set<Integer> selected = new LinkedHashSet<>();
+            int maxKeep = Math.max(1, limit * 2);
+            for (Map<String, Object> item : scoredItems) {
+                Integer idx = intValue(item.get("index"));
+                if (idx != null) {
+                    selected.add(idx);
+                }
+                if (selected.size() >= maxKeep) {
+                    break;
+                }
+            }
             List<AgentContextItem> filtered = new ArrayList<>();
             for (Integer index : selected) {
                 if (index == null || index < 0 || index >= contexts.size()) {
@@ -357,7 +371,9 @@ public class CodeAssistantAgentService {
                     .append(item.sourceType()).append(" / ").append(item.sourceId()).append("\n")
                     .append(item.content()).append("\n");
         }
-        builder.append("\n请仅返回 JSON 数组，如 [0,3,5]，表示按相关性保留的下标。");
+        builder.append("\n请返回 JSON 数组，每项包含 index 和 score，例如：");
+        builder.append("[{\"index\":0,\"score\":0.95},{\"index\":3,\"score\":0.80}]。");
+        builder.append("按相关性从高到低返回，score 范围 0-1。");
         return builder.toString();
     }
 
@@ -371,6 +387,21 @@ public class CodeAssistantAgentService {
             return raw.substring(start, end + 1);
         }
         return "[]";
+    }
+
+    private double scoreOf(Map<String, Object> row) {
+        Object score = row.get("score");
+        if (score instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (score == null) {
+            return 0D;
+        }
+        try {
+            return Double.parseDouble(String.valueOf(score));
+        } catch (Exception ignored) {
+            return 0D;
+        }
     }
 
     private record ToolDecision(
