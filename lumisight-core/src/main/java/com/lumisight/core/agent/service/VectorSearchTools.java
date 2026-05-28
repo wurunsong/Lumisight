@@ -23,20 +23,20 @@ public class VectorSearchTools {
         this.commentVectorContextProvider = commentVectorContextProvider;
     }
 
-    @Tool(description = "Search in code vector store. Use this when the user input contains code snippets, stack traces, symbols, or implementation-level details.")
+    @Tool(description = "在代码向量库中检索上下文。适用于包含代码片段、报错堆栈、类名/方法名/字段名、调用链、实现细节的问题。若输入偏代码语义，应优先调用该工具。")
     public List<AgentContextItem> searchCodeVector(
-            @ToolParam(description = "Absolute repository root path") String repoRoot,
-            @ToolParam(description = "Code-oriented query content") String query,
-            @ToolParam(description = "Max number of contexts to retrieve") Integer limit
+            @ToolParam(description = "代码仓绝对路径，例如 /Users/xxx/project") String repoRoot,
+            @ToolParam(description = "代码导向查询内容，可直接传用户问题或代码片段") String query,
+            @ToolParam(description = "最多返回多少条上下文，建议 3-10") Integer limit
     ) {
         return codeVectorContextProvider.retrieveByCode(repoRoot, query, limit);
     }
 
-    @Tool(description = "Search in comment/documentation vector store. Use this when the user asks in natural language about concepts, behavior, intent, or design.")
+    @Tool(description = "在注释/文档向量库中检索上下文。适用于自然语言问题，例如概念解释、行为说明、设计意图、模块职责、架构理解。若输入偏业务或说明语义，应优先调用该工具。")
     public List<AgentContextItem> searchCommentVector(
-            @ToolParam(description = "Absolute repository root path") String repoRoot,
-            @ToolParam(description = "Natural language query") String query,
-            @ToolParam(description = "Max number of contexts to retrieve") Integer limit
+            @ToolParam(description = "代码仓绝对路径，例如 /Users/xxx/project") String repoRoot,
+            @ToolParam(description = "自然语言查询内容，通常直接传用户问题") String query,
+            @ToolParam(description = "最多返回多少条上下文，建议 3-10") Integer limit
     ) {
         return commentVectorContextProvider.retrieveByComment(repoRoot, query, limit);
     }

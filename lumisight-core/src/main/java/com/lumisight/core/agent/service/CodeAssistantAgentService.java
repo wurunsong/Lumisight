@@ -92,11 +92,6 @@ public class CodeAssistantAgentService {
         builder.append("RepoRoot: ").append(request.repoRoot()).append("\n");
         builder.append("ContextLimit: ").append(limit).append("\n");
         builder.append("用户问题: ").append(request.question()).append("\n\n");
-        if (request.includeRagContext()) {
-            builder.append("工具调用规则:\n");
-            builder.append("- 如果问题是自然语言描述（如“这段逻辑是做什么的”），调用工具 searchCommentVector(repoRoot, query, contextLimit)。\n");
-            builder.append("- 如果问题包含代码片段、报错栈、符号级细节（类名/方法名/字段名），调用工具 searchCodeVector(repoRoot, query, contextLimit)。\n\n");
-        }
         builder.append("已检索上下文:\n");
         if (contexts.isEmpty()) {
             builder.append("- 无\n");
