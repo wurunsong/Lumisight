@@ -7,6 +7,7 @@ public record ToolDecision(
         String toolName,
         Map<String, Object> args,
         String finalAnswer,
-        String reason
+        String reason,
+        String askUserQuestion
 ) {
 }

@@ -1,8 +1,10 @@
 package com.lumisight.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumisight.core.agent.model.AgentEvent;
 import com.lumisight.core.agent.model.AgentContextItem;
 import com.lumisight.core.agent.model.AgentRequest;
+import com.lumisight.core.agent.model.AgentRunMode;
 import com.lumisight.core.agent.model.ToolDecision;
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.support.AgentPromptService;
@@ -47,28 +49,57 @@ public class CodeAssistantAgentService {
         this.agentPromptService = agentPromptService;
     }
 
-    public Flux<String> run(AgentRequest request) {
+    public Flux<AgentEvent> run(AgentRequest request) {
         AgentRequestValidators.validate(request);
 
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();
+        List<AgentEvent> events = new ArrayList<>();
         String directAnswer = null;
+        boolean askUser = false;
 
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
-            directAnswer = runManualOrchestration(request, contexts, limit);
+            if (request.runMode() == AgentRunMode.PLAN) {
+                String plan = llmChatClient.prompt()
+                        .system(agentPromptService.systemPrompt(request.taskType()))
+                        .user(agentPromptService.planPrompt(request))
+                        .call()
+                        .content();
+                events.add(AgentEvent.plan(plan));
+            }
+            OrchestrationResult result = runManualOrchestration(request, contexts, limit, events);
+            directAnswer = result.directAnswer();
+            askUser = result.askUser();
+        }
+        if (askUser) {
+            return Flux.fromIterable(events);
         }
         if (StringUtils.hasText(directAnswer)) {
-            return Flux.just(directAnswer);
+            events.add(AgentEvent.finalText(directAnswer));
+            return Flux.fromIterable(events);
         }
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(request, contexts, limit);
-        return llmChatClient.prompt()
+        Flux<AgentEvent> stream = llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
                 .user(finalPrompt)
                 .stream()
-                .content();
+                .content()
+                .map(AgentEvent::token);
+        return Flux.concat(Flux.fromIterable(events), stream);
     }
 
-    private String runManualOrchestration(AgentRequest request, List<AgentContextItem> contexts, int limit) {
+    public Flux<String> runText(AgentRequest request) {
+        return run(request)
+                .filter(event -> "TOKEN".equals(event.type()) || "FINAL".equals(event.type()) || "ASK_USER".equals(event.type()))
+                .map(AgentEvent::message);
+    }
+
+    private OrchestrationResult runManualOrchestration(
+            AgentRequest request,
+            List<AgentContextItem> contexts,
+            int limit,
+            List<AgentEvent> events
+    ) {
         Set<AgentToolPermission> enabledPermissions = enabledPermissions(request);
         for (int round = 1; round <= MAX_TOOL_ROUNDS; round++) {
             String decisionRaw = llmChatClient.prompt()
@@ -77,22 +108,29 @@ public class CodeAssistantAgentService {
                     .call()
                     .content();
             ToolDecision decision = parseDecision(decisionRaw);
+            if ("ask_user".equalsIgnoreCase(decision.action())) {
+                String question = StringUtils.hasText(decision.askUserQuestion()) ? decision.askUserQuestion() : "我还需要你补充一些信息，才能继续。";
+                events.add(AgentEvent.askUser(question));
+                return new OrchestrationResult(null, true);
+            }
             if ("final".equalsIgnoreCase(decision.action())) {
                 if (StringUtils.hasText(decision.finalAnswer())) {
-                    return decision.finalAnswer();
+                    return new OrchestrationResult(decision.finalAnswer(), false);
                 }
                 break;
             }
             if (!"tool".equalsIgnoreCase(decision.action())) {
                 break;
             }
+            events.add(AgentEvent.toolCall(decision.toolName(), decision.args()));
             List<AgentContextItem> toolResult = executeTool(decision, enabledPermissions, limit);
+            events.add(AgentEvent.toolResult(decision.toolName(), toolResult.size()));
             if (toolResult.isEmpty()) {
                 break;
             }
             contexts.addAll(toolResult);
         }
-        return null;
+        return new OrchestrationResult(null, false);
     }
 
     private Set<AgentToolPermission> enabledPermissions(AgentRequest request) {
@@ -108,7 +146,7 @@ public class CodeAssistantAgentService {
         try {
             return objectMapper.readValue(json, ToolDecision.class);
         } catch (Exception e) {
-            return new ToolDecision("final", null, Map.of(), "模型决策解析失败，直接给出最终回答。", e.getMessage());
+            return new ToolDecision("final", null, Map.of(), "模型决策解析失败，直接给出最终回答。", e.getMessage(), null);
         }
     }
 
@@ -149,5 +187,8 @@ public class CodeAssistantAgentService {
                 "工具未启用: " + toolName,
                 Map.of("toolName", toolName)
         ));
+    }
+
+    private record OrchestrationResult(String directAnswer, boolean askUser) {
     }
 }

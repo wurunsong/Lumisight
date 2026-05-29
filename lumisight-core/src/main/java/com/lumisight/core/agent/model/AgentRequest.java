@@ -6,6 +6,7 @@ public record AgentRequest(
         String question,
         boolean includeRagContext,
         boolean includeKnowledgeGraphContext,
-        Integer contextLimit
+        Integer contextLimit,
+        AgentRunMode runMode
 ) {
 }

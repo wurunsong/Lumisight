@@ -78,6 +78,14 @@ public class AgentPromptService {
         return builder.toString();
     }
 
+    public String planPrompt(AgentRequest request) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("请先给出执行计划，不要直接回答问题。\\n");
+        builder.append("用户问题: ").append(request.question()).append("\\n");
+        builder.append("输出要求: 按步骤列出你计划调用的工具、每步目标和预期产出。");
+        return builder.toString();
+    }
+
     private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentToolRegistry registry) {
         StringBuilder builder = new StringBuilder();
         List<AgentToolCategory> categories = List.of(AgentToolCategory.RAG, AgentToolCategory.GRAPH, AgentToolCategory.SOURCE);
