@@ -25,8 +25,25 @@ public record AgentEvent(
         return new AgentEvent("TOOL_RESULT", "工具返回结果", toolName, Map.of("size", size));
     }
 
+    public static AgentEvent toolResult(AgentToolExecutionResult result) {
+        return new AgentEvent(
+                "TOOL_RESULT",
+                result.message(),
+                result.toolName(),
+                Map.of(
+                        "status", result.status(),
+                        "size", result.items() == null ? 0 : result.items().size(),
+                        "metrics", result.metrics() == null ? Map.of() : result.metrics()
+                )
+        );
+    }
+
     public static AgentEvent askUser(String question) {
         return new AgentEvent("ASK_USER", question, null, Map.of());
+    }
+
+    public static AgentEvent askUser(String question, String sessionId) {
+        return new AgentEvent("ASK_USER", question, null, Map.of("sessionId", sessionId == null ? "" : sessionId));
     }
 
     public static AgentEvent token(String content) {
@@ -39,5 +56,13 @@ public record AgentEvent(
 
     public static AgentEvent error(String message) {
         return new AgentEvent("ERROR", message, null, Map.of());
+    }
+
+    public static AgentEvent interrupted(String sessionId) {
+        return new AgentEvent("INTERRUPTED", "会话已中断，可稍后恢复", null, Map.of("sessionId", sessionId == null ? "" : sessionId));
+    }
+
+    public static AgentEvent resumed(String sessionId) {
+        return new AgentEvent("RESUMED", "会话已恢复，继续执行", null, Map.of("sessionId", sessionId == null ? "" : sessionId));
     }
 }

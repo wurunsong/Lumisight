@@ -14,4 +14,8 @@ public interface PermissionedAgentTool {
     AgentToolPermission permission();
 
     List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit);
+
+    default List<String> validateArgs(Map<String, Object> args) {
+        return List.of();
+    }
 }

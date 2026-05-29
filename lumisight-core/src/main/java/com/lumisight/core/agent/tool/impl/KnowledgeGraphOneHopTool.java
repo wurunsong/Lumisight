@@ -6,6 +6,7 @@ import com.lumisight.core.agent.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.PermissionedAgentTool;
+import com.lumisight.core.agent.support.ToolArgumentValidators;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -42,6 +43,11 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
         String kgNodeId = args.get("kgNodeId") == null ? "" : String.valueOf(args.get("kgNodeId"));
         Integer limit = parseLimit(args.get("limit"), defaultLimit);
         return fetchOneHopByKgNodeId(kgNodeId, limit);
+    }
+
+    @Override
+    public List<String> validateArgs(Map<String, Object> args) {
+        return ToolArgumentValidators.requireText(args, "kgNodeId", "kgNodeId");
     }
 
     @Tool(description = "根据知识图谱节点ID查询一跳邻接信息。输入来自注释文档向量召回的kgNodeId，返回中心节点及其一跳相邻边，用于补充结构化依赖关系。")

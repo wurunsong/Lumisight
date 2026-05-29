@@ -53,6 +53,17 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
         return searchHybridVector(codeQuery, naturalLanguageQuery, limit);
     }
 
+    @Override
+    public List<String> validateArgs(Map<String, Object> args) {
+        List<String> errors = new ArrayList<>();
+        String codeQuery = args.get("codeQuery") == null ? "" : String.valueOf(args.get("codeQuery"));
+        String naturalLanguageQuery = args.get("naturalLanguageQuery") == null ? "" : String.valueOf(args.get("naturalLanguageQuery"));
+        if (codeQuery.isBlank() && naturalLanguageQuery.isBlank()) {
+            errors.add("codeQuery 和 naturalLanguageQuery 不能同时为空");
+        }
+        return errors;
+    }
+
     @Tool(description = "并发执行双向量库检索：codeQuery 用于代码向量库，naturalLanguageQuery 用于注释文档向量库。适合需要同时拿实现细节和语义说明的场景。")
     public List<AgentContextItem> searchHybridVector(
             @ToolParam(description = "代码导向查询（如代码片段、符号名、报错栈）") String codeQuery,
