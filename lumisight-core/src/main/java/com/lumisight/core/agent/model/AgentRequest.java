@@ -6,6 +6,7 @@ public record AgentRequest(
         String question,
         String sessionId,
         String followUpAnswer,
+        boolean approveRiskyToolCall,
         boolean interrupt,
         boolean resume,
         boolean includeRagContext,

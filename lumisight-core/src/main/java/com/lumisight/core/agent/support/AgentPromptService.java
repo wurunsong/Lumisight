@@ -90,6 +90,24 @@ public class AgentPromptService {
         return builder.toString();
     }
 
+    public String verifyPrompt(AgentRequest request, String candidateAnswer, List<AgentContextItem> contexts) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("你是答案复核器。请判断候选答案是否真正回答了用户问题，且有上下文依据。\\n");
+        builder.append("仅输出JSON，不要输出其他文本。\\n");
+        builder.append("格式: {\"pass\":true|false,\"reason\":\"...\"}\\n");
+        builder.append("用户问题: ").append(request.question()).append("\\n");
+        builder.append("候选答案: ").append(candidateAnswer).append("\\n");
+        builder.append("上下文摘要:\\n");
+        if (contexts.isEmpty()) {
+            builder.append("- 无\\n");
+        } else {
+            for (AgentContextItem context : contexts) {
+                builder.append("- [").append(context.sourceType()).append("] ").append(context.sourceId()).append("\\n");
+            }
+        }
+        return builder.toString();
+    }
+
     private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentToolRegistry registry) {
         StringBuilder builder = new StringBuilder();
         List<AgentToolCategory> categories = List.of(

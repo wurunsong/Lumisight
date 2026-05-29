@@ -35,12 +35,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.HashMap;
 
 @Service
 public class CodeAssistantAgentService {
 
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
+    private static final int TOOL_MAX_RETRY = 2;
     private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.HYBRID_VECTOR_READ,
             AgentToolPermission.MCP_CAPABILITY_CALL,
@@ -99,7 +101,8 @@ public class CodeAssistantAgentService {
                         resumeState.baseQuestion(),
                         resumeState.contexts(),
                         resumeState.nextRound(),
-                        false
+                        false,
+                        resumeState.pendingDecision()
                 );
             }
             contexts.addAll(resumeState.contexts());
@@ -130,6 +133,23 @@ public class CodeAssistantAgentService {
                     Map.of("repoRoot", request.repoRoot())
             ));
             events.add(AgentEvent.skillSelected(traceId, sessionId, skill.skillName(), skillPlan.summary()));
+            if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
+                if (!request.approveRiskyToolCall()) {
+                    events.add(AgentEvent.humanGate(
+                            traceId,
+                            sessionId,
+                            startRound,
+                            resumeState.pendingDecision().toolName(),
+                            "检测到待确认写操作，请设置 approveRiskyToolCall=true 后继续。"
+                    ));
+                    return Flux.fromIterable(events);
+                }
+                AgentToolExecutionResult gatedResult = executeTool(resumeState.pendingDecision(), enabledPermissions(request), limit);
+                events.add(AgentEvent.toolResult(traceId, sessionId, startRound, gatedResult));
+                contexts.addAll(gatedResult.items());
+                conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, startRound + 1);
+                startRound = startRound + 1;
+            }
             if (request.runMode() == AgentRunMode.PLAN) {
                 events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
                 fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
@@ -172,6 +192,7 @@ public class CodeAssistantAgentService {
                 .filter(event -> "TOKEN".equals(event.type())
                         || "FINAL".equals(event.type())
                         || "ASK_USER".equals(event.type())
+                        || "HUMAN_GATE".equals(event.type())
                         || "INTERRUPTED".equals(event.type())
                         || "RESUMED".equals(event.type()))
                 .map(AgentEvent::message);
@@ -226,13 +247,36 @@ public class CodeAssistantAgentService {
             }
             if ("final".equalsIgnoreCase(decision.action())) {
                 if (StringUtils.hasText(decision.finalAnswer())) {
-                    events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
-                    return new OrchestrationResult(decision.finalAnswer(), false);
+                    VerifyResult verifyResult = verifyFinalAnswer(withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts);
+                    events.add(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
+                    if (verifyResult.pass()) {
+                        events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
+                        return new OrchestrationResult(decision.finalAnswer(), false);
+                    }
+                    contexts.add(new AgentContextItem(
+                            "verifier",
+                            "final_answer_check",
+                            "复核未通过: " + verifyResult.reason(),
+                            Map.of("round", round)
+                    ));
+                    continue;
                 }
                 break;
             }
             if (!"tool".equalsIgnoreCase(decision.action())) {
                 break;
+            }
+            if (requiresHumanGate(decision) && !request.approveRiskyToolCall()) {
+                conversationManager.saveWaitingForGate(sessionId, effectiveQuestion, contexts, round, decision);
+                events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
+                events.add(AgentEvent.humanGate(
+                        traceId,
+                        sessionId,
+                        round,
+                        decision.toolName(),
+                        "即将执行写操作工具 `" + decision.toolName() + "`，请确认后继续（approveRiskyToolCall=true）。"
+                ));
+                return new OrchestrationResult(null, true);
             }
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.TOOL_CALL.name(), "running", "开始工具调用"));
             events.add(AgentEvent.toolCall(traceId, sessionId, round, decision.toolName(), decision.args()));
@@ -304,14 +348,107 @@ public class CodeAssistantAgentService {
             fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "invalid_args", "errors", validationErrors));
             return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors));
         }
-        List<AgentContextItem> items = tool.invoke(args, limit);
-        return new AgentToolExecutionResult(
-                toolName,
-                "ok",
-                "工具执行成功",
-                items,
-                Map.of("count", items.size())
-        );
+        AgentToolExecutionResult primary = invokeWithRetry(tool, args, limit, TOOL_MAX_RETRY);
+        if ("ok".equals(primary.status())) {
+            return primary;
+        }
+        AgentToolExecutionResult fallback = tryFallback(toolName, args, limit, enabledPermissions);
+        if (fallback != null) {
+            return fallback;
+        }
+        return primary;
+    }
+
+    private AgentToolExecutionResult invokeWithRetry(PermissionedAgentTool tool, Map<String, Object> args, int limit, int maxRetry) {
+        String toolName = tool.toolName();
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= maxRetry; attempt++) {
+            try {
+                List<AgentContextItem> items = tool.invoke(args, limit);
+                return new AgentToolExecutionResult(
+                        toolName,
+                        "ok",
+                        "工具执行成功",
+                        items,
+                        Map.of("count", items.size(), "attempt", attempt)
+                );
+            } catch (Exception e) {
+                lastError = e;
+            }
+        }
+        return errorToolResult(toolName, "tool_invoke_failed", "工具调用失败: " + (lastError == null ? "unknown" : lastError.getMessage()), Map.of());
+    }
+
+    private AgentToolExecutionResult tryFallback(String toolName, Map<String, Object> args, int limit, Set<AgentToolPermission> enabledPermissions) {
+        String fallbackName = fallbackToolName(toolName);
+        if (!StringUtils.hasText(fallbackName)) {
+            return null;
+        }
+        PermissionedAgentTool fallback = agentToolRegistry.get(fallbackName);
+        if (fallback == null || !enabledPermissions.contains(fallback.permission())) {
+            return null;
+        }
+        Map<String, Object> fallbackArgs = fallbackArgs(toolName, args);
+        List<String> schemaErrors = ToolSchemaValidator.validate(fallbackArgs, fallback.argumentSpecs());
+        if (!schemaErrors.isEmpty()) {
+            return null;
+        }
+        List<String> errors = fallback.validateArgs(fallbackArgs);
+        if (!errors.isEmpty()) {
+            return null;
+        }
+        AgentToolExecutionResult result = invokeWithRetry(fallback, fallbackArgs, limit, 1);
+        if ("ok".equals(result.status())) {
+            return new AgentToolExecutionResult(
+                    result.toolName(),
+                    "ok",
+                    "主工具失败，已回退到 " + fallbackName,
+                    result.items(),
+                    new HashMap<>(result.metrics())
+            );
+        }
+        return null;
+    }
+
+    private String fallbackToolName(String toolName) {
+        return switch (toolName) {
+            case "cat" -> "fetchMethodSourceByLocation";
+            case "grep", "ls", "pwd" -> "callMcpCapability";
+            default -> null;
+        };
+    }
+
+    private Map<String, Object> fallbackArgs(String toolName, Map<String, Object> args) {
+        if ("cat".equals(toolName)) {
+            return Map.of(
+                    "sourceFile", String.valueOf(args.getOrDefault("sourceFile", "")),
+                    "startLine", args.get("startLine") == null ? 1 : args.get("startLine"),
+                    "endLine", args.get("endLine") == null ? 200 : args.get("endLine")
+            );
+        }
+        if ("grep".equals(toolName)) {
+            return Map.of(
+                    "capability", "grep",
+                    "args", Map.of(
+                            "pattern", String.valueOf(args.getOrDefault("pattern", "")),
+                            "filePattern", String.valueOf(args.getOrDefault("filePattern", "")),
+                            "limit", args.get("limit") == null ? 50 : args.get("limit")
+                    )
+            );
+        }
+        if ("ls".equals(toolName)) {
+            return Map.of(
+                    "capability", "ls",
+                    "args", Map.of(
+                            "path", String.valueOf(args.getOrDefault("path", "")),
+                            "limit", args.get("limit") == null ? 100 : args.get("limit")
+                    )
+            );
+        }
+        if ("pwd".equals(toolName)) {
+            return Map.of("capability", "pwd", "args", Map.of());
+        }
+        return args;
     }
 
     private AgentToolExecutionResult errorToolResult(String toolName, String errorCode, String message, Map<String, Object> meta) {
@@ -331,6 +468,7 @@ public class CodeAssistantAgentService {
                 question,
                 sessionId,
                 request.followUpAnswer(),
+                request.approveRiskyToolCall(),
                 request.interrupt(),
                 request.resume(),
                 request.includeRagContext(),
@@ -352,6 +490,34 @@ public class CodeAssistantAgentService {
             return "当前对话模式: STEER（主动引导收敛）";
         }
         return "当前对话模式: FOLLOW（跟随用户问题）";
+    }
+
+    private boolean requiresHumanGate(ToolDecision decision) {
+        if (decision == null) {
+            return false;
+        }
+        PermissionedAgentTool tool = agentToolRegistry.get(decision.toolName());
+        return tool != null && tool.permission() == AgentToolPermission.LOCAL_FS_WRITE;
+    }
+
+    private VerifyResult verifyFinalAnswer(AgentRequest request, String candidateAnswer, List<AgentContextItem> contexts) {
+        try {
+            String raw = llmChatClient.prompt()
+                    .system("你是严谨的答案复核器。")
+                    .user(agentPromptService.verifyPrompt(request, candidateAnswer, contexts))
+                    .call()
+                    .content();
+            String json = extractJsonObject(raw);
+            Map<?, ?> parsed = objectMapper.readValue(json, Map.class);
+            boolean pass = Boolean.parseBoolean(String.valueOf(parsed.getOrDefault("pass", false)));
+            String reason = String.valueOf(parsed.getOrDefault("reason", ""));
+            return new VerifyResult(pass, reason);
+        } catch (Exception e) {
+            return new VerifyResult(true, "复核器异常，默认放行");
+        }
+    }
+
+    private record VerifyResult(boolean pass, String reason) {
     }
 
     private void fireHook(AgentHookPoint point, String sessionId, int round, String question, String toolName, Map<String, Object> metadata) {

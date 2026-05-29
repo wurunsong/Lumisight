@@ -101,6 +101,14 @@ public record AgentEvent(
         return base("ASK_USER", question, null, Map.of("sessionId", sessionId == null ? "" : sessionId), traceId, sessionId, round, "ASK_USER", "waiting_user");
     }
 
+    public static AgentEvent humanGate(String traceId, String sessionId, Integer round, String toolName, String question) {
+        return base("HUMAN_GATE", question, toolName, Map.of("sessionId", sessionId == null ? "" : sessionId), traceId, sessionId, round, "HUMAN_GATE", "waiting_user");
+    }
+
+    public static AgentEvent verifyResult(String traceId, String sessionId, Integer round, boolean pass, String reason) {
+        return base("VERIFY_RESULT", pass ? "复核通过" : "复核未通过", null, Map.of("pass", pass, "reason", reason), traceId, sessionId, round, "VERIFY", pass ? "ok" : "retry");
+    }
+
     public static AgentEvent token(String content) {
         return base("TOKEN", content, null, Map.of(), "", "", 0, "FINAL_STREAM", "streaming");
     }

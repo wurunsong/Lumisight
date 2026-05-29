@@ -61,6 +61,7 @@ public class CodeAssistantAgentController {
                 request.question(),
                 request.sessionId(),
                 request.followUpAnswer(),
+                request.approveRiskyToolCall() != null && request.approveRiskyToolCall(),
                 request.interrupt() != null && request.interrupt(),
                 request.resume() != null && request.resume(),
                 request.includeRagContext() == null || request.includeRagContext(),

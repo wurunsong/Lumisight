@@ -1,6 +1,7 @@
 package com.lumisight.core.agent.support;
 
 import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.ToolDecision;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -25,7 +26,14 @@ public class AgentConversationManager {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        states.put(sessionId, ConversationState.waiting(baseQuestion, new ArrayList<>(contexts), nextRound));
+        states.put(sessionId, ConversationState.waiting(baseQuestion, new ArrayList<>(contexts), nextRound, null));
+    }
+
+    public void saveWaitingForGate(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
+        if (!StringUtils.hasText(sessionId)) {
+            return;
+        }
+        states.put(sessionId, ConversationState.waiting(baseQuestion, new ArrayList<>(contexts), nextRound, pendingDecision));
     }
 
     public void saveRunning(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
@@ -58,18 +66,19 @@ public class AgentConversationManager {
             String baseQuestion,
             List<AgentContextItem> contexts,
             int nextRound,
-            boolean interrupted
+            boolean interrupted,
+            ToolDecision pendingDecision
     ) {
-        static ConversationState waiting(String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
-            return new ConversationState("WAITING_USER", baseQuestion, contexts, nextRound, false);
+        static ConversationState waiting(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
+            return new ConversationState("WAITING_USER", baseQuestion, contexts, nextRound, false, pendingDecision);
         }
 
         static ConversationState running(String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
-            return new ConversationState("RUNNING", baseQuestion, contexts, nextRound, false);
+            return new ConversationState("RUNNING", baseQuestion, contexts, nextRound, false, null);
         }
 
         ConversationState withInterrupted(boolean interrupted) {
-            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted);
+            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, pendingDecision);
         }
     }
 }
