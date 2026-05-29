@@ -85,7 +85,7 @@ public class McpCapabilityTool implements PermissionedAgentTool {
         ));
     }
 
-    @Tool(description = "调用 MCP 能力。capability 填能力名，args 填该能力参数。默认会注入 repoRoot。")
+    @Tool(description = "调用 MCP 能力。capability 填能力名，args 填该能力参数。默认会注入 repoRoot。常用能力: grep/cat/ls/pwd/listRepoFiles/readRepoFileSnippet。")
     public List<AgentContextItem> callMcpCapability(
             @ToolParam(description = "能力名，例如 listRepoFiles/readRepoFileSnippet") String capability,
             @ToolParam(description = "能力参数对象") Map<String, Object> args
