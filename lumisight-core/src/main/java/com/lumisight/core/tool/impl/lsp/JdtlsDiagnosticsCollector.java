@@ -40,4 +40,8 @@ final class JdtlsDiagnosticsCollector implements LanguageClient {
     Map<String, List<org.eclipse.lsp4j.Diagnostic>> snapshot() {
         return Map.copyOf(diagnosticsByUri);
     }
+
+    void clear() {
+        diagnosticsByUri.clear();
+    }
 }

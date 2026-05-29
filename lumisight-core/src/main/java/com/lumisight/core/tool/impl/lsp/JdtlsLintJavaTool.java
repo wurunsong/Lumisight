@@ -6,34 +6,27 @@ import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
-import org.eclipse.lsp4j.ClientCapabilities;
-import org.eclipse.lsp4j.DidOpenTextDocumentParams;
-import org.eclipse.lsp4j.InitializeParams;
-import org.eclipse.lsp4j.InitializeResult;
-import org.eclipse.lsp4j.InitializedParams;
-import org.eclipse.lsp4j.TextDocumentItem;
-import org.eclipse.lsp4j.WorkspaceFolder;
-import org.eclipse.lsp4j.jsonrpc.Launcher;
-import org.eclipse.lsp4j.launch.LSPLauncher;
-import org.eclipse.lsp4j.services.LanguageServer;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 @Component
 public class JdtlsLintJavaTool implements PermissionedAgentTool {
 
-    private static final Duration INIT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration DIAGNOSTIC_WAIT = Duration.ofMillis(1500);
+
+    private final JdtlsSessionManager sessionManager;
+
+    public JdtlsLintJavaTool(JdtlsSessionManager sessionManager) {
+        this.sessionManager = sessionManager;
+    }
 
     @Override
     public String toolName() {
@@ -77,36 +70,8 @@ public class JdtlsLintJavaTool implements PermissionedAgentTool {
             return List.of(new AgentContextItem("lsp_java", "lintJavaByJdtls", "未找到可检查的 Java 文件", Map.of("checkedFiles", 0)));
         }
 
-        Process process = null;
         try {
-            process = startJdtlsProcess(repoRoot);
-            drainErrorStream(process);
-            JdtlsDiagnosticsCollector client = new JdtlsDiagnosticsCollector();
-            Launcher<LanguageServer> launcher = LSPLauncher.createClientLauncher(
-                    client,
-                    process.getInputStream(),
-                    process.getOutputStream()
-            );
-            LanguageServer server = launcher.getRemoteProxy();
-            launcher.startListening();
-
-            InitializeParams init = new InitializeParams();
-            init.setProcessId((int) ProcessHandle.current().pid());
-            init.setRootUri(repoRoot.toUri().toString());
-            init.setCapabilities(new ClientCapabilities());
-            init.setWorkspaceFolders(List.of(new WorkspaceFolder(repoRoot.toUri().toString(), repoRoot.getFileName().toString())));
-            InitializeResult ignored = server.initialize(init).get(INIT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            server.initialized(new InitializedParams());
-
-            int version = 1;
-            for (Path file : files) {
-                String content = Files.readString(file, StandardCharsets.UTF_8);
-                TextDocumentItem item = new TextDocumentItem(file.toUri().toString(), "java", version++, content);
-                server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(item));
-            }
-
-            Thread.sleep(DIAGNOSTIC_WAIT.toMillis());
-            Map<String, List<org.eclipse.lsp4j.Diagnostic>> diagnostics = client.snapshot();
+            Map<String, List<org.eclipse.lsp4j.Diagnostic>> diagnostics = sessionManager.collectDiagnostics(repoRoot, files, DIAGNOSTIC_WAIT);
             List<Map<String, Object>> issues = new ArrayList<>();
             for (Map.Entry<String, List<org.eclipse.lsp4j.Diagnostic>> entry : diagnostics.entrySet()) {
                 String uri = entry.getKey();
@@ -121,15 +86,6 @@ public class JdtlsLintJavaTool implements PermissionedAgentTool {
                     ));
                 }
             }
-
-            try {
-                server.shutdown().get(3, TimeUnit.SECONDS);
-            } catch (Exception ignored2) {
-            }
-            try {
-                server.exit();
-            } catch (Exception ignored3) {
-            }
             return List.of(new AgentContextItem(
                     "lsp_java",
                     "lintJavaByJdtls",
@@ -138,52 +94,7 @@ public class JdtlsLintJavaTool implements PermissionedAgentTool {
             ));
         } catch (Exception e) {
             return error("jdtls 诊断失败: " + e.getMessage());
-        } finally {
-            if (process != null && process.isAlive()) {
-                process.destroy();
-            }
         }
-    }
-
-    private Process startJdtlsProcess(Path repoRoot) throws Exception {
-        String cmd = System.getProperty("lumisight.jdtls.command");
-        if (cmd == null || cmd.isBlank()) {
-            cmd = System.getenv("LUMISIGHT_JDTLS_COMMAND");
-        }
-        if (cmd == null || cmd.isBlank()) {
-            cmd = "jdtls";
-        }
-        List<String> parts = splitCommand(cmd);
-        ProcessBuilder builder = new ProcessBuilder(parts);
-        builder.directory(repoRoot.toFile());
-        builder.redirectErrorStream(false);
-        return builder.start();
-    }
-
-    private void drainErrorStream(Process process) {
-        Thread thread = new Thread(() -> {
-            try (var in = process.getErrorStream()) {
-                byte[] buf = new byte[1024];
-                while (in.read(buf) >= 0) {
-                    // drain only
-                }
-            } catch (Exception ignored) {
-            }
-        });
-        thread.setName("jdtls-stderr-drain");
-        thread.setDaemon(true);
-        thread.start();
-    }
-
-    private List<String> splitCommand(String cmd) {
-        String[] items = cmd.trim().split("\\s+");
-        List<String> parts = new ArrayList<>();
-        for (String item : items) {
-            if (!item.isBlank()) {
-                parts.add(item);
-            }
-        }
-        return parts;
     }
 
     private List<Path> resolveFiles(Path repoRoot, String sourceFile, String filePattern, int maxFiles) throws Exception {
