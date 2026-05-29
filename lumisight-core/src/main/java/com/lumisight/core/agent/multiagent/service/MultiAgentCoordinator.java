@@ -1,6 +1,6 @@
 package com.lumisight.core.agent.multiagent.service;
 
-import com.lumisight.core.agent.model.AgentRequest;
+import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;

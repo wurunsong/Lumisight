@@ -1,6 +1,6 @@
 package com.lumisight.core.agent.multiagent.model;
 
-import com.lumisight.core.agent.model.AgentRequest;
+import com.lumisight.core.model.AgentRequest;
 
 import java.util.Map;
 
