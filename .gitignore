@@ -13,10 +13,9 @@ target/
 # OS files
 .DS_Store
 
-CODE_FLOW.md
 .vscode/
 
 # Local skills (do not track in git)
 /lumisight-core/src/main/resources/*.SKILL.md
 
-.codex/
+
