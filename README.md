@@ -74,6 +74,10 @@ podman machine start
 - `scripts/start-infra.sh`: 一键启动
 - `scripts/check-infra.sh`: 状态检查
 - `scripts/stop-infra.sh`: 一键停止
+- `lumisight-core/src/main/java/com/lumisight/core/agent`: 核心 Agent 主流程与 multiagent 编排骨架
+- `lumisight-core/src/main/java/com/lumisight/core/tool`: 统一工具层（RAG/LOCAL/LSP/BUILD/GIT/MCP）
+- `lumisight-core/src/main/java/com/lumisight/core/model`: Agent 共享模型
+- `lumisight-core/src/main/java/com/lumisight/core/support`: 提示词、校验、会话、策略支撑
 
 ## 第 2 步：知识图谱离线构建（JavaParser + 增量）
 
@@ -130,6 +134,44 @@ mvn -pl lumisight-api -am spring-boot:run
 - `POST /api/lumisight/vector/symbol-doc/ingest`：符号文档向量入库。
 - 已支持自动切片、按仓库方法解析入库、基于 `git diff` 的增量入库。
 
+### Agent 接口（SSE 流式）
+
+- `POST /api/lumisight/agent/stream`：以 `text/event-stream` 持续返回 Agent 事件流。
+- 请求字段：
+  - `taskType`：`CODE_EXPLAIN` / `BUG_FIX`
+  - `repoRoot`：仓库根路径
+  - `question`：用户问题
+  - `includeRagContext`：是否启用向量工具
+  - `contextLimit`：上下文上限
+  - `runMode`：`NORMAL` / `PLAN`（`PLAN` 先输出执行计划）
+- 事件类型：
+  - `PLAN`：计划输出
+  - `SKILL_SELECTED`：技能路由结果
+  - `LOOP_STATE`：状态机阶段事件
+  - `TOOL_CALL`：工具调用
+  - `TOOL_RESULT`：工具结果
+  - `VERIFY_RESULT`：最终答案复核结果
+  - `ASK_USER`：信息不足反问
+  - `HUMAN_GATE`：高风险操作人工确认
+  - `TOKEN`：流式文本片段
+  - `FINAL`：直接最终回答
+  - `ERROR`：错误事件
+
+示例：
+
+```bash
+curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "taskType":"BUG_FIX",
+    "repoRoot":"/path/to/repo",
+    "question":"分析空指针根因",
+    "includeRagContext":true,
+    "contextLimit":5,
+    "runMode":"PLAN"
+  }'
+```
+
 ## 向量与配置说明（最新）
 
 - 向量链路使用 Milvus 双集合：`code_chunk` 与 `symbol_doc`。
@@ -137,6 +179,15 @@ mvn -pl lumisight-api -am spring-boot:run
 - AI 与向量相关配置已收敛到 `lumisight-core`，`lumisight-api` 显式导入 core 配置。
 - 启动时建议继续使用环境变量提供密钥，避免明文写入仓库。
 
-## 本地文档约定
+## 本地工具能力（Agent Tool）
 
-- `CODE_FLOW.md` 与 `agent-architecture.html` 用于本地研发记录与讲解，不纳入 Git 提交。
+- LOCAL：`grep/cat/ls/pwd/writeRepoFile`
+- BUILD：`compileJava`
+- GIT：`gitStatus/gitDiff/gitBlame`
+- LSP：`javaGoToDefinition/javaFindReferences/lintJavaByJdtls`
+
+## 文档同步约定
+
+- `CODE_FLOW.md`：按日期追加记录当日提交事实与验证结果。
+- `agent-architecture.html`：保持“先整体框架，后分点细化”，并体现当日架构增量。
+- 当天收尾执行文档同步后，需要提交并 push 到远程分支。

@@ -35,3 +35,48 @@
 - 验证：
   - `git log --since="2026-05-24 00:00:00" --until="2026-05-24 23:59:59"`：识别到 22 条提交。
   - `git log --stat`：确认变更覆盖 `api/core/tools` 与 `application.yml|lumisight-core.yml`，与摘要一致。
+
+## 2026-05-29
+- 今日提交摘要（20 commits）：
+  - Agent 流式主链路落地：`PLAN/NORMAL`、`ask_user`、SSE 事件流接口与事件模型统一。
+  - 主循环能力增强：对话模式 `FOLLOW/COLLECT/STEER`、工具参数契约、结构化工具结果、软状态机与事件协议 v2。
+  - 会话控制增强：中断/恢复、反问闭环、待确认任务恢复执行。
+  - 执行治理增强：`Verifier` 复核环、`Human Gate` 人工确认节点、工具 `Retry/Fallback` 策略层。
+  - 工具体系扩展：
+    - 本地终端语义工具：`grep/cat/ls/pwd/writeRepoFile`
+    - 本地质量工具：`lintJava`、`compileJava`
+    - 本地 Git 语义工具：`gitStatus/gitDiff/gitBlame`
+    - 本地 Java LSP 工具：`javaGoToDefinition/javaFindReferences`
+    - jdtls 语义诊断工具：`lintJavaByJdtls`
+  - jdtls 会话池新增：按 `repoRoot` 复用进程，`lintJavaByJdtls` 改为复用会话。
+  - 架构模块化：
+    - 独立 `lumisight-mcp`、`lumisight-hooks` 模块并接入主编排
+    - 新增 `multiagent` 接口骨架（orchestrator/sub-agent/router + 默认实现）
+  - 目录结构重构：`agent` 目录仅保留核心 agent 与 `multiagent`，其余下沉到 `core` 一级；`config` 目录合并。
+  - skill 规范升级：`daily-commit-architecture-sync` 强制“当天清晰记录 + HTML/CODE_FLOW 清晰展示 + 最终 push”，并增加“必要时可重写 README”条款。
+- 关键修复：
+  - 由一次性 LSP 诊断改为会话池复用，减少重复拉起 jdtls 的开销。
+  - 由粗粒度写文件改为“人审门控 + 可恢复”执行路径，降低高风险写入误触发。
+  - 文档与代码结构不一致问题通过目录重构与规则补充统一。
+- 验证：
+  - `git log --since="2026-05-29 00:00:00" --until="2026-05-29 23:59:59"`：识别到 20 条提交。
+  - `git log --stat`：确认变更覆盖 `api/core/mcp/hooks/skills/docs`，与当日能力摘要一致。
+
+## 2026-05-28
+- 今日提交摘要（26 commits）：
+  - 搭建并持续重构 Spring AI Agent 脚手架，形成“手动循环编排 + 工具注册中心 + 权限控制”的执行主线。
+  - 工具能力从双向量查询扩展到：混合向量并发召回、基于 `kgNodeId` 的一跳图谱检索、基于 `sourceFile/startLine/endLine` 的源码回查。
+  - 向量与图谱完成关联字段打通：`symbol_doc` 入库新增 `kgNodeId`，并写入向量元数据 `kg_node_id`。
+  - Agent 主类演进为单类流式输出形态，支持 `Flux<String>` 流式返回。
+  - API 层新增 Agent SSE 接口（次日提交 `c5b158c` 落地），用于实时消费 Agent 事件流。
+- 行为变化：
+  - 工具调用从模型自动路由改为手动编排循环（服务端控制轮次、权限和回退）。
+  - 图谱/源码工具从模型直调转为可控链路；后续预留 Advisor 承接上下文增强。
+  - 目录结构收敛：核心 Agent 类位置多次调整并最终统一到 `core/agent`。
+- 关键修复：
+  - `repoRoot` 不再要求模型显式传参 -> 使用运行时上下文自动注入。
+  - 工具膨胀导致主类耦合高 -> 引入工具分类与注册中心，按名称调度。
+  - 请求校验逻辑重复 -> 抽取 `AgentRequestValidators` 统一复用。
+- 验证：
+  - `git log --since="2026-05-28 00:00:00" --until="2026-05-28 23:59:59"`：识别到 26 条提交。
+  - `git log --stat`：确认变更主要集中在 `lumisight-core/agent` 与 `lumisight-api/agent`。

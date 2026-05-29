@@ -108,12 +108,43 @@
     <div class="section-title">2. 在线 Runtime 端到端执行流</div>
     <div class="flow">
       <div class="node online">用户请求 /agent/query</div><div class="arrow">→</div>
-      <div class="node online">Planner 任务拆解</div><div class="arrow">→</div>
-      <div class="node online">SkillRuntime 注入策略</div><div class="arrow">→</div>
-      <div class="node online">Tool Router 选择工具</div><div class="arrow">→</div>
-      <div class="node online">Milvus/Nebula 查询</div><div class="arrow">→</div>
-      <div class="node online">Reviewer 证据审查</div><div class="arrow">→</div>
-      <div class="node online">结构化答案返回</div>
+      <div class="node online">Agent Loop（NORMAL / PLAN）</div><div class="arrow">→</div>
+      <div class="node online">Tool Registry 调度工具</div><div class="arrow">→</div>
+      <div class="node online">RAG / KG / Source 查询</div><div class="arrow">→</div>
+      <div class="node online">输出 AgentEvent 事件流</div><div class="arrow">→</div>
+      <div class="node online">SSE 持续推送</div>
+    </div>
+
+    <div class="section-title">2.1 Agent Loop 细化流程（当前实现）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>入口与模式</h3>
+        <ul>
+          <li>入口类：`CodeAssistantAgentService`</li>
+          <li>请求校验：`AgentRequestValidators.validate`</li>
+          <li>模式：`NORMAL` 直接循环；`PLAN` 先产出计划事件</li>
+          <li>上下文作用域：`AgentToolRuntimeContext.open(repoRoot, limit)`</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>循环决策</h3>
+        <ul>
+          <li>轮次上限：`MAX_TOOL_ROUNDS`</li>
+          <li>每轮由模型输出 JSON：`action/toolName/args/finalAnswer/askUserQuestion`</li>
+          <li>`action=tool`：按权限调度工具执行</li>
+          <li>`action=ask_user`：输出反问事件并等待用户补充</li>
+          <li>`action=final`：直接结束并返回最终结论</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>事件输出</h3>
+        <ul>
+          <li>中间过程事件：`PLAN/TOOL_CALL/TOOL_RESULT/ASK_USER`</li>
+          <li>文本流事件：`TOKEN`（模型流式分片）</li>
+          <li>收敛事件：`FINAL`</li>
+          <li>异常事件：`ERROR`（工具未注册、权限不足、解析回退）</li>
+        </ul>
+      </div>
     </div>
 
     <div class="section-title">3. 核心模块分层（在线）</div>
@@ -124,30 +155,59 @@
           <li>统一前缀：`/api/lumisight`</li>
           <li>KG 接口：build/view/query + 单节点查询</li>
           <li>Vector 接口：code_chunk/symbol_doc/auto/repo ingest</li>
+          <li>Agent SSE 接口：`POST /api/lumisight/agent/stream`</li>
         </ul>
       </div>
       <div class="card">
         <h3>B. 编排层（Agent Core）</h3>
         <ul>
-          <li>core 模块集中管理 AI 与向量配置</li>
-          <li>API 显式导入 core 配置，规避同名冲突</li>
-          <li>以开关控制向量链路启停与懒加载</li>
+          <li>核心类：`CodeAssistantAgentService`（单类主循环）</li>
+          <li>运行模式：`AgentRunMode.NORMAL` / `AgentRunMode.PLAN`</li>
+          <li>支持 `ask_user` 动作，信息不足时反问而非硬结束</li>
         </ul>
       </div>
       <div class="card">
         <h3>C. 工具层（Tools）</h3>
         <ul>
-          <li>VectorIngestService：自动切片 + 批量入库</li>
-          <li>Repo 方法解析 + `git diff` 增量更新</li>
-          <li>Nebula 查询语法修正后稳定返回结构</li>
+          <li>Tool Registry 按权限与类别动态调度</li>
+          <li>Hybrid Vector 并发召回（代码 + 注释向量）</li>
+          <li>可组合接入图谱查询与源码定位工具</li>
         </ul>
       </div>
       <div class="card">
-        <h3>D. 能力层（Memory + Skills）</h3>
+        <h3>D. 输出与事件层</h3>
         <ul>
-          <li>symbol_doc 生成器接口保留可替换实现</li>
-          <li>双集合注入：`code_chunk` 与 `symbol_doc`</li>
-          <li>配置降级：关闭非必需模型与音频自动配置</li>
+          <li>统一事件模型：`AgentEvent`</li>
+          <li>事件类型：PLAN/TOOL_CALL/TOOL_RESULT/ASK_USER/TOKEN/FINAL/ERROR</li>
+          <li>可用于前端、CLI、服务间实时订阅</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">3.1 运行策略与降级（今日更新）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>计划模式</h3>
+        <ul>
+          <li>`PLAN` 模式首轮先输出执行计划</li>
+          <li>后续按循环决策执行工具调用</li>
+          <li>适用于复杂任务和可解释流程场景</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>反问策略</h3>
+        <ul>
+          <li>动作：`ask_user`</li>
+          <li>当上下文不足时主动向用户请求补充信息</li>
+          <li>避免误判为 `final` 导致错误收敛</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>异常与回退</h3>
+        <ul>
+          <li>工具未注册：事件 `tool_error/unknown_tool`</li>
+          <li>权限不足：事件 `tool_error/permission_denied`</li>
+          <li>决策解析失败：回退到最终回答分支</li>
         </ul>
       </div>
     </div>
@@ -182,51 +242,82 @@
       </div>
     </div>
 
-    <div class="section-title">5. 第一阶段：知识图谱构建步骤（当前重点）</div>
+    <div class="section-title">5. 当前阶段：Agent 核心流程完善（当前重点）</div>
     <div class="flow">
-      <div class="node offline">输入 repoRoot</div><div class="arrow">→</div>
-      <div class="node offline">读取 git branch + HEAD</div><div class="arrow">→</div>
-      <div class="node warn">main/master 门禁</div><div class="arrow">→</div>
-      <div class="node offline">判定全量/增量</div><div class="arrow">→</div>
-      <div class="node offline">JavaParser 解析 AST</div><div class="arrow">→</div>
-      <div class="node offline">写 Nebula + 写 Milvus(双集合)</div><div class="arrow">→</div>
-      <div class="node offline">更新 repo_meta 基线</div>
+      <div class="node online">接收请求（NORMAL / PLAN）</div><div class="arrow">→</div>
+      <div class="node online">模型决策 action</div><div class="arrow">→</div>
+      <div class="node online">工具执行与结果回填</div><div class="arrow">→</div>
+      <div class="node warn">信息不足触发 ask_user</div><div class="arrow">→</div>
+      <div class="node online">事件流输出（TOOL/TOKEN/FINAL）</div><div class="arrow">→</div>
+      <div class="node online">SSE 持续推送到客户端</div>
     </div>
 
     <div class="grid row-3">
       <div class="card">
-        <h3>5.1 Nebula 构建环节</h3>
+        <h3>5.1 决策与执行闭环</h3>
         <ul>
-          <li>space 规则：`kg_工程名`</li>
-          <li>schema 自动创建并等待生效</li>
-          <li>首次全量，后续按 git diff 增量</li>
-          <li>删除策略：逻辑删除 `status=1`</li>
-          <li>ID 规则：节点/边统一哈希生成</li>
+          <li>每轮输出结构化决策：`tool / ask_user / final`</li>
+          <li>工具结果进入下一轮上下文，直到收敛</li>
+          <li>支持 PLAN 先规划，再执行</li>
+          <li>保留最大轮次，防止无限循环</li>
+          <li>主类只保留核心 loop，不耦合增强逻辑</li>
         </ul>
       </div>
       <div class="card">
-        <h3>5.2 Milvus 构建环节</h3>
+        <h3>5.2 工具链编排策略</h3>
         <ul>
-          <li>code_chunk 入库（方法级文本）</li>
-          <li>symbol_doc 入库（AI说明文档）</li>
-          <li>支持 repo 解析与 `git diff` 增量入库</li>
-          <li>AI 生成接口已预留，可替换</li>
-          <li>向量与结构通过 qualifiedName 对齐</li>
+          <li>优先走混合向量工具（代码+注释并发召回）</li>
+          <li>图谱和源码查询由链路硬编排衔接</li>
+          <li>按工具类别与权限统一注册和调度</li>
+          <li>便于后续多 Agent 复用和治理</li>
+          <li>为 Advisor 化上下文增强预留边界</li>
         </ul>
       </div>
       <div class="card">
-        <h3>5.3 第一阶段验收标准</h3>
+        <h3>5.3 当前阶段验收标准</h3>
         <ul>
-          <li>Nebula 全量/增量稳定可重跑</li>
-          <li>view/query 能稳定返回结构数据</li>
-          <li>Milvus 双集合可持续入库并支持懒加载开关</li>
-          <li>可支撑后续问答/修复检索底座</li>
+          <li>可稳定输出 PLAN / TOOL_CALL / TOOL_RESULT / FINAL</li>
+          <li>`ask_user` 在信息不足时可正确中断并反问</li>
+          <li>SSE 能实时消费事件，不只返回最终文本</li>
+          <li>核心流程和上下文增强职责边界清晰</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">6. 今日架构增量（2026-05-29）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>6.1 主循环治理</h3>
+        <ul>
+          <li>新增 `Verifier` 复核环：`final` 先校验再收敛</li>
+          <li>新增 `Human Gate`：高风险写操作需显式人工确认</li>
+          <li>新增工具执行策略层：`retry + fallback`</li>
+          <li>会话支持中断/恢复与反问闭环续跑</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>6.2 工具体系扩展</h3>
+        <ul>
+          <li>本地终端语义工具：`grep/cat/ls/pwd/writeRepoFile`</li>
+          <li>质量工具：`lintJava`、`compileJava`</li>
+          <li>Git 语义工具：`gitStatus/gitDiff/gitBlame`</li>
+          <li>LSP 工具：`javaGoToDefinition/javaFindReferences/lintJavaByJdtls`</li>
+          <li>jdtls 会话池：按 `repoRoot` 复用进程</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>6.3 架构与组织</h3>
+        <ul>
+          <li>新增 `mcp`、`hooks` 独立模块并接入核心编排</li>
+          <li>新增 `multiagent` 骨架接口与默认实现</li>
+          <li>目录重构：`agent` 仅保留主 Agent 与 `multiagent`</li>
+          <li>`config` 目录合并到 `core/config`</li>
         </ul>
       </div>
     </div>
 
     <div class="legend">
-      面试讲解建议：先讲整体架构，再强调当前阶段是“离线知识库构建”，把流程、规则、增量策略和可追溯性讲清楚。
+      讲解建议：先讲整体架构，再强调当前阶段是“Agent loop 可控化 + 事件流化”，离线知识库作为基础能力支撑。
     </div>
   </div>
 </body>
