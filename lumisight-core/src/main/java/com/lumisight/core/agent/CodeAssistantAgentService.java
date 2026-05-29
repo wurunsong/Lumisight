@@ -43,7 +43,9 @@ public class CodeAssistantAgentService {
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
     private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.HYBRID_VECTOR_READ,
-            AgentToolPermission.MCP_CAPABILITY_CALL
+            AgentToolPermission.MCP_CAPABILITY_CALL,
+            AgentToolPermission.LOCAL_FS_READ,
+            AgentToolPermission.LOCAL_FS_WRITE
     );
 
     private final ChatClient llmChatClient;

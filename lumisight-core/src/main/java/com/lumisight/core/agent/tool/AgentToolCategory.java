@@ -4,5 +4,6 @@ public enum AgentToolCategory {
     RAG,
     GRAPH,
     SOURCE,
-    MCP
+    MCP,
+    LOCAL
 }
