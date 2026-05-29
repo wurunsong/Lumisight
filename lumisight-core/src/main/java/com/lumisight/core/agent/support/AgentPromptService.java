@@ -1,6 +1,7 @@
 package com.lumisight.core.agent.support;
 
 import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.AgentDialogueMode;
 import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentTaskType;
 import com.lumisight.core.agent.tool.AgentToolCategory;
@@ -44,6 +45,7 @@ public class AgentPromptService {
 
     public String orchestratorSystemPrompt(
             AgentTaskType taskType,
+            AgentDialogueMode dialogueMode,
             Set<AgentToolPermission> enabledPermissions,
             AgentToolRegistry registry
     ) {
@@ -51,11 +53,13 @@ public class AgentPromptService {
         builder.append(systemPrompt(taskType)).append("\\n");
         builder.append("你在执行手动工具编排。每轮只能输出一个JSON对象，不要输出其他文本。\\n");
         builder.append("JSON结构:\\n");
-        builder.append("{\\\"action\\\":\\\"tool|final\\\",\\\"toolName\\\":\\\"...\\\",\\\"args\\\":{},\\\"finalAnswer\\\":\\\"...\\\",\\\"reason\\\":\\\"...\\\"}\\n");
+        builder.append("{\\\"action\\\":\\\"tool|ask_user|final\\\",\\\"toolName\\\":\\\"...\\\",\\\"args\\\":{},\\\"finalAnswer\\\":\\\"...\\\",\\\"askUserQuestion\\\":\\\"...\\\",\\\"reason\\\":\\\"...\\\"}\\n");
         builder.append("规则:\\n");
         builder.append("- 若上下文不足，action=tool，并选择一个已启用工具。\\n");
         builder.append("- 若信息足够，action=final，并在finalAnswer给出最终回答。\\n");
+        builder.append("- 允许 action=ask_user，当关键信息缺失且无法通过工具补全时使用。\\n");
         builder.append("- 禁止输出Markdown。\\n");
+        builder.append("当前对话管理策略:\\n").append(dialogueModeGuidance(dialogueMode)).append("\\n");
         builder.append("已启用工具:\\n").append(enabledToolHints(enabledPermissions, registry));
         return builder.toString();
     }
@@ -97,5 +101,15 @@ public class AgentPromptService {
             }
         }
         return builder.toString();
+    }
+
+    private String dialogueModeGuidance(AgentDialogueMode dialogueMode) {
+        if (dialogueMode == AgentDialogueMode.COLLECT) {
+            return "- COLLECT: 优先收集信息与证据；在回答前尽量补齐上下文。信息不足时优先 ask_user。";
+        }
+        if (dialogueMode == AgentDialogueMode.STEER) {
+            return "- STEER: 主动引导用户收敛问题；当范围过大时先提出拆解路径，再执行关键工具。";
+        }
+        return "- FOLLOW: 严格跟随用户当前问题，最短路径完成回答。";
     }
 }

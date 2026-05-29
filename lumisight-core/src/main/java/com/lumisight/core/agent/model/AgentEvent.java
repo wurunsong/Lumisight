@@ -13,6 +13,10 @@ public record AgentEvent(
         return new AgentEvent("PLAN", message, null, Map.of());
     }
 
+    public static AgentEvent dialogueMode(String mode, String description) {
+        return new AgentEvent("DIALOGUE_MODE", description, null, Map.of("mode", mode));
+    }
+
     public static AgentEvent toolCall(String toolName, Map<String, Object> args) {
         return new AgentEvent("TOOL_CALL", "调用工具", toolName, args == null ? Map.of() : args);
     }

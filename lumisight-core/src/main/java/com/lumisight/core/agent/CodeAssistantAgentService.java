@@ -59,6 +59,7 @@ public class CodeAssistantAgentService {
         boolean askUser = false;
 
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
+            events.add(AgentEvent.dialogueMode(request.dialogueMode().name(), dialogueModeDescription(request.dialogueMode().name())));
             if (request.runMode() == AgentRunMode.PLAN) {
                 String plan = llmChatClient.prompt()
                         .system(agentPromptService.systemPrompt(request.taskType()))
@@ -103,7 +104,12 @@ public class CodeAssistantAgentService {
         Set<AgentToolPermission> enabledPermissions = enabledPermissions(request);
         for (int round = 1; round <= MAX_TOOL_ROUNDS; round++) {
             String decisionRaw = llmChatClient.prompt()
-                    .system(agentPromptService.orchestratorSystemPrompt(request.taskType(), enabledPermissions, agentToolRegistry))
+                    .system(agentPromptService.orchestratorSystemPrompt(
+                            request.taskType(),
+                            request.dialogueMode(),
+                            enabledPermissions,
+                            agentToolRegistry
+                    ))
                     .user(agentPromptService.orchestratorUserPrompt(request, contexts, limit, round, MAX_TOOL_ROUNDS))
                     .call()
                     .content();
@@ -190,5 +196,15 @@ public class CodeAssistantAgentService {
     }
 
     private record OrchestrationResult(String directAnswer, boolean askUser) {
+    }
+
+    private String dialogueModeDescription(String mode) {
+        if ("COLLECT".equalsIgnoreCase(mode)) {
+            return "当前对话模式: COLLECT（优先补全信息）";
+        }
+        if ("STEER".equalsIgnoreCase(mode)) {
+            return "当前对话模式: STEER（主动引导收敛）";
+        }
+        return "当前对话模式: FOLLOW（跟随用户问题）";
     }
 }

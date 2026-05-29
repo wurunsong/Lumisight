@@ -7,6 +7,7 @@ public record AgentRequest(
         boolean includeRagContext,
         boolean includeKnowledgeGraphContext,
         Integer contextLimit,
-        AgentRunMode runMode
+        AgentRunMode runMode,
+        AgentDialogueMode dialogueMode
 ) {
 }

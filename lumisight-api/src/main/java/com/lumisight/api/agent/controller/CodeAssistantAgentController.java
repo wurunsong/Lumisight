@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.api.agent.dto.request.AgentRunRequest;
 import com.lumisight.core.agent.CodeAssistantAgentService;
 import com.lumisight.core.agent.model.AgentEvent;
+import com.lumisight.core.agent.model.AgentDialogueMode;
 import com.lumisight.core.agent.model.AgentRequest;
 import com.lumisight.core.agent.model.AgentRunMode;
 import com.lumisight.core.agent.model.AgentTaskType;
@@ -52,6 +53,7 @@ public class CodeAssistantAgentController {
         }
         AgentTaskType taskType = parseTaskType(request.taskType());
         AgentRunMode runMode = parseRunMode(request.runMode());
+        AgentDialogueMode dialogueMode = parseDialogueMode(request.dialogueMode());
 
         return new AgentRequest(
                 taskType,
@@ -60,7 +62,8 @@ public class CodeAssistantAgentController {
                 request.includeRagContext() == null || request.includeRagContext(),
                 request.includeKnowledgeGraphContext() != null && request.includeKnowledgeGraphContext(),
                 request.contextLimit(),
-                runMode
+                runMode,
+                dialogueMode
         );
     }
 
@@ -83,6 +86,17 @@ public class CodeAssistantAgentController {
             return AgentRunMode.valueOf(value.trim().toUpperCase());
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid runMode: " + value);
+        }
+    }
+
+    private AgentDialogueMode parseDialogueMode(String value) {
+        if (!StringUtils.hasText(value)) {
+            return AgentDialogueMode.FOLLOW;
+        }
+        try {
+            return AgentDialogueMode.valueOf(value.trim().toUpperCase());
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid dialogueMode: " + value);
         }
     }
 
