@@ -8,20 +8,21 @@ metadata:
 # Daily Commit Architecture Sync Skill
 
 ## Purpose
-在每日收尾时执行四件事：
+在每日收尾时执行五件事：
 1. 读取“今天”的 Git commit 记录。
-2. 将今日变更总结追加到 `CODE_FLOW.md`（仅追加，不删除历史）。
-3. 根据今日变更完善 `agent-architecture.html`，并保持结构顺序：先整体框架，再分点说明。
+2. 将今日变更清晰总结到 `CODE_FLOW.md`（仅追加，不删除历史）。
+3. 在 `agent-architecture.html` 中清晰展示当日架构/流程变化（先整体后分点）。
 4. 同步完善 `README.md`，确保对外文档与当日已提交能力一致。
+5. 将上述文档更新提交并 push 到远程仓库。
 
 ## Inputs
 - 日期：默认使用本地当天（可手动指定 `YYYY-MM-DD`）。
 - 分支：默认当前分支。
 
 ## Files To Update
-- `/Users/lilac/ai/Lumisight/CODE_FLOW.md`
-- `/Users/lilac/ai/Lumisight/agent-architecture.html`
-- `/Users/lilac/ai/Lumisight/README.md`
+- `<repo-root>/CODE_FLOW.md`
+- `<repo-root>/agent-architecture.html`
+- `<repo-root>/README.md`
 
 ## Mandatory Rules
 - 只基于当日 commit 事实更新，不臆造未提交功能。
@@ -29,8 +30,8 @@ metadata:
 - `agent-architecture.html` 的组织顺序必须为：
   1. 整体框架（端到端、分层、主流程）
   2. 分点细化（模块职责、数据流、运行策略、异常与降级）
-- `CODE_FLOW.md` 与 `agent-architecture.html` 仅本地使用，不纳入 Git 管理（不提交、不建议提交）。
-- `README.md` 为仓库对外说明文档，可按当日提交事实更新并纳入 Git。
+- `CODE_FLOW.md` 与 `agent-architecture.html` 必须清晰反映“当天变更”并纳入 Git。
+- `README.md` 为仓库对外说明文档，按当日提交事实更新并纳入 Git。
 - 不写入任何明文密钥、令牌、个人敏感信息。
 - 若当天无 commit，`CODE_FLOW.md` 追加“无代码提交，仅运行验证/排障”的记录，HTML仅做必要校对不做虚构增量。
 
@@ -57,6 +58,10 @@ git log --since="$(date +%F) 00:00:00" --until="$(date +%F) 23:59:59" \
 - 行为变化（默认值、开关、分支逻辑）
 - 排障与修复（错误类型 -> 修复动作）
 - 验证结果（编译、运行、接口调用）
+
+强制要求（清晰记录）：
+- 每个条目要能对应到当日 commit 事实（功能/行为/修复/验证）。
+- 需要明确“改了什么、为什么改、结果是什么”，避免仅写标题。
 
 推荐追加模板：
 
@@ -85,6 +90,10 @@ git log --since="$(date +%F) 00:00:00" --until="$(date +%F) 23:59:59" \
 
 3. 若当天涉及接口行为变化，在 HTML 的“执行流/验收标准”同步体现。
 
+强制要求（清晰展示）：
+- HTML 中必须新增或更新能直接看出“当天新增/调整点”的区块或条目。
+- 不允许只做格式微调而不体现真实变更。
+
 ### Step 4) Update README.md
 根据当日提交同步更新 README（仅写已提交事实）：
 - 新增/更新接口清单（如 KG 与 Vector 能力变化）。
@@ -103,14 +112,21 @@ rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html README.md
 - HTML 是否保持“先整体后分点”。
 - README/HTML 描述是否与今日 commit 一致。
 
+### Step 6) Commit And Push
+在一致性检查通过后，执行：
+1. `git add CODE_FLOW.md agent-architecture.html README.md`
+2. 使用中文 commit message 提交文档同步。
+3. `git push` 到当前分支对应远程。
+
+若 push 失败，必须在输出中说明失败原因与下一步建议。
+
 ## Output Contract
 执行结束后输出：
 1. 当天识别到的 commit 数量。
 2. `CODE_FLOW.md` 新增要点（3-8条）。
 3. `agent-architecture.html` 更新区块列表。
 4. `README.md` 更新要点（2-6条）。
-5. 本地维护结论（固定为“`CODE_FLOW.md` 与 `agent-architecture.html` 为本地文件，不建议提交”）。
-6. README 是否建议提交（`yes/no`）及建议 commit message。
+5. 本次文档 commit hash 与 push 结果（成功/失败）。
 
 ## Suggested Commit Message
-- `docs: sync README with today's committed capabilities`
+- `docs: 同步当日提交到 CODE_FLOW 与架构文档`
