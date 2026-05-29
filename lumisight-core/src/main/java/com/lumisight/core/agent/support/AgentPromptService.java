@@ -115,7 +115,8 @@ public class AgentPromptService {
                 AgentToolCategory.GRAPH,
                 AgentToolCategory.SOURCE,
                 AgentToolCategory.MCP,
-                AgentToolCategory.LOCAL
+                AgentToolCategory.LOCAL,
+                AgentToolCategory.LSP
         );
         for (AgentToolCategory category : categories) {
             for (PermissionedAgentTool tool : registry.getByCategory(category)) {

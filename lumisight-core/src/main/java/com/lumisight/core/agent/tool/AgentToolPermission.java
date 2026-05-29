@@ -6,5 +6,6 @@ public enum AgentToolPermission {
     METHOD_SOURCE_READ,
     MCP_CAPABILITY_CALL,
     LOCAL_FS_READ,
-    LOCAL_FS_WRITE
+    LOCAL_FS_WRITE,
+    LSP_JAVA_READ
 }

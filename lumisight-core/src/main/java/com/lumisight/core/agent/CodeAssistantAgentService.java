@@ -47,7 +47,8 @@ public class CodeAssistantAgentService {
             AgentToolPermission.HYBRID_VECTOR_READ,
             AgentToolPermission.MCP_CAPABILITY_CALL,
             AgentToolPermission.LOCAL_FS_READ,
-            AgentToolPermission.LOCAL_FS_WRITE
+            AgentToolPermission.LOCAL_FS_WRITE,
+            AgentToolPermission.LSP_JAVA_READ
     );
 
     private final ChatClient llmChatClient;
