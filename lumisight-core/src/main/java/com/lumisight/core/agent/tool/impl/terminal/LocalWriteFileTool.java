@@ -1,4 +1,4 @@
-package com.lumisight.core.agent.tool.impl;
+package com.lumisight.core.agent.tool.impl.terminal;
 
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.model.AgentContextItem;

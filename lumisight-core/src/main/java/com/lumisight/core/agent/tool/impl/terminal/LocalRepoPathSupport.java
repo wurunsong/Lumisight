@@ -1,4 +1,4 @@
-package com.lumisight.core.agent.tool.impl;
+package com.lumisight.core.agent.tool.impl.terminal;
 
 import org.springframework.util.StringUtils;
 
