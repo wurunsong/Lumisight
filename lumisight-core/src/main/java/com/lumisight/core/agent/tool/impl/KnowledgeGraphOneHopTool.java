@@ -2,6 +2,7 @@ package com.lumisight.core.agent.tool.impl;
 
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.ToolArgumentSpec;
 import com.lumisight.core.agent.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
@@ -43,6 +44,14 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
         String kgNodeId = args.get("kgNodeId") == null ? "" : String.valueOf(args.get("kgNodeId"));
         Integer limit = parseLimit(args.get("limit"), defaultLimit);
         return fetchOneHopByKgNodeId(kgNodeId, limit);
+    }
+
+    @Override
+    public List<ToolArgumentSpec> argumentSpecs() {
+        return List.of(
+                new ToolArgumentSpec("kgNodeId", "string", true, "图谱节点ID"),
+                new ToolArgumentSpec("limit", "integer", false, "返回条数")
+        );
     }
 
     @Override

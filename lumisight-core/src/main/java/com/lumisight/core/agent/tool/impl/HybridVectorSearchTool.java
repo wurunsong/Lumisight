@@ -2,6 +2,7 @@ package com.lumisight.core.agent.tool.impl;
 
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.ToolArgumentSpec;
 import com.lumisight.core.agent.port.CodeVectorContextProvider;
 import com.lumisight.core.agent.port.CommentVectorContextProvider;
 import com.lumisight.core.agent.tool.AgentToolCategory;
@@ -51,6 +52,15 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
         String naturalLanguageQuery = args.get("naturalLanguageQuery") == null ? "" : String.valueOf(args.get("naturalLanguageQuery"));
         Integer limit = parseLimit(args.get("limit"), defaultLimit);
         return searchHybridVector(codeQuery, naturalLanguageQuery, limit);
+    }
+
+    @Override
+    public List<ToolArgumentSpec> argumentSpecs() {
+        return List.of(
+                new ToolArgumentSpec("codeQuery", "string", false, "代码导向查询"),
+                new ToolArgumentSpec("naturalLanguageQuery", "string", false, "自然语言查询"),
+                new ToolArgumentSpec("limit", "integer", false, "返回条数")
+        );
     }
 
     @Override

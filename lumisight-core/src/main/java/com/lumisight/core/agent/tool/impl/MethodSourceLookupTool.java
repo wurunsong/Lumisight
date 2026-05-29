@@ -2,6 +2,7 @@ package com.lumisight.core.agent.tool.impl;
 
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.ToolArgumentSpec;
 import com.lumisight.core.agent.port.SourceCodeLookupProvider;
 import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
@@ -44,6 +45,15 @@ public class MethodSourceLookupTool implements PermissionedAgentTool {
                 args.get("sourceFile") == null ? "" : String.valueOf(args.get("sourceFile")),
                 parseInteger(args.get("startLine")),
                 parseInteger(args.get("endLine"))
+        );
+    }
+
+    @Override
+    public List<ToolArgumentSpec> argumentSpecs() {
+        return List.of(
+                new ToolArgumentSpec("sourceFile", "string", true, "源码相对路径"),
+                new ToolArgumentSpec("startLine", "integer", true, "起始行号"),
+                new ToolArgumentSpec("endLine", "integer", true, "结束行号")
         );
     }
 

@@ -101,7 +101,15 @@ public class AgentPromptService {
         for (AgentToolCategory category : categories) {
             for (PermissionedAgentTool tool : registry.getByCategory(category)) {
                 if (enabledPermissions.contains(tool.permission())) {
-                    builder.append("- ").append(tool.toolName()).append("(...): ").append(category).append(" 类型工具\\n");
+                    builder.append("- ").append(tool.toolName()).append("(...): ").append(category).append(" 类型工具");
+                    if (!tool.argumentSpecs().isEmpty()) {
+                        builder.append("，参数: ");
+                        builder.append(tool.argumentSpecs().stream()
+                                .map(spec -> spec.name() + ":" + spec.type() + (spec.required() ? "(必填)" : ""))
+                                .reduce((a, b) -> a + ", " + b)
+                                .orElse(""));
+                    }
+                    builder.append("\\n");
                 }
             }
         }

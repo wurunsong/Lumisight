@@ -2,6 +2,7 @@ package com.lumisight.core.agent.tool.impl;
 
 import com.lumisight.core.agent.context.AgentToolRuntimeContext;
 import com.lumisight.core.agent.model.AgentContextItem;
+import com.lumisight.core.agent.model.ToolArgumentSpec;
 import com.lumisight.core.agent.support.ToolArgumentValidators;
 import com.lumisight.core.agent.tool.AgentToolCategory;
 import com.lumisight.core.agent.tool.AgentToolPermission;
@@ -43,6 +44,14 @@ public class McpCapabilityTool implements PermissionedAgentTool {
     @Override
     public List<String> validateArgs(Map<String, Object> args) {
         return ToolArgumentValidators.requireText(args, "capability", "capability");
+    }
+
+    @Override
+    public List<ToolArgumentSpec> argumentSpecs() {
+        return List.of(
+                new ToolArgumentSpec("capability", "string", true, "MCP能力名称"),
+                new ToolArgumentSpec("args", "object", false, "MCP能力参数")
+        );
     }
 
     @Override
