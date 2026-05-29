@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumisight 架构图</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #4b5563;
+      --line: #cbd5e1;
+      --accent: #0f766e;
+      --accent2: #1d4ed8;
+      --warn: #b45309;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(120deg, #eef2f7, #f8fafc);
+      color: var(--text);
+    }
+    .wrap { max-width: 1220px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { margin: 0 0 18px; color: var(--muted); }
+    .section-title {
+      margin: 20px 0 8px;
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .flow {
+      margin: 14px 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-weight: 600;
+    }
+    .node {
+      background: #ecfeff;
+      border: 1px solid #99f6e4;
+      color: #115e59;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 14px;
+    }
+    .node.offline {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1e3a8a;
+    }
+    .node.online {
+      background: #ecfeff;
+      border-color: #99f6e4;
+      color: #115e59;
+    }
+    .node.warn {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #9a3412;
+    }
+    .arrow { color: #64748b; font-size: 18px; }
+    .grid { display: grid; gap: 14px; }
+    .row-4 { grid-template-columns: repeat(4, 1fr); }
+    .row-3 { grid-template-columns: repeat(3, 1fr); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 16px; color: var(--accent2); }
+    .card ul { margin: 0; padding-left: 18px; color: var(--muted); }
+    .legend {
+      margin-top: 16px;
+      padding: 12px;
+      border-left: 4px solid var(--warn);
+      background: #fff7ed;
+      color: #7c2d12;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    @media (max-width: 900px) {
+      .row-4, .row-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Lumisight：Java 代码智能 Agent 架构</h1>
+    <p>定位：先离线构建外挂知识库（Nebula + Milvus），再开发在线 Agent 运行时，聚焦工程编排与可解释输出；当前已形成“图谱查询 + 向量增量入库 + 配置稳定化”闭环。</p>
+
+    <div class="section-title">1. 阶段化主流程（先离线，后在线）</div>
+    <div class="flow">
+      <div class="node offline">离线解析 Java 仓库</div><div class="arrow">→</div>
+      <div class="node offline">构建 Milvus 向量索引</div><div class="arrow">→</div>
+      <div class="node offline">构建 Nebula 关系图谱</div><div class="arrow">→</div>
+      <div class="node online">启动 Agent Runtime</div><div class="arrow">→</div>
+      <div class="node online">编排 + 工具调用 + 记忆 + Skill</div><div class="arrow">→</div>
+      <div class="node online">输出结论与证据链</div>
+    </div>
+
+    <div class="section-title">2. 在线 Runtime 端到端执行流</div>
+    <div class="flow">
+      <div class="node online">用户请求 /agent/query</div><div class="arrow">→</div>
+      <div class="node online">Planner 任务拆解</div><div class="arrow">→</div>
+      <div class="node online">SkillRuntime 注入策略</div><div class="arrow">→</div>
+      <div class="node online">Tool Router 选择工具</div><div class="arrow">→</div>
+      <div class="node online">Milvus/Nebula 查询</div><div class="arrow">→</div>
+      <div class="node online">Reviewer 证据审查</div><div class="arrow">→</div>
+      <div class="node online">结构化答案返回</div>
+    </div>
+
+    <div class="section-title">3. 核心模块分层（在线）</div>
+    <div class="grid row-4">
+      <div class="card">
+        <h3>A. 接入层（API）</h3>
+        <ul>
+          <li>统一前缀：`/api/lumisight`</li>
+          <li>KG 接口：build/view/query + 单节点查询</li>
+          <li>Vector 接口：code_chunk/symbol_doc/auto/repo ingest</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>B. 编排层（Agent Core）</h3>
+        <ul>
+          <li>core 模块集中管理 AI 与向量配置</li>
+          <li>API 显式导入 core 配置，规避同名冲突</li>
+          <li>以开关控制向量链路启停与懒加载</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>C. 工具层（Tools）</h3>
+        <ul>
+          <li>VectorIngestService：自动切片 + 批量入库</li>
+          <li>Repo 方法解析 + `git diff` 增量更新</li>
+          <li>Nebula 查询语法修正后稳定返回结构</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>D. 能力层（Memory + Skills）</h3>
+        <ul>
+          <li>symbol_doc 生成器接口保留可替换实现</li>
+          <li>双集合注入：`code_chunk` 与 `symbol_doc`</li>
+          <li>配置降级：关闭非必需模型与音频自动配置</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">4. 外挂知识库（离线构建）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>Milvus（向量知识）</h3>
+        <ul>
+          <li>code_chunk：方法级代码片段向量</li>
+          <li>symbol_doc：符号职责文档向量</li>
+          <li>双集合 Bean + `@Qualifier` 显式注入</li>
+          <li>元数据：repo/file/qualifiedName/git</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Nebula（结构知识）</h3>
+        <ul>
+          <li>节点：module/package/class/method</li>
+          <li>边：contains + method calls</li>
+          <li>repo_meta 记录构建基线提交</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>契约与治理</h3>
+        <ul>
+          <li>统一 Query Contract</li>
+          <li>索引版本与新鲜度标记</li>
+          <li>不可用降级与回退策略</li>
+          <li>配置收敛到 core，API 仅做导入与开关控制</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">5. 第一阶段：知识图谱构建步骤（当前重点）</div>
+    <div class="flow">
+      <div class="node offline">输入 repoRoot</div><div class="arrow">→</div>
+      <div class="node offline">读取 git branch + HEAD</div><div class="arrow">→</div>
+      <div class="node warn">main/master 门禁</div><div class="arrow">→</div>
+      <div class="node offline">判定全量/增量</div><div class="arrow">→</div>
+      <div class="node offline">JavaParser 解析 AST</div><div class="arrow">→</div>
+      <div class="node offline">写 Nebula + 写 Milvus(双集合)</div><div class="arrow">→</div>
+      <div class="node offline">更新 repo_meta 基线</div>
+    </div>
+
+    <div class="grid row-3">
+      <div class="card">
+        <h3>5.1 Nebula 构建环节</h3>
+        <ul>
+          <li>space 规则：`kg_工程名`</li>
+          <li>schema 自动创建并等待生效</li>
+          <li>首次全量，后续按 git diff 增量</li>
+          <li>删除策略：逻辑删除 `status=1`</li>
+          <li>ID 规则：节点/边统一哈希生成</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>5.2 Milvus 构建环节</h3>
+        <ul>
+          <li>code_chunk 入库（方法级文本）</li>
+          <li>symbol_doc 入库（AI说明文档）</li>
+          <li>支持 repo 解析与 `git diff` 增量入库</li>
+          <li>AI 生成接口已预留，可替换</li>
+          <li>向量与结构通过 qualifiedName 对齐</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>5.3 第一阶段验收标准</h3>
+        <ul>
+          <li>Nebula 全量/增量稳定可重跑</li>
+          <li>view/query 能稳定返回结构数据</li>
+          <li>Milvus 双集合可持续入库并支持懒加载开关</li>
+          <li>可支撑后续问答/修复检索底座</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="legend">
+      面试讲解建议：先讲整体架构，再强调当前阶段是“离线知识库构建”，把流程、规则、增量策略和可追溯性讲清楚。
+    </div>
+  </div>
+</body>
+</html>
