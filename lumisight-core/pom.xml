@@ -39,5 +39,15 @@
       <artifactId>lumisight-tools</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.lumisight</groupId>
+      <artifactId>lumisight-mcp</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.lumisight</groupId>
+      <artifactId>lumisight-hooks</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

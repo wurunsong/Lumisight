@@ -92,7 +92,12 @@ public class AgentPromptService {
 
     private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentToolRegistry registry) {
         StringBuilder builder = new StringBuilder();
-        List<AgentToolCategory> categories = List.of(AgentToolCategory.RAG, AgentToolCategory.GRAPH, AgentToolCategory.SOURCE);
+        List<AgentToolCategory> categories = List.of(
+                AgentToolCategory.RAG,
+                AgentToolCategory.GRAPH,
+                AgentToolCategory.SOURCE,
+                AgentToolCategory.MCP
+        );
         for (AgentToolCategory category : categories) {
             for (PermissionedAgentTool tool : registry.getByCategory(category)) {
                 if (enabledPermissions.contains(tool.permission())) {

@@ -14,6 +14,9 @@ import com.lumisight.core.agent.support.AgentRequestValidators;
 import com.lumisight.core.agent.tool.AgentToolPermission;
 import com.lumisight.core.agent.tool.AgentToolRegistry;
 import com.lumisight.core.agent.tool.PermissionedAgentTool;
+import com.lumisight.hooks.AgentHookContext;
+import com.lumisight.hooks.AgentHookDispatcher;
+import com.lumisight.hooks.AgentHookPoint;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
@@ -33,13 +36,15 @@ public class CodeAssistantAgentService {
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
     private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.HYBRID_VECTOR_READ
+            AgentToolPermission.HYBRID_VECTOR_READ,
+            AgentToolPermission.MCP_CAPABILITY_CALL
     );
 
     private final ChatClient llmChatClient;
     private final AgentToolRegistry agentToolRegistry;
     private final AgentPromptService agentPromptService;
     private final AgentConversationManager conversationManager;
+    private final AgentHookDispatcher agentHookDispatcher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -47,12 +52,14 @@ public class CodeAssistantAgentService {
             ChatClient.Builder chatClientBuilder,
             AgentToolRegistry agentToolRegistry,
             AgentPromptService agentPromptService,
-            AgentConversationManager conversationManager
+            AgentConversationManager conversationManager,
+            AgentHookDispatcher agentHookDispatcher
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
         this.agentPromptService = agentPromptService;
         this.conversationManager = conversationManager;
+        this.agentHookDispatcher = agentHookDispatcher;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -96,12 +103,14 @@ public class CodeAssistantAgentService {
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
             events.add(AgentEvent.dialogueMode(request.dialogueMode().name(), dialogueModeDescription(request.dialogueMode().name())));
             if (request.runMode() == AgentRunMode.PLAN) {
+                fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
                 String plan = llmChatClient.prompt()
                         .system(agentPromptService.systemPrompt(request.taskType()))
                         .user(agentPromptService.planPrompt(request))
                         .call()
                         .content();
                 events.add(AgentEvent.plan(plan));
+                fireHook(AgentHookPoint.AFTER_PLAN, sessionId, 0, effectiveQuestion, null, Map.of("plan", plan));
             }
             OrchestrationResult result = runManualOrchestration(request, effectiveQuestion, contexts, limit, startRound, events, sessionId);
             directAnswer = result.directAnswer();
@@ -112,11 +121,13 @@ public class CodeAssistantAgentService {
         }
         conversationManager.clear(sessionId);
         if (StringUtils.hasText(directAnswer)) {
+            fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", true));
             events.add(AgentEvent.finalText(directAnswer));
             return Flux.fromIterable(events);
         }
         AgentRequest finalRequest = withQuestion(request, effectiveQuestion, sessionId);
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit);
+        fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", false));
         Flux<AgentEvent> stream = llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
                 .user(finalPrompt)
@@ -153,6 +164,7 @@ public class CodeAssistantAgentService {
                 conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round);
                 return new OrchestrationResult(null, true);
             }
+            fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
             String decisionRaw = llmChatClient.prompt()
                     .system(agentPromptService.orchestratorSystemPrompt(
                             request.taskType(),
@@ -169,11 +181,13 @@ public class CodeAssistantAgentService {
                     ))
                     .call()
                     .content();
+            fireHook(AgentHookPoint.AFTER_DECISION, sessionId, round, effectiveQuestion, null, Map.of("decisionRaw", decisionRaw));
             ToolDecision decision = parseDecision(decisionRaw);
             if ("ask_user".equalsIgnoreCase(decision.action())) {
                 String question = StringUtils.hasText(decision.askUserQuestion()) ? decision.askUserQuestion() : "我还需要你补充一些信息，才能继续。";
                 conversationManager.saveWaiting(sessionId, effectiveQuestion, contexts, round);
                 events.add(AgentEvent.askUser(question, sessionId));
+                fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
                 return new OrchestrationResult(null, true);
             }
             if ("final".equalsIgnoreCase(decision.action())) {
@@ -186,8 +200,13 @@ public class CodeAssistantAgentService {
                 break;
             }
             events.add(AgentEvent.toolCall(decision.toolName(), decision.args()));
+            fireHook(AgentHookPoint.BEFORE_TOOL_CALL, sessionId, round, effectiveQuestion, decision.toolName(), decision.args() == null ? Map.of() : decision.args());
             AgentToolExecutionResult toolResult = executeTool(decision, enabledPermissions, limit);
             events.add(AgentEvent.toolResult(toolResult));
+            fireHook(AgentHookPoint.AFTER_TOOL_CALL, sessionId, round, effectiveQuestion, decision.toolName(), Map.of(
+                    "status", toolResult.status(),
+                    "count", toolResult.items().size()
+            ));
             if (toolResult.items().isEmpty()) {
                 break;
             }
@@ -210,6 +229,7 @@ public class CodeAssistantAgentService {
         try {
             return objectMapper.readValue(json, ToolDecision.class);
         } catch (Exception e) {
+            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", null, Map.of("stage", "parseDecision", "error", e.getMessage()));
             return new ToolDecision("final", null, Map.of(), "模型决策解析失败，直接给出最终回答。", e.getMessage(), null);
         }
     }
@@ -231,13 +251,16 @@ public class CodeAssistantAgentService {
         Map<String, Object> args = decision.args() == null ? Map.of() : decision.args();
         PermissionedAgentTool tool = agentToolRegistry.get(toolName);
         if (tool == null) {
+            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "unknown_tool"));
             return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName));
         }
         if (!enabledPermissions.contains(tool.permission())) {
+            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "permission_denied"));
             return errorToolResult(toolName, "permission_denied", "工具未启用: " + toolName, Map.of("toolName", toolName));
         }
         List<String> validationErrors = tool.validateArgs(args);
         if (!validationErrors.isEmpty()) {
+            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "invalid_args", "errors", validationErrors));
             return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors));
         }
         List<AgentContextItem> items = tool.invoke(args, limit);
@@ -288,5 +311,15 @@ public class CodeAssistantAgentService {
             return "当前对话模式: STEER（主动引导收敛）";
         }
         return "当前对话模式: FOLLOW（跟随用户问题）";
+    }
+
+    private void fireHook(AgentHookPoint point, String sessionId, int round, String question, String toolName, Map<String, Object> metadata) {
+        agentHookDispatcher.fire(point, new AgentHookContext(
+                sessionId,
+                round,
+                question,
+                toolName,
+                metadata == null ? Map.of() : metadata
+        ));
     }
 }

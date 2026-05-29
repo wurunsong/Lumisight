@@ -44,6 +44,8 @@
     <module>lumisight-tools</module>
     <module>lumisight-memory</module>
     <module>lumisight-skills</module>
+    <module>lumisight-mcp</module>
+    <module>lumisight-hooks</module>
     <module>lumisight-api</module>
   </modules>
 
