@@ -16,6 +16,7 @@ import com.lumisight.core.support.AgentFinalAnswerVerifier;
 import com.lumisight.core.support.AgentFlowSupport;
 import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentRequestValidators;
+import com.lumisight.core.support.SkillAutoRouter;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.hooks.AgentHookContext;
@@ -52,6 +53,7 @@ public class CodeAssistantAgentService {
     private final AgentFlowSupport agentFlowSupport;
     private final AgentDecisionParser decisionParser;
     private final AgentFinalAnswerVerifier finalAnswerVerifier;
+    private final SkillAutoRouter skillAutoRouter;
 
     @Autowired
     public CodeAssistantAgentService(
@@ -64,7 +66,8 @@ public class CodeAssistantAgentService {
             SkillRegistry skillRegistry,
             AgentFlowSupport agentFlowSupport,
             AgentDecisionParser decisionParser,
-            AgentFinalAnswerVerifier finalAnswerVerifier
+            AgentFinalAnswerVerifier finalAnswerVerifier,
+            SkillAutoRouter skillAutoRouter
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
@@ -76,6 +79,7 @@ public class CodeAssistantAgentService {
         this.agentFlowSupport = agentFlowSupport;
         this.decisionParser = decisionParser;
         this.finalAnswerVerifier = finalAnswerVerifier;
+        this.skillAutoRouter = skillAutoRouter;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -139,12 +143,17 @@ public class CodeAssistantAgentService {
             events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
             events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
 
+            String skillRef = request.skillPath();
+            if (!StringUtils.hasText(skillRef)) {
+                skillRef = skillAutoRouter.route(effectiveQuestion);
+            }
+
             SkillContext skillContext = new SkillContext(
                     request.taskType().name(),
                     request.dialogueMode().name(),
                     request.runMode().name(),
                     effectiveQuestion,
-                    agentFlowSupport.buildSkillMetadata(resolvedRepoRoot, request.skillPath())
+                    agentFlowSupport.buildSkillMetadata(resolvedRepoRoot, skillRef)
             );
             SkillRegistry.ResolvedSkill resolvedSkill = skillRegistry.resolve(skillContext);
             SkillPlan skillPlan = resolvedSkill.plan();
@@ -152,7 +161,7 @@ public class CodeAssistantAgentService {
 
             Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
 
-            if (StringUtils.hasText(request.skillPath()) && !skillPlan.executionSteps().isEmpty()) {
+            if (!skillPlan.executionSteps().isEmpty()) {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
                 executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions);
             }

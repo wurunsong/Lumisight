@@ -74,6 +74,10 @@ public class SkillCatalog {
         return Optional.empty();
     }
 
+    public synchronized List<RegisteredSkill> allSkills() {
+        return new ArrayList<>(byId.values());
+    }
+
     private List<Path> normalizeRoots(List<String> roots) {
         List<Path> result = new ArrayList<>();
         for (String root : roots) {
@@ -122,4 +126,3 @@ public class SkillCatalog {
         }
     }
 }
-
