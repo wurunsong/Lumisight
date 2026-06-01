@@ -9,6 +9,7 @@ import com.lumisight.tools.kg.parser.JavaCodeGraphParser;
 import com.lumisight.tools.kg.parser.ParsedGraphFragment;
 import com.lumisight.tools.kg.store.NebulaGraphStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -28,6 +29,7 @@ import java.util.stream.Stream;
 
 @Component
 @Slf4j
+@ConditionalOnProperty(prefix = "lumisight.kg", name = "enabled", havingValue = "true")
 public class IncrementalGraphBuilder {
 
     private final JavaCodeGraphParser parser = new JavaCodeGraphParser();

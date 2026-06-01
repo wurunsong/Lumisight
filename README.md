@@ -21,6 +21,14 @@ export CHAT_API_KEY="<your-chat-key>"
 export EMBEDDING_API_KEY="<your-embedding-key>"
 ```
 
+## Agent 与图谱/向量隔离开关（本地调试推荐）
+
+- 默认已隔离：`lumisight-core.yml` 中 `lumisight.kg.enabled=false`、`lumisight.vector.enabled=false`。
+- 无 Nebula/Milvus 环境时可直接启动 Agent 主链路进行调试。
+- 如需启用图谱/向量能力，再将对应开关改为 `true`：
+  - `lumisight.kg.enabled=true`
+  - `lumisight.vector.enabled=true`
+
 ## 第 1 步：本地启动外挂知识库（Podman）
 
 > 说明：正式开发 Agent 之前，需要先构建并启动 NebulaGraph + Milvus。

@@ -3,6 +3,7 @@ package com.lumisight.tools.kg.service;
 import com.lumisight.tools.kg.config.NebulaProperties;
 import com.lumisight.tools.kg.dto.KnowledgeGraphQueryResult;
 import com.lumisight.tools.kg.store.NebulaGraphStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@ConditionalOnProperty(prefix = "lumisight.kg", name = "enabled", havingValue = "true")
 public class KnowledgeGraphQueryService {
 
     private static final int DEFAULT_EDGE_LIMIT = 200;

@@ -4,12 +4,14 @@ import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.port.SourceCodeLookupProvider;
+import com.lumisight.core.service.SourceCodeLookupProviderImpl;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.core.support.ToolArgumentValidators;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -20,8 +22,10 @@ public class MethodSourceLookupTool implements PermissionedAgentTool {
 
     private final SourceCodeLookupProvider sourceCodeLookupProvider;
 
-    public MethodSourceLookupTool(SourceCodeLookupProvider sourceCodeLookupProvider) {
-        this.sourceCodeLookupProvider = sourceCodeLookupProvider;
+    public MethodSourceLookupTool(@Autowired(required = false) SourceCodeLookupProvider sourceCodeLookupProvider) {
+        this.sourceCodeLookupProvider = sourceCodeLookupProvider == null
+                ? new SourceCodeLookupProviderImpl()
+                : sourceCodeLookupProvider;
     }
 
     @Override

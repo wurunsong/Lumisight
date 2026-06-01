@@ -6,7 +6,10 @@ import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.port.SourceCodeLookupProvider;
+import com.lumisight.core.service.NoopKnowledgeGraphOneHopProvider;
+import com.lumisight.core.service.SourceCodeLookupProviderImpl;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -24,11 +27,15 @@ public class AgentContextEnrichmentService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentContextEnrichmentService(
-            KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider,
-            SourceCodeLookupProvider sourceCodeLookupProvider
+            @Autowired(required = false) KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider,
+            @Autowired(required = false) SourceCodeLookupProvider sourceCodeLookupProvider
     ) {
-        this.knowledgeGraphOneHopProvider = knowledgeGraphOneHopProvider;
-        this.sourceCodeLookupProvider = sourceCodeLookupProvider;
+        this.knowledgeGraphOneHopProvider = knowledgeGraphOneHopProvider == null
+                ? new NoopKnowledgeGraphOneHopProvider()
+                : knowledgeGraphOneHopProvider;
+        this.sourceCodeLookupProvider = sourceCodeLookupProvider == null
+                ? new SourceCodeLookupProviderImpl()
+                : sourceCodeLookupProvider;
     }
 
     public List<AgentContextItem> enrichAndFilter(

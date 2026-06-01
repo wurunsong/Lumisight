@@ -2,10 +2,12 @@ package com.lumisight.api.error;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -13,6 +15,38 @@ import java.time.Instant;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(NonTransientAiException.class)
+    public ResponseEntity<ApiErrorResponse> handleNonTransientAiException(
+            NonTransientAiException ex,
+            HttpServletRequest request
+    ) {
+        HttpStatus status = ex.getMessage() != null && ex.getMessage().contains("HTTP 401")
+                ? HttpStatus.UNAUTHORIZED
+                : HttpStatus.BAD_GATEWAY;
+        log.warn("AI upstream error, status={}, path={}, message={}", status.value(), request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(status).body(new ApiErrorResponse(
+                status.value(),
+                "AI_UPSTREAM_ERROR",
+                ex.getMessage() == null ? "AI upstream error" : ex.getMessage(),
+                request.getRequestURI(),
+                Instant.now().toString()
+        ));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResourceFoundException(
+            NoResourceFoundException ex,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "NOT_FOUND",
+                "Resource not found",
+                request.getRequestURI(),
+                Instant.now().toString()
+        ));
+    }
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiErrorResponse> handleResponseStatusException(

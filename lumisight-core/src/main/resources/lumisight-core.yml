@@ -2,6 +2,7 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.vectorstore.milvus.autoconfigure.MilvusVectorStoreAutoConfiguration
   ai:
     model:
       chat: openai
@@ -23,6 +24,7 @@ spring:
           model: ${EMBEDDING_MODEL:text-embedding-v3}
     vectorstore:
       milvus:
+        enabled: false
         client:
           host: 127.0.0.1
           port: 19530
@@ -33,5 +35,7 @@ lumisight:
   ai:
     chat-api-key: ${CHAT_API_KEY:}
     embedding-api-key: ${EMBEDDING_API_KEY:}
+  kg:
+    enabled: false
   vector:
-    enabled: true
+    enabled: false

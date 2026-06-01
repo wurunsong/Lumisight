@@ -1,9 +1,11 @@
 package com.lumisight.tools.kg.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(prefix = "lumisight.kg", name = "enabled", havingValue = "true")
 @ConfigurationProperties(prefix = "lumisight.nebula")
 public class NebulaProperties {
 

@@ -4,6 +4,7 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.tools.kg.dto.KnowledgeGraphQueryResult;
 import com.lumisight.tools.kg.service.KnowledgeGraphQueryService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.ArrayList;
 
 @Component
+@ConditionalOnProperty(prefix = "lumisight.kg", name = "enabled", havingValue = "true")
 @ConditionalOnMissingBean(KnowledgeGraphOneHopProvider.class)
 public class KnowledgeGraphOneHopProviderImpl implements KnowledgeGraphOneHopProvider {
 

@@ -2,11 +2,13 @@ package com.lumisight.tools.kg.service;
 
 import com.lumisight.tools.kg.dto.KnowledgeGraphBuildResult;
 import com.lumisight.tools.kg.model.GraphSnapshot;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 
 @Service
+@ConditionalOnProperty(prefix = "lumisight.kg", name = "enabled", havingValue = "true")
 public class KnowledgeGraphBuildService {
 
     private final IncrementalGraphBuilder incrementalGraphBuilder;

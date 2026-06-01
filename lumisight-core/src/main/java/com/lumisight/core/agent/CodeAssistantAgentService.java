@@ -330,12 +330,13 @@ public class CodeAssistantAgentService {
     }
 
     private AgentToolExecutionResult executeTool(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit) {
-        String toolName = decision.toolName() == null ? "" : decision.toolName().trim();
-        Map<String, Object> args = decision.args() == null ? Map.of() : decision.args();
+        String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
+        String toolName = normalizeToolName(requestedToolName);
+        Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
         PermissionedAgentTool tool = agentToolRegistry.get(toolName);
         if (tool == null) {
             fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "unknown_tool"));
-            return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName));
+            return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName));
         }
         if (!enabledPermissions.contains(tool.permission())) {
             fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "permission_denied"));
@@ -360,6 +361,57 @@ public class CodeAssistantAgentService {
             return fallback;
         }
         return primary;
+    }
+
+    private String normalizeToolName(String requestedToolName) {
+        if (!StringUtils.hasText(requestedToolName)) {
+            return "";
+        }
+        return switch (requestedToolName.trim()) {
+            case "read_file", "readFile", "open_file", "openFile", "get_file_content" -> "cat";
+            case "read_directory", "list_directory", "get_directory_structure", "listDir" -> "ls";
+            case "search_files", "search_in_files", "find_in_files" -> "grep";
+            default -> requestedToolName.trim();
+        };
+    }
+
+    private Map<String, Object> normalizeArgsForTool(String requestedToolName, String normalizedToolName, Map<String, Object> args) {
+        if (args == null || args.isEmpty()) {
+            return Map.of();
+        }
+        if (!StringUtils.hasText(requestedToolName) || requestedToolName.equals(normalizedToolName)) {
+            return args;
+        }
+        if ("cat".equals(normalizedToolName)) {
+            Map<String, Object> mapped = new HashMap<>(args);
+            if (!mapped.containsKey("sourceFile")) {
+                Object filePath = mapped.get("filePath");
+                if (filePath == null) {
+                    filePath = mapped.get("path");
+                }
+                if (filePath != null) {
+                    mapped.put("sourceFile", String.valueOf(filePath));
+                }
+            }
+            if (!mapped.containsKey("maxLines") && mapped.get("limit") != null) {
+                mapped.put("maxLines", mapped.get("limit"));
+            }
+            return mapped;
+        }
+        if ("grep".equals(normalizedToolName)) {
+            Map<String, Object> mapped = new HashMap<>(args);
+            if (!mapped.containsKey("pattern")) {
+                Object query = mapped.get("query");
+                if (query == null) {
+                    query = mapped.get("keyword");
+                }
+                if (query != null) {
+                    mapped.put("pattern", String.valueOf(query));
+                }
+            }
+            return mapped;
+        }
+        return args;
     }
 
     private AgentToolExecutionResult invokeWithRetry(PermissionedAgentTool tool, Map<String, Object> args, int limit, int maxRetry) {
@@ -512,8 +564,10 @@ public class CodeAssistantAgentService {
                     .content();
             String json = extractJsonObject(raw);
             Map<?, ?> parsed = objectMapper.readValue(json, Map.class);
-            boolean pass = Boolean.parseBoolean(String.valueOf(parsed.getOrDefault("pass", false)));
-            String reason = String.valueOf(parsed.getOrDefault("reason", ""));
+            Object passRaw = parsed.get("pass");
+            Object reasonRaw = parsed.get("reason");
+            boolean pass = Boolean.parseBoolean(String.valueOf(passRaw == null ? false : passRaw));
+            String reason = String.valueOf(reasonRaw == null ? "" : reasonRaw);
             return new VerifyResult(pass, reason);
         } catch (Exception e) {
             return new VerifyResult(true, "复核器异常，默认放行");

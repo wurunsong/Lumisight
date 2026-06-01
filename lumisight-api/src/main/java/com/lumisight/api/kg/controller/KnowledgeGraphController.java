@@ -10,6 +10,7 @@ import com.lumisight.tools.kg.service.KnowledgeGraphBuildService;
 import com.lumisight.tools.kg.service.KnowledgeGraphQueryService;
 import com.lumisight.tools.kg.service.KnowledgeGraphViewService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/lumisight/kg")
 @Slf4j
+@ConditionalOnProperty(prefix = "lumisight.kg", name = "enabled", havingValue = "true")
 public class KnowledgeGraphController {
 
     private final KnowledgeGraphBuildService buildService;

@@ -2,14 +2,14 @@ package com.lumisight.core.service;
 
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.CodeVectorContextProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
 @Component
-@ConditionalOnMissingBean(CodeVectorContextProvider.class)
+@ConditionalOnProperty(prefix = "lumisight.vector", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class NoopCodeVectorContextProvider implements CodeVectorContextProvider {
 
     @Override
