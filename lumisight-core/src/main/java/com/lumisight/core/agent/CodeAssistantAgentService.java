@@ -165,8 +165,8 @@ public class CodeAssistantAgentService {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
             }
 
-            // Resume path for HUMAN_GATE: execute the previously suspended risky tool decision
-            // only after the caller explicitly sets approveRiskyToolCall=true.
+            // 会话恢复到 HUMAN_GATE 场景：这里执行“上次被挂起的高风险工具决策（pendingDecision）”。
+            // 只有调用方显式传入 approveRiskyToolCall=true 才会继续执行该工具。
             if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
                 if (!request.approveRiskyToolCall()) {
                     events.add(AgentEvent.humanGate(
