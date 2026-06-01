@@ -49,3 +49,7 @@ lumisight:
     enabled: false
   vector:
     enabled: false
+  skills:
+    allowed-paths:
+      - .codex/skills
+      - .lumisight/skills

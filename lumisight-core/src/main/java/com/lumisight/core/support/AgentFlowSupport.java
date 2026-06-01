@@ -36,16 +36,6 @@ public class AgentFlowSupport {
         if (StringUtils.hasText(repoRoot)) {
             return repoRoot.trim();
         }
-        if (StringUtils.hasText(skillPath)) {
-            try {
-                Path skill = Path.of(skillPath).toAbsolutePath().normalize();
-                Path parent = skill.getParent();
-                if (parent != null) {
-                    return parent.toString();
-                }
-            } catch (Exception ignored) {
-            }
-        }
         return Path.of("").toAbsolutePath().normalize().toString();
     }
 

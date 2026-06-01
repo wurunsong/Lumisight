@@ -4,17 +4,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class FileBackedAgentSkill implements AgentSkill {
 
     private final SkillMarkdownParser parser;
+    private final SkillCatalog catalog;
 
-    public FileBackedAgentSkill(SkillMarkdownParser parser) {
+    public FileBackedAgentSkill(SkillMarkdownParser parser, SkillCatalog catalog) {
         this.parser = parser;
+        this.catalog = catalog;
     }
 
     @Override
@@ -29,26 +31,31 @@ public class FileBackedAgentSkill implements AgentSkill {
 
     @Override
     public boolean supports(SkillContext context) {
-        String skillPath = context.metadata() == null ? null : asString(context.metadata().get("skillPath"));
-        if (!StringUtils.hasText(skillPath)) {
+        String skillRef = context.metadata() == null ? null : asString(context.metadata().get("skillPath"));
+        if (!StringUtils.hasText(skillRef)) {
             return false;
         }
-        try {
-            Path path = Path.of(skillPath).toAbsolutePath().normalize();
-            return Files.exists(path) && Files.isRegularFile(path);
-        } catch (Exception ignored) {
-            return false;
-        }
+        return catalog.resolve(skillRef).isPresent();
     }
 
     @Override
     public SkillPlan buildPlan(SkillContext context) {
-        String skillPath = asString(context.metadata().get("skillPath"));
+        String skillRef = asString(context.metadata().get("skillPath"));
+        Optional<RegisteredSkill> resolved = catalog.resolve(skillRef);
+        if (resolved.isEmpty()) {
+            return new SkillPlan(
+                    "技能未注册或不可访问，回退默认编排: " + skillRef,
+                    List.of("ls", "cat", "grep"),
+                    List.of(),
+                    ""
+            );
+        }
+        RegisteredSkill skill = resolved.get();
         try {
-            String content = Files.readString(Path.of(skillPath).toAbsolutePath().normalize());
+            String content = Files.readString(skill.path());
             ParsedSkillDocument doc = parser.parse(content);
             return new SkillPlan(
-                    "来自技能文件: " + skillPath + " | " + doc.summary(),
+                    "来自已注册技能: " + skill.id() + " | " + doc.summary(),
                     inferPreferredTools(doc.executionSteps()),
                     doc.executionSteps(),
                     doc.outputContract()

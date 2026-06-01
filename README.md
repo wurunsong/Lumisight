@@ -168,7 +168,7 @@ mvn -pl lumisight-api -am spring-boot:run
   - `includeRagContext`：是否启用向量工具
   - `contextLimit`：上下文上限
   - `runMode`：`NORMAL` / `PLAN`（`PLAN` 先输出执行计划）
-  - `skillPath`：可选，指定外部技能文件路径（文件驱动 Skill 执行）
+  - `skillPath`：可选，指定已注册技能引用（id/name/path）；仅允许命中 `lumisight.skills.allowed-paths` 扫描得到的 Markdown skill
 - 事件类型：
   - `PLAN`：计划输出
   - `SKILL_SELECTED`：技能路由结果
