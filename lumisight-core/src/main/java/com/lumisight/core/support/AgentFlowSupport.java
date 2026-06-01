@@ -122,16 +122,6 @@ public class AgentFlowSupport {
         return null;
     }
 
-    public String dialogueModeDescription(String mode) {
-        if ("COLLECT".equalsIgnoreCase(mode)) {
-            return "当前对话模式: COLLECT（优先补全信息）";
-        }
-        if ("STEER".equalsIgnoreCase(mode)) {
-            return "当前对话模式: STEER（主动引导收敛）";
-        }
-        return "当前对话模式: FOLLOW（跟随用户问题）";
-    }
-
     public boolean requiresHumanGate(ToolDecision decision) {
         if (decision == null) {
             return false;

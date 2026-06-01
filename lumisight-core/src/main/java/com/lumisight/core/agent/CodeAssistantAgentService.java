@@ -138,7 +138,7 @@ public class CodeAssistantAgentService {
 
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
             events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
-            events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), agentFlowSupport.dialogueModeDescription(request.dialogueMode().name())));
+            events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
 
             SkillContext skillContext = new SkillContext(
                     request.taskType().name(),
