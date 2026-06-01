@@ -9,6 +9,7 @@ import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
+import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.support.AgentConversationManager;
 import com.lumisight.core.support.AgentDecisionParser;
 import com.lumisight.core.support.AgentFinalAnswerVerifier;
@@ -89,7 +90,23 @@ public class CodeAssistantAgentService {
         }
 
         AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
+        if (!request.resume() && StringUtils.hasText(request.question()) && resumeState != null && "RUNNING".equalsIgnoreCase(resumeState.status())) {
+            if (request.dialogueMode() == AgentDialogueMode.FOLLOW) {
+                conversationManager.enqueueFollowQuestion(sessionId, request.question());
+                return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "FOLLOW: 当前问题已排队，待上一条完成后按顺序处理。"));
+            }
+            if (request.dialogueMode() == AgentDialogueMode.COLLECT) {
+                conversationManager.mergeCollectQuestion(sessionId, request.question());
+                return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待处理问题，当前回复完成后统一处理。"));
+            }
+            if (request.dialogueMode() == AgentDialogueMode.STEER) {
+                conversationManager.interrupt(sessionId);
+            }
+        }
         String effectiveQuestion = request.question();
+        if (request.resume() && !StringUtils.hasText(effectiveQuestion) && conversationManager.hasQueuedQuestion(sessionId)) {
+            effectiveQuestion = conversationManager.pollQueuedQuestion(sessionId);
+        }
         String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();

@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AgentConversationManager {
 
     private final Map<String, ConversationState> states = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> queuedQuestions = new ConcurrentHashMap<>();
 
     public ConversationState get(String sessionId) {
         if (!StringUtils.hasText(sessionId)) {
@@ -59,6 +60,59 @@ public class AgentConversationManager {
             return;
         }
         states.remove(sessionId);
+        queuedQuestions.remove(sessionId);
+    }
+
+    public boolean hasQueuedQuestion(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return false;
+        }
+        List<String> queue = queuedQuestions.get(sessionId);
+        return queue != null && !queue.isEmpty();
+    }
+
+    public void enqueueFollowQuestion(String sessionId, String question) {
+        if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(question)) {
+            return;
+        }
+        queuedQuestions.compute(sessionId, (k, queue) -> {
+            List<String> result = queue == null ? new ArrayList<>() : new ArrayList<>(queue);
+            result.add(question);
+            return result;
+        });
+    }
+
+    public void mergeCollectQuestion(String sessionId, String question) {
+        if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(question)) {
+            return;
+        }
+        queuedQuestions.compute(sessionId, (k, queue) -> {
+            List<String> result = queue == null ? new ArrayList<>() : new ArrayList<>(queue);
+            if (result.isEmpty()) {
+                result.add(question);
+            } else {
+                String merged = result.get(0) + "\n用户追加问题: " + question;
+                result.set(0, merged);
+            }
+            return result;
+        });
+    }
+
+    public String pollQueuedQuestion(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return null;
+        }
+        List<String> queue = queuedQuestions.get(sessionId);
+        if (queue == null || queue.isEmpty()) {
+            return null;
+        }
+        String next = queue.remove(0);
+        if (queue.isEmpty()) {
+            queuedQuestions.remove(sessionId);
+        } else {
+            queuedQuestions.put(sessionId, queue);
+        }
+        return next;
     }
 
     public record ConversationState(
