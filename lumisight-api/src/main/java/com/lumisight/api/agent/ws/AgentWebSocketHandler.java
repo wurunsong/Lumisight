@@ -2,7 +2,9 @@ package com.lumisight.api.agent.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.api.agent.dto.request.AgentRunRequest;
-import com.lumisight.api.agent.support.AgentInteractionOrchestrator;
+import com.lumisight.api.agent.transport.AgentEventChannel;
+import com.lumisight.api.agent.transport.AgentStreamGateway;
+import com.lumisight.api.agent.transport.AgentTransportAdapter;
 import com.lumisight.api.agent.ws.dto.WsAgentCommand;
 import com.lumisight.api.agent.ws.dto.WsAgentMessage;
 import com.lumisight.core.model.AgentEvent;
@@ -18,18 +20,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class AgentWebSocketHandler extends TextWebSocketHandler {
+public class AgentWebSocketHandler extends TextWebSocketHandler implements AgentTransportAdapter {
 
     private final ObjectMapper objectMapper;
-    private final AgentInteractionOrchestrator interactionOrchestrator;
+    private final AgentStreamGateway streamGateway;
     private final Map<String, Disposable> subscriptions = new ConcurrentHashMap<>();
 
     public AgentWebSocketHandler(
             ObjectMapper objectMapper,
-            AgentInteractionOrchestrator interactionOrchestrator
+            AgentStreamGateway streamGateway
     ) {
         this.objectMapper = objectMapper;
-        this.interactionOrchestrator = interactionOrchestrator;
+        this.streamGateway = streamGateway;
     }
 
     @Override
@@ -49,11 +51,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         }
         sendProtocol(session, new WsAgentMessage("ACK", requestId, null, "accepted", System.currentTimeMillis()));
 
-        Disposable disposable = interactionOrchestrator.stream(req)
-                .doOnNext(event -> sendEvent(session, requestId, event))
-                .doOnError(error -> sendEvent(session, requestId, AgentEvent.error("websocket run failed: " + error.getMessage())))
-                .doFinally(signalType -> subscriptions.remove(session.getId()))
-                .subscribe();
+        Disposable disposable = streamGateway.stream(req, new WsEventChannel(session, requestId));
         subscriptions.put(session.getId(), disposable);
     }
 
@@ -110,6 +108,37 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             }
         } catch (Exception ignored) {
             // send failures are ignored because connection may already be closed by peer.
+        }
+    }
+
+    @Override
+    public String protocol() {
+        return "websocket";
+    }
+
+    private final class WsEventChannel implements AgentEventChannel {
+        private final WebSocketSession session;
+        private final String requestId;
+
+        private WsEventChannel(WebSocketSession session, String requestId) {
+            this.session = session;
+            this.requestId = requestId;
+        }
+
+        @Override
+        public void onEvent(AgentEvent event) {
+            sendEvent(session, requestId, event);
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            sendEvent(session, requestId, AgentEvent.error("websocket run failed: " + error.getMessage()));
+            subscriptions.remove(session.getId());
+        }
+
+        @Override
+        public void onComplete() {
+            subscriptions.remove(session.getId());
         }
     }
 }
