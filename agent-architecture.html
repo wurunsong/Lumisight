@@ -3,36 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lumisight 架构图</title>
+  <title>Lumisight 统一架构图</title>
   <style>
     :root {
-      --bg: #f4f6f8;
+      --bg: #f5f7fb;
       --card: #ffffff;
-      --text: #1f2937;
-      --muted: #4b5563;
-      --line: #cbd5e1;
-      --accent: #0f766e;
-      --accent2: #1d4ed8;
+      --text: #172033;
+      --muted: #52607a;
+      --line: #d6deeb;
+      --accent: #0b6bcb;
+      --accent2: #0f766e;
       --warn: #b45309;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-      background: linear-gradient(120deg, #eef2f7, #f8fafc);
+      background: radial-gradient(circle at top right, #eef4ff 0%, var(--bg) 55%);
       color: var(--text);
     }
-    .wrap { max-width: 1220px; margin: 0 auto; padding: 24px; }
-    h1 { margin: 0 0 8px; font-size: 28px; }
-    p { margin: 0 0 18px; color: var(--muted); }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 26px; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    p { margin: 0 0 16px; color: var(--muted); }
     .section-title {
-      margin: 20px 0 8px;
-      color: var(--accent);
+      margin: 22px 0 10px;
       font-size: 18px;
+      color: var(--accent);
       font-weight: 700;
     }
     .flow {
-      margin: 14px 0 18px;
+      margin: 12px 0 18px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -41,29 +41,15 @@
       font-weight: 600;
     }
     .node {
-      background: #ecfeff;
-      border: 1px solid #99f6e4;
-      color: #115e59;
       border-radius: 999px;
       padding: 8px 14px;
       font-size: 14px;
+      border: 1px solid;
     }
-    .node.offline {
-      background: #eff6ff;
-      border-color: #bfdbfe;
-      color: #1e3a8a;
-    }
-    .node.online {
-      background: #ecfeff;
-      border-color: #99f6e4;
-      color: #115e59;
-    }
-    .node.warn {
-      background: #fff7ed;
-      border-color: #fed7aa;
-      color: #9a3412;
-    }
-    .arrow { color: #64748b; font-size: 18px; }
+    .node.offline { background: #eef4ff; border-color: #c8dbff; color: #1e3a8a; }
+    .node.online { background: #eafdf8; border-color: #9fe5d6; color: #0f766e; }
+    .node.policy { background: #fff8ed; border-color: #f8d4a8; color: #9a3412; }
+    .arrow { color: #7c8aa5; font-size: 18px; }
     .grid { display: grid; gap: 14px; }
     .row-4 { grid-template-columns: repeat(4, 1fr); }
     .row-3 { grid-template-columns: repeat(3, 1fr); }
@@ -72,15 +58,15 @@
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 14px;
-      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+      box-shadow: 0 6px 18px rgba(15, 31, 62, 0.05);
     }
     .card h3 { margin: 0 0 8px; font-size: 16px; color: var(--accent2); }
     .card ul { margin: 0; padding-left: 18px; color: var(--muted); }
     .legend {
-      margin-top: 16px;
+      margin-top: 18px;
       padding: 12px;
       border-left: 4px solid var(--warn);
-      background: #fff7ed;
+      background: #fff8ed;
       color: #7c2d12;
       border-radius: 8px;
       font-size: 14px;
@@ -92,294 +78,193 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Lumisight：Java 代码智能 Agent 架构</h1>
-    <p>定位：支持“离线知识库增强模式”与“纯 Agent 本地调试模式”双路径；当无 Nebula/Milvus 环境时可仅启动在线 Agent Runtime，通过本地工具链与事件流完成可解释编排。</p>
+    <h1>Lumisight：统一架构蓝图</h1>
+    <p>这份图是“当前有效架构”的单一视图：融合历史演进结果，不按日期堆叠。离线知识库与在线 Agent 可解耦运行，生产和本地调试都能复用同一主链路。</p>
 
-    <div class="section-title">1. 阶段化主流程（先离线，后在线）</div>
+    <div class="section-title">1. 端到端主流程</div>
     <div class="flow">
-      <div class="node offline">离线解析 Java 仓库</div><div class="arrow">→</div>
-      <div class="node offline">构建 Milvus 向量索引</div><div class="arrow">→</div>
-      <div class="node offline">构建 Nebula 关系图谱</div><div class="arrow">→</div>
+      <div class="node offline">离线解析仓库</div><div class="arrow">→</div>
+      <div class="node offline">构建向量/图谱</div><div class="arrow">→</div>
       <div class="node online">启动 Agent Runtime</div><div class="arrow">→</div>
-      <div class="node online">编排 + 工具调用 + 记忆 + Skill</div><div class="arrow">→</div>
-      <div class="node online">输出结论与证据链</div>
+      <div class="node online">Loop 编排 + 工具执行</div><div class="arrow">→</div>
+      <div class="node online">SSE 事件流输出</div><div class="arrow">→</div>
+      <div class="node online">最终答案与证据</div>
     </div>
 
-    <div class="section-title">2. 在线 Runtime 端到端执行流</div>
-    <div class="flow">
-      <div class="node online">用户请求 /agent/query</div><div class="arrow">→</div>
-      <div class="node online">Agent Loop（NORMAL / PLAN）</div><div class="arrow">→</div>
-      <div class="node online">Tool Registry 调度工具</div><div class="arrow">→</div>
-      <div class="node online">RAG / KG / Source 查询</div><div class="arrow">→</div>
-      <div class="node online">输出 AgentEvent 事件流</div><div class="arrow">→</div>
-      <div class="node online">SSE 持续推送</div>
-    </div>
-
-    <div class="section-title">2.1 Agent Loop 细化流程（当前实现）</div>
-    <div class="grid row-3">
-      <div class="card">
-        <h3>入口与模式</h3>
-        <ul>
-          <li>入口类：`CodeAssistantAgentService`</li>
-          <li>请求校验：`AgentRequestValidators.validate`</li>
-          <li>模式：`NORMAL` 直接循环；`PLAN` 先产出计划事件</li>
-          <li>上下文作用域：`AgentToolRuntimeContext.open(repoRoot, limit)`</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>循环决策</h3>
-        <ul>
-          <li>轮次上限：`MAX_TOOL_ROUNDS`</li>
-          <li>每轮由模型输出 JSON：`action/toolName/args/finalAnswer/askUserQuestion`</li>
-          <li>`action=tool`：按权限调度工具执行</li>
-          <li>`action=ask_user`：输出反问事件并等待用户补充</li>
-          <li>`action=final`：直接结束并返回最终结论</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>事件输出</h3>
-        <ul>
-          <li>中间过程事件：`PLAN/TOOL_CALL/TOOL_RESULT/ASK_USER`</li>
-          <li>文本流事件：`TOKEN`（模型流式分片）</li>
-          <li>收敛事件：`FINAL`</li>
-          <li>异常事件：`ERROR`（工具未注册、权限不足、解析回退）</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="section-title">3. 核心模块分层（在线）</div>
+    <div class="section-title">2. 在线分层架构（先整体）</div>
     <div class="grid row-4">
       <div class="card">
-        <h3>A. 接入层（API）</h3>
+        <h3>A. API 接入层</h3>
         <ul>
           <li>统一前缀：`/api/lumisight`</li>
-          <li>KG 接口：build/view/query + 单节点查询</li>
-          <li>Vector 接口：code_chunk/symbol_doc/auto/repo ingest</li>
-          <li>Agent SSE 接口：`POST /api/lumisight/agent/stream`</li>
+          <li>Agent：`POST /agent/stream`（SSE）</li>
+          <li>KG/Vector 接口按开关条件暴露</li>
+          <li>异常统一映射：401/404/500</li>
         </ul>
       </div>
       <div class="card">
-        <h3>B. 编排层（Agent Core）</h3>
+        <h3>B. Agent 编排层</h3>
         <ul>
-          <li>核心类：`CodeAssistantAgentService`（单类主循环）</li>
-          <li>运行模式：`AgentRunMode.NORMAL` / `AgentRunMode.PLAN`</li>
-          <li>支持 `ask_user` 动作，信息不足时反问而非硬结束</li>
+          <li>核心：`CodeAssistantAgentService`</li>
+          <li>模式：`NORMAL` / `PLAN`</li>
+          <li>动作：`tool` / `ask_user` / `final`</li>
+          <li>技能：默认技能 + `skillPath` 文件技能</li>
         </ul>
       </div>
       <div class="card">
-        <h3>C. 工具层（Tools）</h3>
+        <h3>C. Tool 执行层</h3>
         <ul>
-          <li>Tool Registry 按权限与类别动态调度</li>
-          <li>Hybrid Vector 并发召回（代码 + 注释向量）</li>
-          <li>可组合接入图谱查询与源码定位工具</li>
+          <li>按权限与类别统一注册调度</li>
+          <li>本地/Git/LSP/构建/向量/图谱工具协同</li>
+          <li>工具别名与参数兼容映射</li>
+          <li>高风险调用可被 Hook 前置拦截</li>
         </ul>
       </div>
       <div class="card">
-        <h3>D. 输出与事件层</h3>
+        <h3>D. 事件与会话层</h3>
         <ul>
-          <li>统一事件模型：`AgentEvent`</li>
-          <li>事件类型：PLAN/TOOL_CALL/TOOL_RESULT/ASK_USER/TOKEN/FINAL/ERROR</li>
-          <li>可用于前端、CLI、服务间实时订阅</li>
+          <li>事件：`PLAN/TOOL_CALL/TOOL_RESULT/TOKEN/FINAL`</li>
+          <li>反问与人工门控：`ASK_USER/HUMAN_GATE`</li>
+          <li>可观测状态：`LOOP_STATE/VERIFY_RESULT`</li>
+          <li>支持会话中断与续跑</li>
         </ul>
       </div>
     </div>
 
-    <div class="section-title">3.1 运行策略与降级（今日更新）</div>
+    <div class="section-title">3. Agent 决策与执行闭环（再分点）</div>
     <div class="grid row-3">
       <div class="card">
-        <h3>计划模式</h3>
+        <h3>3.1 决策循环</h3>
         <ul>
-          <li>`PLAN` 模式首轮先输出执行计划</li>
-          <li>后续按循环决策执行工具调用</li>
-          <li>适用于复杂任务和可解释流程场景</li>
+          <li>请求校验后进入最大轮次控制的 loop</li>
+          <li>每轮模型给出结构化决策 JSON</li>
+          <li>工具结果回填上下文驱动下一轮</li>
+          <li>信息不足走 `ask_user`，避免错误收敛</li>
         </ul>
       </div>
       <div class="card">
-        <h3>反问策略</h3>
+        <h3>3.2 质量与门控</h3>
         <ul>
-          <li>动作：`ask_user`</li>
-          <li>当上下文不足时主动向用户请求补充信息</li>
-          <li>避免误判为 `final` 导致错误收敛</li>
+          <li>答案复核改为条件触发，降低对话时延</li>
+          <li>高风险写操作支持人工确认</li>
+          <li>失败策略支持 retry/fallback</li>
+          <li>权限不足/未知工具返回结构化错误事件</li>
         </ul>
       </div>
       <div class="card">
-        <h3>异常与回退</h3>
+        <h3>3.3 Hook 与技能扩展</h3>
         <ul>
-          <li>工具未注册：事件 `tool_error/unknown_tool`</li>
-          <li>权限不足：事件 `tool_error/permission_denied`</li>
-          <li>决策解析失败：回退到最终回答分支</li>
+          <li>Hook：读取 `.codeflicker/config.json` 的 `PreToolUse`</li>
+          <li>命令钩子可按规则阻断危险调用</li>
+          <li>技能支持外部文件注入，不污染主流程</li>
+          <li>默认对话链路与技能链路可独立演进</li>
         </ul>
       </div>
     </div>
 
-    <div class="section-title">4. 外挂知识库（离线构建）</div>
+    <div class="section-title">4. Sandbox 安全执行与回滚</div>
+    <div class="flow">
+      <div class="node policy">统一命令执行入口</div><div class="arrow">→</div>
+      <div class="node policy">超时/输出上限/网络开关</div><div class="arrow">→</div>
+      <div class="node policy">local 或 docker 隔离执行</div><div class="arrow">→</div>
+      <div class="node policy">写前快照</div><div class="arrow">→</div>
+      <div class="node policy">rollbackRepoFile 回滚</div>
+    </div>
+
     <div class="grid row-3">
       <div class="card">
-        <h3>Milvus（向量知识）</h3>
+        <h3>4.1 执行策略</h3>
         <ul>
-          <li>code_chunk：方法级代码片段向量</li>
-          <li>symbol_doc：符号职责文档向量</li>
-          <li>双集合 Bean + `@Qualifier` 显式注入</li>
-          <li>元数据：repo/file/qualifiedName/git</li>
+          <li>统一 `SandboxCommandRunner` 承接命令执行</li>
+          <li>全局网络策略：`lumisight.sandbox.network-enabled`</li>
+          <li>Docker 模式支持 CPU/内存/PID 限制</li>
+          <li>Git 工具已统一接入 sandbox 执行器</li>
         </ul>
       </div>
       <div class="card">
-        <h3>Nebula（结构知识）</h3>
+        <h3>4.2 可回退写入</h3>
+        <ul>
+          <li>`writeRepoFile` 自动生成 `snapshotId`</li>
+          <li>快照目录由 `snapshot-dir` 管理</li>
+          <li>`rollbackRepoFile` 按快照恢复文件</li>
+          <li>形成“可执行 + 可撤销”闭环</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>4.3 运行模式建议</h3>
+        <ul>
+          <li>本地调试优先 `local` + 网络关闭</li>
+          <li>高隔离场景切 `docker` 模式</li>
+          <li>无 KG/Vector 环境可仅跑 Agent</li>
+          <li>生产环境按权限最小化原则配置</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">5. 离线知识库子系统（可选增强）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>5.1 Milvus 向量层</h3>
+        <ul>
+          <li>双集合：`code_chunk` / `symbol_doc`</li>
+          <li>支持全量与增量入库</li>
+          <li>向量元数据关联源码与符号</li>
+          <li>关闭开关时不影响 Agent 启动</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>5.2 Nebula 图谱层</h3>
         <ul>
           <li>节点：module/package/class/method</li>
-          <li>边：contains + method calls</li>
-          <li>repo_meta 记录构建基线提交</li>
+          <li>边：contains/calls 等语义关系</li>
+          <li>构建服务支持按仓库增量更新</li>
+          <li>按 `lumisight.kg.enabled` 条件装配</li>
         </ul>
       </div>
       <div class="card">
-        <h3>契约与治理</h3>
+        <h3>5.3 与 Runtime 协同</h3>
         <ul>
-          <li>统一 Query Contract</li>
-          <li>索引版本与新鲜度标记</li>
-          <li>不可用降级与回退策略</li>
-          <li>配置收敛到 core，API 仅做导入与开关控制</li>
+          <li>RAG/KG 作为可插拔上下文提供者</li>
+          <li>无外部依赖时自动降级 Noop Provider</li>
+          <li>避免 Bean 缺失导致应用启动失败</li>
+          <li>保证主链路始终可调试</li>
         </ul>
       </div>
     </div>
 
-    <div class="section-title">5. 当前阶段：Agent 核心流程完善（当前重点）</div>
-    <div class="flow">
-      <div class="node online">接收请求（NORMAL / PLAN）</div><div class="arrow">→</div>
-      <div class="node online">模型决策 action</div><div class="arrow">→</div>
-      <div class="node online">工具执行与结果回填</div><div class="arrow">→</div>
-      <div class="node warn">信息不足触发 ask_user</div><div class="arrow">→</div>
-      <div class="node online">事件流输出（TOOL/TOKEN/FINAL）</div><div class="arrow">→</div>
-      <div class="node online">SSE 持续推送到客户端</div>
-    </div>
-
+    <div class="section-title">6. 关键配置与开关</div>
     <div class="grid row-3">
       <div class="card">
-        <h3>5.1 决策与执行闭环</h3>
+        <h3>功能开关</h3>
         <ul>
-          <li>每轮输出结构化决策：`tool / ask_user / final`</li>
-          <li>工具结果进入下一轮上下文，直到收敛</li>
-          <li>支持 PLAN 先规划，再执行</li>
-          <li>保留最大轮次，防止无限循环</li>
-          <li>主类只保留核心 loop，不耦合增强逻辑</li>
+          <li>`lumisight.kg.enabled`</li>
+          <li>`lumisight.vector.enabled`</li>
+          <li>`taskType` 支持 `CHAT` 且可为空</li>
+          <li>`skillPath` 可选注入技能文件</li>
         </ul>
       </div>
       <div class="card">
-        <h3>5.2 工具链编排策略</h3>
+        <h3>Sandbox 开关</h3>
         <ul>
-          <li>优先走混合向量工具（代码+注释并发召回）</li>
-          <li>图谱和源码查询由链路硬编排衔接</li>
-          <li>按工具类别与权限统一注册和调度</li>
-          <li>便于后续多 Agent 复用和治理</li>
-          <li>为 Advisor 化上下文增强预留边界</li>
+          <li>`lumisight.sandbox.enabled`</li>
+          <li>`lumisight.sandbox.mode`</li>
+          <li>`lumisight.sandbox.timeout-seconds`</li>
+          <li>`lumisight.sandbox.max-output-bytes`</li>
         </ul>
       </div>
       <div class="card">
-        <h3>5.3 当前阶段验收标准</h3>
+        <h3>调试入口</h3>
         <ul>
-          <li>可稳定输出 PLAN / TOOL_CALL / TOOL_RESULT / FINAL</li>
-          <li>`ask_user` 在信息不足时可正确中断并反问</li>
-          <li>SSE 能实时消费事件，不只返回最终文本</li>
-          <li>核心流程和上下文增强职责边界清晰</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="section-title">6. 今日架构增量（2026-05-29）</div>
-    <div class="grid row-3">
-      <div class="card">
-        <h3>6.1 主循环治理</h3>
-        <ul>
-          <li>新增 `Verifier` 复核环：`final` 先校验再收敛</li>
-          <li>新增 `Human Gate`：高风险写操作需显式人工确认</li>
-          <li>新增工具执行策略层：`retry + fallback`</li>
-          <li>会话支持中断/恢复与反问闭环续跑</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>6.2 工具体系扩展</h3>
-        <ul>
-          <li>本地终端语义工具：`grep/cat/ls/pwd/writeRepoFile`</li>
-          <li>质量工具：`lintJava`、`compileJava`</li>
-          <li>Git 语义工具：`gitStatus/gitDiff/gitBlame`</li>
-          <li>LSP 工具：`javaGoToDefinition/javaFindReferences/lintJavaByJdtls`</li>
-          <li>jdtls 会话池：按 `repoRoot` 复用进程</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>6.3 架构与组织</h3>
-        <ul>
-          <li>新增 `mcp`、`hooks` 独立模块并接入核心编排</li>
-          <li>新增 `multiagent` 骨架接口与默认实现</li>
-          <li>目录重构：`agent` 仅保留主 Agent 与 `multiagent`</li>
-          <li>`config` 目录合并到 `core/config`</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="section-title">7. 今日架构增量（2026-06-01）</div>
-    <div class="grid row-3">
-      <div class="card">
-        <h3>7.1 启动隔离与装配边界</h3>
-        <ul>
-          <li>默认关闭：`lumisight.kg.enabled=false`、`lumisight.vector.enabled=false`</li>
-          <li>排除 Milvus 自动配置，避免无向量库环境启动阻塞</li>
-          <li>KG Controller/Service/Properties 全链路条件装配</li>
-          <li>实现“无 KG/Vector 也可调 Agent 主链路”的启动策略</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>7.2 运行时降级与兼容</h3>
-        <ul>
-          <li>补齐 Noop/Fallback Provider（Vector/KG/Source）以防 Bean 缺失</li>
-          <li>工具兼容映射：`read_file/read_directory/list_directory` -> `cat/ls`</li>
-          <li>参数兼容映射：`filePath/path` -> `sourceFile`，`query` -> `pattern`</li>
-          <li>unknown_tool 场景由“直接失败”转为“兼容后继续执行”</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>7.3 可观测性与调试入口</h3>
-        <ul>
-          <li>新增浏览器调试页：`/agent-console.html`</li>
-          <li>页面直连 `POST /api/lumisight/agent/stream`，实时展示 SSE 事件</li>
-          <li>全局异常映射优化：AI 上游 401 明确返回 401，静态资源缺失返回 404</li>
-          <li>前后端联调从 Postman 迁移到可视化控制台</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="section-title">8. 今日架构增量（2026-06-01 第二阶段）</div>
-    <div class="grid row-3">
-      <div class="card">
-        <h3>8.1 Skill 执行路径升级</h3>
-        <ul>
-          <li>新增文件驱动技能：请求可携带 `skillPath` 直接执行外部技能文档</li>
-          <li>运行时新增 `FileBackedAgentSkill` + `SkillMarkdownParser` 解析链路</li>
-          <li>默认技能仍保留，形成“默认编排 + 外部技能注入”双轨</li>
-          <li>Skill 结果纳入统一事件流，便于前端可视化追踪</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>8.2 工具治理与安全边界</h3>
-        <ul>
-          <li>工具授权从粗粒度放开改为按请求动态组合权限</li>
-          <li>最终答案复核改为条件触发，减少低风险对话链路时延</li>
-          <li>Hook 系统对齐 `.codeflicker/config.json`，支持 `PreToolUse` 命令钩子</li>
-          <li>高风险调用可在钩子阶段阻断，实现“执行前门禁”</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>8.3 Sandbox 与回滚闭环</h3>
-        <ul>
-          <li>新增统一命令执行器：超时、输出上限、网络开关统一治理</li>
-          <li>支持 `local/docker` 模式；Docker 模式附带 CPU/内存/PID/网络限制</li>
-          <li>Git 工具统一接入 Sandbox 执行入口，避免各自直连进程</li>
-          <li>`writeRepoFile` 写前自动快照，新增 `rollbackRepoFile` 支持回滚</li>
+          <li>浏览器控制台：`/agent-console.html`</li>
+          <li>SSE 事件流实时回放</li>
+          <li>可替代 Postman 做交互调试</li>
+          <li>兼容纯本地 Agent 模式</li>
         </ul>
       </div>
     </div>
 
     <div class="legend">
-      讲解建议：先讲整体架构，再强调当前阶段是“Agent loop 可控化 + 事件流化”，离线知识库作为基础能力支撑。
+      维护规则：此图只描述“当前统一架构”，新改动请直接融合到对应模块，不再新增“按日期”分节。
     </div>
   </div>
 </body>
