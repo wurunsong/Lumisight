@@ -225,10 +225,15 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 
 ## 配置化 Hook（用户侧，无需改代码）
 
-- 示例文件：`.codeflicker/config.json.example`（复制为 `.codeflicker/config.json` 后生效）
-- 默认读取路径：`.codeflicker/config.json`
+- 示例文件：`.lumisight/hooks.json.example`（复制为 `.lumisight/hooks.json` 后生效）
+- 默认读取路径：`.lumisight/hooks.json`（兼容回退：若新路径不存在，会尝试 `.codeflicker/config.json`）
 - 可通过 JVM 参数覆盖：`-Dlumisight.hooks.config=/abs/path/config.json`
-- 当前按 `hooks.PreToolUse` + `matcher` 规则执行 `type=command` 钩子：
+- 支持全部点位（键名）：
+  - `BeforePlan`、`AfterPlan`
+  - `BeforeDecision`、`AfterDecision`
+  - `PreToolUse`、`PostToolUse`
+  - `OnAskUser`、`BeforeFinal`、`OnError`
+- 每个点位下按 `matcher` + `hooks` 规则执行 `type=command` 钩子（非工具阶段可省略 `matcher`）：
   - 钩子通过 stdin 接收 JSON payload（`tool_name`、`tool_input`、`question` 等）
   - 退出码非 0 或输出 `{ "continue": false }` 将阻断请求
-  - 示例钩子：`.codeflicker/hooks/db-guard-hook.js`
+  - 示例钩子：`.lumisight/hooks/db-guard-hook.js`

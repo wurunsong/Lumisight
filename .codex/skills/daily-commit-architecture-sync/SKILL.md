@@ -33,6 +33,7 @@ metadata:
   2. 分点细化（模块职责、数据流、运行策略、异常与降级）
 - `CODE_FLOW.md` 与 `agent-architecture.html` 必须清晰反映“当天变更”并纳入 Git。
 - `README.md` 为仓库对外说明文档，按当日提交事实更新并纳入 Git。
+- 当天开发过程必须按“每个独立功能一个 commit”执行（小步提交、可回滚）；禁止将多个无关功能合并为单一大 commit。
 - 不写入任何明文密钥、令牌、个人敏感信息。
 - 若当天无 commit，`CODE_FLOW.md` 追加“无代码提交，仅运行验证/排障”的记录，HTML仅做必要校对不做虚构增量。
 
@@ -121,9 +122,10 @@ rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html README.md
 
 ### Step 6) Commit And Push
 在一致性检查通过后，执行：
-1. `git add CODE_FLOW.md agent-architecture.html README.md`
-2. 使用中文 commit message 提交文档同步。
-3. `git push` 到当前分支对应远程。
+1. 先确认当天功能提交粒度符合“每个独立功能一个 commit”；若发现多功能混合提交，先在输出中标注风险并给出拆分建议。
+2. `git add CODE_FLOW.md agent-architecture.html README.md`
+3. 使用中文 commit message 提交文档同步（文档同步 commit 与功能 commit 分离）。
+4. `git push` 到当前分支对应远程。
 
 若 push 失败，必须在输出中说明失败原因与下一步建议。
 

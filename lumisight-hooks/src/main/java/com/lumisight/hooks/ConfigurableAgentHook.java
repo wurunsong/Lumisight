@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,14 +22,26 @@ import java.util.regex.Pattern;
 public class ConfigurableAgentHook implements AgentHook {
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurableAgentHook.class);
-    private static final String DEFAULT_CONFIG_PATH = ".codeflicker/config.json";
+    private static final String DEFAULT_CONFIG_PATH = ".lumisight/hooks.json";
+    private static final String LEGACY_CONFIG_PATH = ".codeflicker/config.json";
+    private static final Map<AgentHookPoint, String> POINT_KEYS = Map.of(
+            AgentHookPoint.BEFORE_PLAN, "BeforePlan",
+            AgentHookPoint.AFTER_PLAN, "AfterPlan",
+            AgentHookPoint.BEFORE_DECISION, "BeforeDecision",
+            AgentHookPoint.AFTER_DECISION, "AfterDecision",
+            AgentHookPoint.BEFORE_TOOL_CALL, "PreToolUse",
+            AgentHookPoint.AFTER_TOOL_CALL, "PostToolUse",
+            AgentHookPoint.ON_ASK_USER, "OnAskUser",
+            AgentHookPoint.BEFORE_FINAL, "BeforeFinal",
+            AgentHookPoint.ON_ERROR, "OnError"
+    );
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final List<PreToolUseRule> preToolUseRules;
+    private final Map<AgentHookPoint, List<HookRule>> rulesByPoint;
 
     public ConfigurableAgentHook() {
-        this.preToolUseRules = loadPreToolUseRules();
-        log.info("configurable_hook loaded, preToolUseRules={}", preToolUseRules.size());
+        this.rulesByPoint = loadRulesByPoint();
+        log.info("configurable_hook loaded, activePoints={}", rulesByPoint.keySet());
     }
 
     @Override
@@ -38,83 +51,108 @@ public class ConfigurableAgentHook implements AgentHook {
 
     @Override
     public boolean supports(AgentHookPoint point) {
-        return point == AgentHookPoint.BEFORE_TOOL_CALL && !preToolUseRules.isEmpty();
+        List<HookRule> rules = rulesByPoint.get(point);
+        return rules != null && !rules.isEmpty();
     }
 
     @Override
     public void onHook(AgentHookPoint point, AgentHookContext context) {
-        if (point != AgentHookPoint.BEFORE_TOOL_CALL) {
+        List<HookRule> rules = rulesByPoint.get(point);
+        if (rules == null || rules.isEmpty()) {
             return;
         }
         String toolName = context.toolName() == null ? "" : context.toolName();
-        for (PreToolUseRule rule : preToolUseRules) {
-            if (!rule.matcher().matcher(toolName).find()) {
+        for (HookRule rule : rules) {
+            if (!rule.matches(toolName)) {
                 continue;
             }
             for (CommandHook hook : rule.hooks()) {
-                runCommandHook(hook, context);
+                runCommandHook(hook, point, context);
             }
         }
     }
 
-    private List<PreToolUseRule> loadPreToolUseRules() {
-        String configuredPath = System.getProperty("lumisight.hooks.config", DEFAULT_CONFIG_PATH);
-        Path path = Path.of(configuredPath).toAbsolutePath().normalize();
+    private Map<AgentHookPoint, List<HookRule>> loadRulesByPoint() {
+        String configuredPath = System.getProperty("lumisight.hooks.config");
+        Path path = resolveConfigPath(configuredPath);
         if (!Files.exists(path) || !Files.isRegularFile(path)) {
             log.info("configurable_hook config not found, path={}", path);
-            return List.of();
+            return Map.of();
         }
         try (InputStream in = Files.newInputStream(path)) {
             Map<String, Object> root = objectMapper.readValue(in, new TypeReference<>() {});
             Object hooksObj = root.get("hooks");
             if (!(hooksObj instanceof Map<?, ?> hooksMap)) {
-                return List.of();
+                return Map.of();
             }
-            Object preToolUse = hooksMap.get("PreToolUse");
-            if (!(preToolUse instanceof List<?> list)) {
-                return List.of();
-            }
-            List<PreToolUseRule> result = new ArrayList<>();
-            for (Object item : list) {
-                if (!(item instanceof Map<?, ?> ruleMap)) {
+            Map<AgentHookPoint, List<HookRule>> result = new EnumMap<>(AgentHookPoint.class);
+            for (AgentHookPoint point : AgentHookPoint.values()) {
+                List<?> list = findRulesForPoint(hooksMap, point);
+                if (list == null) {
                     continue;
                 }
-                String matcherText = asString(ruleMap.get("matcher"), "");
-                if (matcherText.isBlank()) {
-                    continue;
-                }
-                Object hookListObj = ruleMap.get("hooks");
-                if (!(hookListObj instanceof List<?> hookList)) {
-                    continue;
-                }
-                List<CommandHook> commandHooks = new ArrayList<>();
-                for (Object hookObj : hookList) {
-                    if (!(hookObj instanceof Map<?, ?> hookMap)) {
-                        continue;
-                    }
-                    String type = asString(hookMap.get("type"), "");
-                    if (!"command".equalsIgnoreCase(type)) {
-                        continue;
-                    }
-                    String command = asString(hookMap.get("command"), "");
-                    if (!command.isBlank()) {
-                        commandHooks.add(new CommandHook(command));
-                    }
-                }
-                if (!commandHooks.isEmpty()) {
-                    result.add(new PreToolUseRule(Pattern.compile(matcherText), commandHooks));
+                List<HookRule> pointRules = parseHookRules(list);
+                if (!pointRules.isEmpty()) {
+                    result.put(point, pointRules);
                 }
             }
             return result;
         } catch (Exception e) {
             log.warn("configurable_hook load failed, path={}, error={}", path, e.getMessage());
-            return List.of();
+            return Map.of();
         }
     }
 
-    private void runCommandHook(CommandHook hook, AgentHookContext context) {
+    private List<?> findRulesForPoint(Map<?, ?> hooksMap, AgentHookPoint point) {
+        String key = POINT_KEYS.get(point);
+        Object value = hooksMap.get(key);
+        if (!(value instanceof List<?> list)) {
+            value = hooksMap.get(point.name());
+            if (!(value instanceof List<?>)) {
+                return null;
+            }
+            list = (List<?>) value;
+        }
+        return list;
+    }
+
+    private List<HookRule> parseHookRules(List<?> ruleList) {
+        List<HookRule> result = new ArrayList<>();
+        for (Object item : ruleList) {
+            if (!(item instanceof Map<?, ?> ruleMap)) {
+                continue;
+            }
+            String matcherText = asString(ruleMap.get("matcher"), "");
+            Pattern matcher = matcherText.isBlank() ? null : Pattern.compile(matcherText);
+            Object hookListObj = ruleMap.get("hooks");
+            if (!(hookListObj instanceof List<?> hookList)) {
+                continue;
+            }
+            List<CommandHook> commandHooks = new ArrayList<>();
+            for (Object hookObj : hookList) {
+                if (!(hookObj instanceof Map<?, ?> hookMap)) {
+                    continue;
+                }
+                String type = asString(hookMap.get("type"), "");
+                if (!"command".equalsIgnoreCase(type)) {
+                    continue;
+                }
+                String command = asString(hookMap.get("command"), "");
+                if (!command.isBlank()) {
+                    commandHooks.add(new CommandHook(command));
+                }
+            }
+            if (!commandHooks.isEmpty()) {
+                result.add(new HookRule(matcher, commandHooks));
+            }
+        }
+        return result;
+    }
+
+    private void runCommandHook(CommandHook hook, AgentHookPoint point, AgentHookContext context) {
         Map<String, Object> payload = Map.of(
-                "hook_event_name", "PreToolUse",
+                "hook_event_name", POINT_KEYS.getOrDefault(point, point.name()),
+                "hook_point", point.name(),
                 "tool_name", context.toolName() == null ? "" : context.toolName(),
                 "tool_input", context.metadata() == null ? Map.of() : context.metadata(),
                 "session_id", context.sessionId() == null ? "" : context.sessionId(),
@@ -166,7 +204,29 @@ public class ConfigurableAgentHook implements AgentHook {
         return text.isBlank() ? defaultValue : text;
     }
 
-    private record PreToolUseRule(Pattern matcher, List<CommandHook> hooks) {
+    private Path resolveConfigPath(String configuredPath) {
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            return Path.of(configuredPath).toAbsolutePath().normalize();
+        }
+        Path defaultPath = Path.of(DEFAULT_CONFIG_PATH).toAbsolutePath().normalize();
+        if (Files.exists(defaultPath) && Files.isRegularFile(defaultPath)) {
+            return defaultPath;
+        }
+        Path legacyPath = Path.of(LEGACY_CONFIG_PATH).toAbsolutePath().normalize();
+        if (Files.exists(legacyPath) && Files.isRegularFile(legacyPath)) {
+            log.info("configurable_hook legacy config detected, path={}", legacyPath);
+            return legacyPath;
+        }
+        return defaultPath;
+    }
+
+    private record HookRule(Pattern matcher, List<CommandHook> hooks) {
+        boolean matches(String toolName) {
+            if (matcher == null) {
+                return true;
+            }
+            return matcher.matcher(toolName == null ? "" : toolName).find();
+        }
     }
 
     private record CommandHook(String command) {

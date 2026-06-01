@@ -1,21 +1,22 @@
 package com.lumisight.core.agent;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.model.AgentToolExecutionResult;
-import com.lumisight.core.model.AgentEvent;
+import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.hooks.runtime.HookedToolExecutor;
 import com.lumisight.core.model.AgentContextItem;
+import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;
+import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
-import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.support.AgentConversationManager;
+import com.lumisight.core.support.AgentDecisionParser;
+import com.lumisight.core.support.AgentFinalAnswerVerifier;
+import com.lumisight.core.support.AgentFlowSupport;
 import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentRequestValidators;
-import com.lumisight.core.support.ToolSchemaValidator;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
-import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.hooks.AgentHookContext;
 import com.lumisight.hooks.AgentHookDispatcher;
 import com.lumisight.hooks.AgentHookPoint;
@@ -23,41 +24,34 @@ import com.lumisight.skills.runtime.AgentSkill;
 import com.lumisight.skills.runtime.SkillContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import com.lumisight.skills.runtime.SkillRegistry;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Locale;
 
 @Service
 public class CodeAssistantAgentService {
 
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
-    private static final int TOOL_MAX_RETRY = 2;
-    private static final Set<AgentToolPermission> BASE_TOOL_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.LOCAL_FS_READ,
-            AgentToolPermission.GIT_READ
-    );
 
     private final ChatClient llmChatClient;
     private final AgentToolRegistry agentToolRegistry;
     private final AgentPromptService agentPromptService;
     private final AgentConversationManager conversationManager;
     private final AgentHookDispatcher agentHookDispatcher;
+    private final HookedToolExecutor hookedToolExecutor;
     private final SkillRegistry skillRegistry;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AgentFlowSupport agentFlowSupport;
+    private final AgentDecisionParser decisionParser;
+    private final AgentFinalAnswerVerifier finalAnswerVerifier;
 
     @Autowired
     public CodeAssistantAgentService(
@@ -66,14 +60,22 @@ public class CodeAssistantAgentService {
             AgentPromptService agentPromptService,
             AgentConversationManager conversationManager,
             AgentHookDispatcher agentHookDispatcher,
-            SkillRegistry skillRegistry
+            HookedToolExecutor hookedToolExecutor,
+            SkillRegistry skillRegistry,
+            AgentFlowSupport agentFlowSupport,
+            AgentDecisionParser decisionParser,
+            AgentFinalAnswerVerifier finalAnswerVerifier
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
         this.agentPromptService = agentPromptService;
         this.conversationManager = conversationManager;
         this.agentHookDispatcher = agentHookDispatcher;
+        this.hookedToolExecutor = hookedToolExecutor;
         this.skillRegistry = skillRegistry;
+        this.agentFlowSupport = agentFlowSupport;
+        this.decisionParser = decisionParser;
+        this.finalAnswerVerifier = finalAnswerVerifier;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -88,7 +90,7 @@ public class CodeAssistantAgentService {
 
         AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
         String effectiveQuestion = request.question();
-        String resolvedRepoRoot = resolveRepoRoot(request.repoRoot(), request.skillPath());
+        String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();
         List<AgentEvent> events = new ArrayList<>();
@@ -119,27 +121,26 @@ public class CodeAssistantAgentService {
 
         try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
             events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
-            events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), dialogueModeDescription(request.dialogueMode().name())));
-            AgentSkill skill = skillRegistry.select(new SkillContext(
+            events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), agentFlowSupport.dialogueModeDescription(request.dialogueMode().name())));
+
+            SkillContext skillContext = new SkillContext(
                     request.taskType().name(),
                     request.dialogueMode().name(),
                     request.runMode().name(),
                     effectiveQuestion,
-                    buildSkillMetadata(resolvedRepoRoot, request.skillPath())
-            ));
-            SkillPlan skillPlan = skill.buildPlan(new SkillContext(
-                    request.taskType().name(),
-                    request.dialogueMode().name(),
-                    request.runMode().name(),
-                    effectiveQuestion,
-                    buildSkillMetadata(resolvedRepoRoot, request.skillPath())
-            ));
+                    agentFlowSupport.buildSkillMetadata(resolvedRepoRoot, request.skillPath())
+            );
+            AgentSkill skill = skillRegistry.select(skillContext);
+            SkillPlan skillPlan = skill.buildPlan(skillContext);
             events.add(AgentEvent.skillSelected(traceId, sessionId, skill.skillName(), skillPlan.summary()));
-            Set<AgentToolPermission> enabledPermissions = enabledPermissions(request, skillPlan);
+
+            Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
+
             if (StringUtils.hasText(request.skillPath()) && !skillPlan.executionSteps().isEmpty()) {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
                 executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions);
             }
+
             if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
                 if (!request.approveRiskyToolCall()) {
                     events.add(AgentEvent.humanGate(
@@ -151,12 +152,20 @@ public class CodeAssistantAgentService {
                     ));
                     return Flux.fromIterable(events);
                 }
-                AgentToolExecutionResult gatedResult = executeTool(resumeState.pendingDecision(), enabledPermissions, limit);
+                AgentToolExecutionResult gatedResult = executeToolWithHookContext(
+                        resumeState.pendingDecision(),
+                        enabledPermissions,
+                        limit,
+                        sessionId,
+                        startRound,
+                        effectiveQuestion
+                );
                 events.add(AgentEvent.toolResult(traceId, sessionId, startRound, gatedResult));
                 contexts.addAll(gatedResult.items());
                 conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, startRound + 1);
                 startRound = startRound + 1;
             }
+
             if (request.runMode() == AgentRunMode.PLAN) {
                 events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
                 fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
@@ -168,13 +177,26 @@ public class CodeAssistantAgentService {
                 events.add(AgentEvent.plan(traceId, sessionId, plan));
                 fireHook(AgentHookPoint.AFTER_PLAN, sessionId, 0, effectiveQuestion, null, Map.of("plan", plan));
             }
-            OrchestrationResult result = runManualOrchestration(request, effectiveQuestion, contexts, limit, startRound, events, sessionId, traceId, enabledPermissions);
+
+            OrchestrationResult result = runManualOrchestration(
+                    request,
+                    effectiveQuestion,
+                    contexts,
+                    limit,
+                    startRound,
+                    events,
+                    sessionId,
+                    traceId,
+                    enabledPermissions
+            );
             directAnswer = result.directAnswer();
             askUser = result.askUser();
         }
+
         if (askUser) {
             return Flux.fromIterable(events);
         }
+
         conversationManager.clear(sessionId);
         if (StringUtils.hasText(directAnswer)) {
             fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", true));
@@ -182,7 +204,8 @@ public class CodeAssistantAgentService {
             events.add(AgentEvent.finalText(traceId, sessionId, directAnswer));
             return Flux.fromIterable(events);
         }
-        AgentRequest finalRequest = withQuestion(request, effectiveQuestion, sessionId);
+
+        AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit);
         fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", false));
         Flux<AgentEvent> stream = llmChatClient.prompt()
@@ -224,6 +247,7 @@ public class CodeAssistantAgentService {
                 conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round);
                 return new OrchestrationResult(null, true);
             }
+
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
             fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
             String decisionRaw = llmChatClient.prompt()
@@ -234,7 +258,7 @@ public class CodeAssistantAgentService {
                             agentToolRegistry
                     ))
                     .user(agentPromptService.orchestratorUserPrompt(
-                            withQuestion(request, effectiveQuestion, sessionId),
+                            agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId),
                             contexts,
                             limit,
                             round,
@@ -244,6 +268,7 @@ public class CodeAssistantAgentService {
                     .content();
             fireHook(AgentHookPoint.AFTER_DECISION, sessionId, round, effectiveQuestion, null, Map.of("decisionRaw", decisionRaw));
             ToolDecision decision = parseDecision(decisionRaw);
+
             if ("ask_user".equalsIgnoreCase(decision.action())) {
                 String question = StringUtils.hasText(decision.askUserQuestion()) ? decision.askUserQuestion() : "我还需要你补充一些信息，才能继续。";
                 conversationManager.saveWaiting(sessionId, effectiveQuestion, contexts, round);
@@ -252,12 +277,13 @@ public class CodeAssistantAgentService {
                 fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
                 return new OrchestrationResult(null, true);
             }
+
             if ("final".equalsIgnoreCase(decision.action())) {
                 if (StringUtils.hasText(decision.finalAnswer())) {
-                    boolean shouldVerify = shouldVerifyFinalAnswer(request, effectiveQuestion, decision.finalAnswer(), contexts);
-                    VerifyResult verifyResult = shouldVerify
-                            ? verifyFinalAnswer(withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts)
-                            : new VerifyResult(true, "问题不要求精确事实，跳过复核");
+                    boolean shouldVerify = agentFlowSupport.shouldVerifyFinalAnswer(request, effectiveQuestion, decision.finalAnswer(), contexts);
+                    AgentFinalAnswerVerifier.VerifyResult verifyResult = shouldVerify
+                            ? finalAnswerVerifier.verifyFinalAnswer(agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts)
+                            : new AgentFinalAnswerVerifier.VerifyResult(true, "问题不要求精确事实，跳过复核");
                     if (shouldVerify) {
                         events.add(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
                     }
@@ -275,10 +301,12 @@ public class CodeAssistantAgentService {
                 }
                 break;
             }
+
             if (!"tool".equalsIgnoreCase(decision.action())) {
                 break;
             }
-            if (requiresHumanGate(decision) && !request.approveRiskyToolCall()) {
+
+            if (agentFlowSupport.requiresHumanGate(decision) && !request.approveRiskyToolCall()) {
                 conversationManager.saveWaitingForGate(sessionId, effectiveQuestion, contexts, round, decision);
                 events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
                 events.add(AgentEvent.humanGate(
@@ -290,15 +318,18 @@ public class CodeAssistantAgentService {
                 ));
                 return new OrchestrationResult(null, true);
             }
+
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.TOOL_CALL.name(), "running", "开始工具调用"));
             events.add(AgentEvent.toolCall(traceId, sessionId, round, decision.toolName(), decision.args()));
-            fireHook(AgentHookPoint.BEFORE_TOOL_CALL, sessionId, round, effectiveQuestion, decision.toolName(), decision.args() == null ? Map.of() : decision.args());
-            AgentToolExecutionResult toolResult = executeTool(decision, enabledPermissions, limit);
+            AgentToolExecutionResult toolResult = executeToolWithHookContext(
+                    decision,
+                    enabledPermissions,
+                    limit,
+                    sessionId,
+                    round,
+                    effectiveQuestion
+            );
             events.add(AgentEvent.toolResult(traceId, sessionId, round, toolResult));
-            fireHook(AgentHookPoint.AFTER_TOOL_CALL, sessionId, round, effectiveQuestion, decision.toolName(), Map.of(
-                    "status", toolResult.status(),
-                    "count", toolResult.items().size()
-            ));
             if (toolResult.items().isEmpty()) {
                 break;
             }
@@ -308,281 +339,13 @@ public class CodeAssistantAgentService {
         return new OrchestrationResult(null, false);
     }
 
-    private Set<AgentToolPermission> enabledPermissions(AgentRequest request, SkillPlan skillPlan) {
-        Set<AgentToolPermission> enabledPermissions = EnumSet.noneOf(AgentToolPermission.class);
-        enabledPermissions.addAll(BASE_TOOL_PERMISSIONS);
-        if (request.includeRagContext()) {
-            enabledPermissions.add(AgentToolPermission.HYBRID_VECTOR_READ);
-        }
-        if (request.includeKnowledgeGraphContext()) {
-            enabledPermissions.add(AgentToolPermission.KG_ONE_HOP_READ);
-            enabledPermissions.add(AgentToolPermission.METHOD_SOURCE_READ);
-        }
-        if (request.taskType() != null && request.taskType().name().equals("BUG_FIX")) {
-            enabledPermissions.add(AgentToolPermission.LSP_JAVA_READ);
-            enabledPermissions.add(AgentToolPermission.BUILD_COMPILE);
-        }
-        if (skillPlan != null && skillPlan.preferredTools() != null) {
-            for (String toolName : skillPlan.preferredTools()) {
-                PermissionedAgentTool tool = agentToolRegistry.get(normalizeToolName(toolName));
-                if (tool != null) {
-                    enabledPermissions.add(tool.permission());
-                }
-            }
-        }
-        return enabledPermissions;
-    }
-
     private ToolDecision parseDecision(String raw) {
-        String json = extractJsonObject(raw);
         try {
-            return objectMapper.readValue(json, ToolDecision.class);
+            return decisionParser.parseOrFallback(raw);
         } catch (Exception e) {
             fireHook(AgentHookPoint.ON_ERROR, "", 0, "", null, Map.of("stage", "parseDecision", "error", e.getMessage()));
-            return new ToolDecision("final", null, Map.of(), "模型决策解析失败，直接给出最终回答。", e.getMessage(), null);
+            return decisionParser.fallbackDecision(e.getMessage());
         }
-    }
-
-    private String extractJsonObject(String raw) {
-        if (raw == null) {
-            return "{}";
-        }
-        int start = raw.indexOf('{');
-        int end = raw.lastIndexOf('}');
-        if (start >= 0 && end > start) {
-            return raw.substring(start, end + 1);
-        }
-        return raw;
-    }
-
-    private AgentToolExecutionResult executeTool(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit) {
-        String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
-        String toolName = normalizeToolName(requestedToolName);
-        Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
-        PermissionedAgentTool tool = agentToolRegistry.get(toolName);
-        if (tool == null) {
-            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "unknown_tool"));
-            return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName));
-        }
-        if (!enabledPermissions.contains(tool.permission())) {
-            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "permission_denied"));
-            return errorToolResult(toolName, "permission_denied", "工具未启用: " + toolName, Map.of("toolName", toolName));
-        }
-        List<String> schemaErrors = ToolSchemaValidator.validate(args, tool.argumentSpecs());
-        if (!schemaErrors.isEmpty()) {
-            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "schema_invalid", "errors", schemaErrors));
-            return errorToolResult(toolName, "schema_invalid", "工具参数结构校验失败", Map.of("errors", schemaErrors));
-        }
-        List<String> validationErrors = tool.validateArgs(args);
-        if (!validationErrors.isEmpty()) {
-            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", toolName, Map.of("stage", "executeTool", "errorCode", "invalid_args", "errors", validationErrors));
-            return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors));
-        }
-        AgentToolExecutionResult primary = invokeWithRetry(tool, args, limit, TOOL_MAX_RETRY);
-        if ("ok".equals(primary.status())) {
-            return primary;
-        }
-        AgentToolExecutionResult fallback = tryFallback(toolName, args, limit, enabledPermissions);
-        if (fallback != null) {
-            return fallback;
-        }
-        return primary;
-    }
-
-    private String normalizeToolName(String requestedToolName) {
-        if (!StringUtils.hasText(requestedToolName)) {
-            return "";
-        }
-        return switch (requestedToolName.trim()) {
-            case "read_file", "readFile", "open_file", "openFile", "get_file_content" -> "cat";
-            case "read_directory", "list_directory", "get_directory_structure", "listDir" -> "ls";
-            case "search_files", "search_in_files", "find_in_files" -> "grep";
-            default -> requestedToolName.trim();
-        };
-    }
-
-    private Map<String, Object> normalizeArgsForTool(String requestedToolName, String normalizedToolName, Map<String, Object> args) {
-        if (args == null || args.isEmpty()) {
-            return Map.of();
-        }
-        if (!StringUtils.hasText(requestedToolName) || requestedToolName.equals(normalizedToolName)) {
-            return args;
-        }
-        if ("cat".equals(normalizedToolName)) {
-            Map<String, Object> mapped = new HashMap<>(args);
-            if (!mapped.containsKey("sourceFile")) {
-                Object filePath = mapped.get("filePath");
-                if (filePath == null) {
-                    filePath = mapped.get("path");
-                }
-                if (filePath != null) {
-                    mapped.put("sourceFile", String.valueOf(filePath));
-                }
-            }
-            if (!mapped.containsKey("maxLines") && mapped.get("limit") != null) {
-                mapped.put("maxLines", mapped.get("limit"));
-            }
-            return mapped;
-        }
-        if ("grep".equals(normalizedToolName)) {
-            Map<String, Object> mapped = new HashMap<>(args);
-            if (!mapped.containsKey("pattern")) {
-                Object query = mapped.get("query");
-                if (query == null) {
-                    query = mapped.get("keyword");
-                }
-                if (query != null) {
-                    mapped.put("pattern", String.valueOf(query));
-                }
-            }
-            return mapped;
-        }
-        return args;
-    }
-
-    private AgentToolExecutionResult invokeWithRetry(PermissionedAgentTool tool, Map<String, Object> args, int limit, int maxRetry) {
-        String toolName = tool.toolName();
-        Exception lastError = null;
-        for (int attempt = 1; attempt <= maxRetry; attempt++) {
-            try {
-                List<AgentContextItem> items = tool.invoke(args, limit);
-                return new AgentToolExecutionResult(
-                        toolName,
-                        "ok",
-                        "工具执行成功",
-                        items,
-                        Map.of("count", items.size(), "attempt", attempt)
-                );
-            } catch (Exception e) {
-                lastError = e;
-            }
-        }
-        return errorToolResult(toolName, "tool_invoke_failed", "工具调用失败: " + (lastError == null ? "unknown" : lastError.getMessage()), Map.of());
-    }
-
-    private AgentToolExecutionResult tryFallback(String toolName, Map<String, Object> args, int limit, Set<AgentToolPermission> enabledPermissions) {
-        String fallbackName = fallbackToolName(toolName);
-        if (!StringUtils.hasText(fallbackName)) {
-            return null;
-        }
-        PermissionedAgentTool fallback = agentToolRegistry.get(fallbackName);
-        if (fallback == null || !enabledPermissions.contains(fallback.permission())) {
-            return null;
-        }
-        Map<String, Object> fallbackArgs = fallbackArgs(toolName, args);
-        List<String> schemaErrors = ToolSchemaValidator.validate(fallbackArgs, fallback.argumentSpecs());
-        if (!schemaErrors.isEmpty()) {
-            return null;
-        }
-        List<String> errors = fallback.validateArgs(fallbackArgs);
-        if (!errors.isEmpty()) {
-            return null;
-        }
-        AgentToolExecutionResult result = invokeWithRetry(fallback, fallbackArgs, limit, 1);
-        if ("ok".equals(result.status())) {
-            return new AgentToolExecutionResult(
-                    result.toolName(),
-                    "ok",
-                    "主工具失败，已回退到 " + fallbackName,
-                    result.items(),
-                    new HashMap<>(result.metrics())
-            );
-        }
-        return null;
-    }
-
-    private String fallbackToolName(String toolName) {
-        return switch (toolName) {
-            case "cat" -> "fetchMethodSourceByLocation";
-            case "grep", "ls", "pwd" -> "callMcpCapability";
-            default -> null;
-        };
-    }
-
-    private Map<String, Object> fallbackArgs(String toolName, Map<String, Object> args) {
-        if ("cat".equals(toolName)) {
-            return Map.of(
-                    "sourceFile", String.valueOf(args.getOrDefault("sourceFile", "")),
-                    "startLine", args.get("startLine") == null ? 1 : args.get("startLine"),
-                    "endLine", args.get("endLine") == null ? 200 : args.get("endLine")
-            );
-        }
-        if ("grep".equals(toolName)) {
-            return Map.of(
-                    "capability", "grep",
-                    "args", Map.of(
-                            "pattern", String.valueOf(args.getOrDefault("pattern", "")),
-                            "filePattern", String.valueOf(args.getOrDefault("filePattern", "")),
-                            "limit", args.get("limit") == null ? 50 : args.get("limit")
-                    )
-            );
-        }
-        if ("ls".equals(toolName)) {
-            return Map.of(
-                    "capability", "ls",
-                    "args", Map.of(
-                            "path", String.valueOf(args.getOrDefault("path", "")),
-                            "limit", args.get("limit") == null ? 100 : args.get("limit")
-                    )
-            );
-        }
-        if ("pwd".equals(toolName)) {
-            return Map.of("capability", "pwd", "args", Map.of());
-        }
-        return args;
-    }
-
-    private AgentToolExecutionResult errorToolResult(String toolName, String errorCode, String message, Map<String, Object> meta) {
-        List<AgentContextItem> items = List.of(new AgentContextItem(
-                    "tool_error",
-                    errorCode,
-                    message,
-                    meta
-            ));
-        return new AgentToolExecutionResult(toolName, "error", message, items, Map.of("errorCode", errorCode));
-    }
-
-    private AgentRequest withQuestion(AgentRequest request, String question, String sessionId) {
-        return new AgentRequest(
-                request.taskType(),
-                request.repoRoot(),
-                question,
-                request.skillPath(),
-                sessionId,
-                request.followUpAnswer(),
-                request.approveRiskyToolCall(),
-                request.interrupt(),
-                request.resume(),
-                request.includeRagContext(),
-                request.includeKnowledgeGraphContext(),
-                request.contextLimit(),
-                request.runMode(),
-                request.dialogueMode()
-        );
-    }
-
-    private Map<String, Object> buildSkillMetadata(String repoRoot, String skillPath) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("repoRoot", repoRoot);
-        metadata.put("skillPath", skillPath);
-        return metadata;
-    }
-
-    private String resolveRepoRoot(String repoRoot, String skillPath) {
-        if (StringUtils.hasText(repoRoot)) {
-            return repoRoot.trim();
-        }
-        if (StringUtils.hasText(skillPath)) {
-            try {
-                Path skill = Path.of(skillPath).toAbsolutePath().normalize();
-                Path parent = skill.getParent();
-                if (parent != null) {
-                    return parent.toString();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return Path.of("").toAbsolutePath().normalize().toString();
     }
 
     private void executeSkillSteps(
@@ -598,13 +361,20 @@ public class CodeAssistantAgentService {
         int round = 0;
         for (String step : skillPlan.executionSteps()) {
             round++;
-            ToolDecision decision = mapSkillStepToDecision(step, effectiveQuestion);
+            ToolDecision decision = agentFlowSupport.mapSkillStepToDecision(step, effectiveQuestion);
             if (decision == null) {
                 continue;
             }
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.TOOL_CALL.name(), "running", "执行Skill步骤: " + step));
             events.add(AgentEvent.toolCall(traceId, sessionId, round, decision.toolName(), decision.args()));
-            AgentToolExecutionResult toolResult = executeTool(decision, enabledPermissions, limit);
+            AgentToolExecutionResult toolResult = executeToolWithHookContext(
+                    decision,
+                    enabledPermissions,
+                    limit,
+                    sessionId,
+                    round,
+                    effectiveQuestion
+            );
             events.add(AgentEvent.toolResult(traceId, sessionId, round, toolResult));
             if (!toolResult.items().isEmpty()) {
                 contexts.addAll(toolResult.items());
@@ -612,94 +382,15 @@ public class CodeAssistantAgentService {
         }
     }
 
-    private ToolDecision mapSkillStepToDecision(String step, String question) {
-        if (!StringUtils.hasText(step)) {
-            return null;
-        }
-        String s = step.toLowerCase();
-        if (s.contains("list") || s.contains("目录")) {
-            return new ToolDecision("tool", "ls", Map.of("path", ".", "limit", 200), null, "Skill step list", null);
-        }
-        if (s.contains("read") || s.contains("读取")) {
-            return new ToolDecision("tool", "cat", Map.of("sourceFile", "README.md", "maxLines", 240), null, "Skill step read", null);
-        }
-        if (s.contains("search") || s.contains("检索") || s.contains("grep")) {
-            return new ToolDecision("tool", "grep", Map.of("pattern", question, "limit", 40), null, "Skill step search", null);
-        }
-        if (s.contains("compile") || s.contains("编译")) {
-            return new ToolDecision("tool", "compileJava", Map.of(), null, "Skill step compile", null);
-        }
-        if (s.contains("diff") || s.contains("git")) {
-            return new ToolDecision("tool", "gitDiff", Map.of("path", ".", "maxLines", 300), null, "Skill step git", null);
-        }
-        return null;
-    }
-
-    private record OrchestrationResult(String directAnswer, boolean askUser) {
-    }
-
-    private String dialogueModeDescription(String mode) {
-        if ("COLLECT".equalsIgnoreCase(mode)) {
-            return "当前对话模式: COLLECT（优先补全信息）";
-        }
-        if ("STEER".equalsIgnoreCase(mode)) {
-            return "当前对话模式: STEER（主动引导收敛）";
-        }
-        return "当前对话模式: FOLLOW（跟随用户问题）";
-    }
-
-    private boolean requiresHumanGate(ToolDecision decision) {
-        if (decision == null) {
-            return false;
-        }
-        PermissionedAgentTool tool = agentToolRegistry.get(decision.toolName());
-        return tool != null && tool.permission() == AgentToolPermission.LOCAL_FS_WRITE;
-    }
-
-    private VerifyResult verifyFinalAnswer(AgentRequest request, String candidateAnswer, List<AgentContextItem> contexts) {
-        try {
-            String raw = llmChatClient.prompt()
-                    .system("你是严谨的答案复核器。")
-                    .user(agentPromptService.verifyPrompt(request, candidateAnswer, contexts))
-                    .call()
-                    .content();
-            String json = extractJsonObject(raw);
-            Map<?, ?> parsed = objectMapper.readValue(json, Map.class);
-            Object passRaw = parsed.get("pass");
-            Object reasonRaw = parsed.get("reason");
-            boolean pass = Boolean.parseBoolean(String.valueOf(passRaw == null ? false : passRaw));
-            String reason = String.valueOf(reasonRaw == null ? "" : reasonRaw);
-            return new VerifyResult(pass, reason);
-        } catch (Exception e) {
-            return new VerifyResult(true, "复核器异常，默认放行");
-        }
-    }
-
-    private boolean shouldVerifyFinalAnswer(
-            AgentRequest request,
-            String question,
-            String candidateAnswer,
-            List<AgentContextItem> contexts
+    private AgentToolExecutionResult executeToolWithHookContext(
+            ToolDecision decision,
+            Set<AgentToolPermission> enabledPermissions,
+            int limit,
+            String sessionId,
+            int round,
+            String question
     ) {
-        if (request.taskType() != null && "BUG_FIX".equals(request.taskType().name())) {
-            return true;
-        }
-        String text = (question == null ? "" : question) + "\n" + (candidateAnswer == null ? "" : candidateAnswer);
-        String lower = text.toLowerCase(Locale.ROOT);
-        if (lower.contains("行号")
-                || lower.contains("stacktrace")
-                || lower.contains("堆栈")
-                || lower.contains("错误码")
-                || lower.contains("版本")
-                || lower.contains("精确")
-                || lower.contains("patch")
-                || lower.contains("diff")) {
-            return true;
-        }
-        return contexts != null && contexts.size() >= 8;
-    }
-
-    private record VerifyResult(boolean pass, String reason) {
+        return hookedToolExecutor.execute(decision, enabledPermissions, limit, sessionId, round, question);
     }
 
     private void fireHook(AgentHookPoint point, String sessionId, int round, String question, String toolName, Map<String, Object> metadata) {
@@ -710,5 +401,8 @@ public class CodeAssistantAgentService {
                 toolName,
                 metadata == null ? Map.of() : metadata
         ));
+    }
+
+    private record OrchestrationResult(String directAnswer, boolean askUser) {
     }
 }
