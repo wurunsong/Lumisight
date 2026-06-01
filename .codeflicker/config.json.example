@@ -1,0 +1,16 @@
+{
+  "$schema": "https://codeflicker.ai/schemas/config.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "cat|ls|grep|compileJava|gitDiff",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codeflicker/hooks/db-guard-hook.js"
+          }
+        ]
+      }
+    ]
+  }
+}

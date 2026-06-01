@@ -136,7 +136,7 @@ public class CodeAssistantAgentService {
             ));
             events.add(AgentEvent.skillSelected(traceId, sessionId, skill.skillName(), skillPlan.summary()));
             Set<AgentToolPermission> enabledPermissions = enabledPermissions(request, skillPlan);
-            if (!skillPlan.executionSteps().isEmpty()) {
+            if (StringUtils.hasText(request.skillPath()) && !skillPlan.executionSteps().isEmpty()) {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
                 executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions);
             }

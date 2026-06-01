@@ -208,3 +208,13 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 - `CODE_FLOW.md`：按日期追加记录当日提交事实与验证结果。
 - `agent-architecture.html`：保持“先整体框架，后分点细化”，并体现当日架构增量。
 - 当天收尾执行文档同步后，需要提交并 push 到远程分支。
+
+## 配置化 Hook（用户侧，无需改代码）
+
+- 示例文件：`.codeflicker/config.json.example`（复制为 `.codeflicker/config.json` 后生效）
+- 默认读取路径：`.codeflicker/config.json`
+- 可通过 JVM 参数覆盖：`-Dlumisight.hooks.config=/abs/path/config.json`
+- 当前按 `hooks.PreToolUse` + `matcher` 规则执行 `type=command` 钩子：
+  - 钩子通过 stdin 接收 JSON payload（`tool_name`、`tool_input`、`question` 等）
+  - 退出码非 0 或输出 `{ "continue": false }` 将阻断请求
+  - 示例钩子：`.codeflicker/hooks/db-guard-hook.js`
