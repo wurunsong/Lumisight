@@ -28,6 +28,7 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 - 如需启用图谱/向量能力，再将对应开关改为 `true`：
   - `lumisight.kg.enabled=true`
   - `lumisight.vector.enabled=true`
+- Milvus 自动配置已在离线模式下排除，避免无向量库环境启动超时。
 
 ## 第 1 步：本地启动外挂知识库（Podman）
 
@@ -131,6 +132,7 @@ mvn -pl lumisight-api -am spring-boot:run
 
 ### KG 接口
 
+- 注意：仅当 `lumisight.kg.enabled=true` 时开放。
 - `POST /api/lumisight/kg/build`：触发图谱构建（全量/增量）。
 - `POST /api/lumisight/kg/view`：图谱展示查询。
 - `POST /api/lumisight/kg/query`：图谱关系查询。
@@ -138,6 +140,7 @@ mvn -pl lumisight-api -am spring-boot:run
 
 ### Vector 接口
 
+- 注意：仅当 `lumisight.vector.enabled=true` 时开放。
 - `POST /api/lumisight/vector/code-chunk/ingest`：代码切片向量入库。
 - `POST /api/lumisight/vector/symbol-doc/ingest`：符号文档向量入库。
 - 已支持自动切片、按仓库方法解析入库、基于 `git diff` 的增量入库。
@@ -164,6 +167,12 @@ mvn -pl lumisight-api -am spring-boot:run
   - `TOKEN`：流式文本片段
   - `FINAL`：直接最终回答
   - `ERROR`：错误事件
+
+### 浏览器调试页（推荐替代 Postman）
+
+- 地址：`http://localhost:8080/agent-console.html`
+- 用途：可视化构造 Agent 请求、实时查看 SSE 事件流、查看最终输出文本。
+- 适用：本地无 KG/Vector 环境时，仅调试 Agent 编排链路。
 
 示例：
 

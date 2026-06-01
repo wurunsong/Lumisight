@@ -93,7 +93,7 @@
 <body>
   <div class="wrap">
     <h1>Lumisight：Java 代码智能 Agent 架构</h1>
-    <p>定位：先离线构建外挂知识库（Nebula + Milvus），再开发在线 Agent 运行时，聚焦工程编排与可解释输出；当前已形成“图谱查询 + 向量增量入库 + 配置稳定化”闭环。</p>
+    <p>定位：支持“离线知识库增强模式”与“纯 Agent 本地调试模式”双路径；当无 Nebula/Milvus 环境时可仅启动在线 Agent Runtime，通过本地工具链与事件流完成可解释编排。</p>
 
     <div class="section-title">1. 阶段化主流程（先离线，后在线）</div>
     <div class="flow">
@@ -312,6 +312,37 @@
           <li>新增 `multiagent` 骨架接口与默认实现</li>
           <li>目录重构：`agent` 仅保留主 Agent 与 `multiagent`</li>
           <li>`config` 目录合并到 `core/config`</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">7. 今日架构增量（2026-06-01）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>7.1 启动隔离与装配边界</h3>
+        <ul>
+          <li>默认关闭：`lumisight.kg.enabled=false`、`lumisight.vector.enabled=false`</li>
+          <li>排除 Milvus 自动配置，避免无向量库环境启动阻塞</li>
+          <li>KG Controller/Service/Properties 全链路条件装配</li>
+          <li>实现“无 KG/Vector 也可调 Agent 主链路”的启动策略</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>7.2 运行时降级与兼容</h3>
+        <ul>
+          <li>补齐 Noop/Fallback Provider（Vector/KG/Source）以防 Bean 缺失</li>
+          <li>工具兼容映射：`read_file/read_directory/list_directory` -> `cat/ls`</li>
+          <li>参数兼容映射：`filePath/path` -> `sourceFile`，`query` -> `pattern`</li>
+          <li>unknown_tool 场景由“直接失败”转为“兼容后继续执行”</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>7.3 可观测性与调试入口</h3>
+        <ul>
+          <li>新增浏览器调试页：`/agent-console.html`</li>
+          <li>页面直连 `POST /api/lumisight/agent/stream`，实时展示 SSE 事件</li>
+          <li>全局异常映射优化：AI 上游 401 明确返回 401，静态资源缺失返回 404</li>
+          <li>前后端联调从 Postman 迁移到可视化控制台</li>
         </ul>
       </div>
     </div>

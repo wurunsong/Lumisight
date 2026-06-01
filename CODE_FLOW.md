@@ -80,3 +80,19 @@
 - 验证：
   - `git log --since="2026-05-28 00:00:00" --until="2026-05-28 23:59:59"`：识别到 26 条提交。
   - `git log --stat`：确认变更主要集中在 `lumisight-core/agent` 与 `lumisight-api/agent`。
+
+## 2026-06-01
+- 今日提交摘要（1 commit）：
+  - Agent 与 KG/Vector 基础设施隔离开关落地：默认关闭 `lumisight.kg.enabled`、`lumisight.vector.enabled`，并排除 Milvus 自动配置，支持无 Nebula/Milvus 环境启动调试。
+  - KG 相关 API/Service/配置改为条件装配：`lumisight.kg.enabled=true` 时才启用 KG Controller、NebulaProperties 与 KG 服务链路。
+  - Agent 运行时补齐 Noop/Fallback Provider：向量与图谱 Provider 缺失时使用本地兜底实现，避免启动阶段 Bean 缺失导致失败。
+  - 工具调度兼容层新增：在 `CodeAssistantAgentService` 增加常见工具别名映射（如 `read_file/read_directory/list_directory`）到本地工具 `cat/ls/grep`，减少 unknown_tool。
+  - 新增前端调试页：`/agent-console.html`，支持浏览器直接调用 `/api/lumisight/agent/stream` 并实时查看 SSE 事件流。
+  - 项目级 Maven 配置新增：`.mvn/settings.xml` + `.mvn/maven.config`，仓库内独立依赖缓存与中央仓库配置，避免污染其他仓库。
+- 关键修复：
+  - 无向量库环境启动超时（Milvus DEADLINE_EXCEEDED）-> 关闭向量默认开关并排除 Milvus 自动配置。
+  - Agent 请求返回 500 且难定位 -> GlobalExceptionHandler 增加 AI 上游异常映射（上游 401 返回 401）与静态资源 404 映射。
+  - 模型反复调用未注册目录工具 -> 增加工具名与参数兼容映射，降低编排失败率。
+- 验证：
+  - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别到 1 条提交（`7e3198c`）。
+  - 浏览器页面 `http://localhost:8080/agent-console.html`：可发起 `/api/lumisight/agent/stream` 请求并接收 `LOOP_STATE/TOOL_CALL/TOOL_RESULT/TOKEN` 事件流。
