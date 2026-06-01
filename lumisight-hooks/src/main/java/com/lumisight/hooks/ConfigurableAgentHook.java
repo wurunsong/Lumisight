@@ -106,14 +106,14 @@ public class ConfigurableAgentHook implements AgentHook {
     private List<?> findRulesForPoint(Map<?, ?> hooksMap, AgentHookPoint point) {
         String key = POINT_KEYS.get(point);
         Object value = hooksMap.get(key);
-        if (!(value instanceof List<?> list)) {
-            value = hooksMap.get(point.name());
-            if (!(value instanceof List<?>)) {
-                return null;
-            }
-            list = (List<?>) value;
+        if (value instanceof List<?> list) {
+            return list;
         }
-        return list;
+        value = hooksMap.get(point.name());
+        if (value instanceof List<?> list) {
+            return list;
+        }
+        return null;
     }
 
     private List<HookRule> parseHookRules(List<?> ruleList) {
