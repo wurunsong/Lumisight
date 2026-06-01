@@ -168,6 +168,10 @@ mvn -pl lumisight-api -am spring-boot:run
   - `includeRagContext`：是否启用向量工具
   - `contextLimit`：上下文上限
   - `runMode`：`NORMAL` / `PLAN`（`PLAN` 先输出执行计划）
+  - `dialogueMode`：`FOLLOW` / `COLLECT` / `STEER`
+    - `FOLLOW`：同会话新问题按顺序排队处理
+    - `COLLECT`：同会话等待期间的新问题合并后统一处理
+    - `STEER`：新问题抢占当前执行并中断旧流输出
   - `skillPath`：可选，指定已注册技能引用（id/name/path）；仅允许命中 `lumisight.skills.allowed-paths` 扫描得到的 Markdown skill
   - 若不传 `skillPath`，Agent 会基于用户问题通过小模型在“已注册 skill 列表”中自动匹配一个技能；未命中则回退内置工作流。
 - 事件类型：

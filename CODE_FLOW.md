@@ -110,3 +110,27 @@
 - 验证（补充）：
   - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别 6 条提交（`7e3198c`、`74eebeb`、`a17a1ef`、`4bbaabb`、`099864b`、`a291553`）。
   - `git log --stat`：确认变更覆盖 `api/core/tools/hooks/skills/docs`，并新增 `sandbox` 与 `rollback` 相关实现文件。
+
+- TODO（讨论结论，待实现）：
+  - Hook 执行模型升级为“三段式”：`hook_suggest`（模型建议） -> `hook_policy`（系统裁决） -> `hook_execute`（受限执行）。
+  - 保持“模型可建议、系统强约束执行”原则，避免模型直接决定高风险脚本执行；后续补齐审计日志与回放能力。
+
+- 今日提交补充摘要（再次新增 15 commits，总计 21 commits）：
+  - `672f3bb`：Agent 主流程职责拆分，工具执行下沉到 `core/tool/runtime`，Hook AOP 与上下文下沉到 `core/hooks/runtime`，`agent` 目录仅保留核心编排类。
+  - `54d203d` + `e2a54fe`：`FOLLOW/COLLECT/STEER` 从提示词语义升级为会话调度语义；新增排队/合并队列与 `epoch` 抢占机制，`STEER` 可中断旧请求并终止旧流输出。
+  - `8f59dba`：修复 AOP 启动失败（`AmbiguousBindingException`），移除 `@Around args(...)` 歧义绑定，改为从 `joinPoint` 读取参数。
+  - `9810969`：移除 `followUpAnswer`，统一用 `question` 作为输入，后端请求模型、控制器、校验器与前端调试页同步收敛。
+  - `4caaf27` + `afb90c8` + `fa4ba98`：Skill 机制升级为“注册式 Markdown skill”：
+    - 启动扫描白名单目录（`lumisight.skills.allowed-paths`）构建 `SkillCatalog`
+    - `skillPath` 改为注册引用（id/name/path），不再任意路径直读
+    - 未显式指定 skill 时，通过小模型在已注册 skill 列表中自动路由
+    - `SkillRegistry` 统一 `resolve + buildPlan`，Service 不直接操作 skill 实例
+  - `aa483b9`：移除 `executeSkillSteps` 预执行链路与 `mapSkillStepToDecision` 文字映射，`SkillPlan` 仅保留策略/约束作用，不再强行转工具调用。
+  - `4d0cbb9` + `797e9bb` + `cc59f68`：Hook 与 Agent 维护性修复：修正 `ConfigurableAgentHook` 变量作用域编译错误，补充 `HUMAN_GATE` 恢复路径注释（中文）。
+- 关键修复（再次补充）：
+  - AOP 切面参数绑定导致应用启动失败 -> 改为无 `args` 绑定的切面签名 + `joinPoint.getArgs()` 解析。
+  - `STEER` 仅软中断导致旧流仍可能输出 -> 引入会话代际 `epoch`，主循环与 Token 流双重活性检查。
+  - skill 任意路径注入风险 -> 改为白名单目录扫描注册与注册引用执行。
+- 验证（再次补充）：
+  - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别 21 条提交（含 `7e3198c` 至 `797e9bb` 全量链路）。
+  - `git log --stat`：确认变更覆盖 `api/core/hooks/skills/docs`，并新增 `SkillCatalog`、`SkillAutoRouter`、会话 `epoch` 与 Hook AOP 运行时分层实现。

@@ -108,7 +108,7 @@
           <li>核心：`CodeAssistantAgentService`</li>
           <li>模式：`NORMAL` / `PLAN`</li>
           <li>动作：`tool` / `ask_user` / `final`</li>
-          <li>技能：默认技能 + `skillPath` 文件技能</li>
+          <li>技能：默认技能 + 注册式 Markdown skill（`skillPath` 引用）</li>
         </ul>
       </div>
       <div class="card">
@@ -126,7 +126,7 @@
           <li>事件：`PLAN/TOOL_CALL/TOOL_RESULT/TOKEN/FINAL`</li>
           <li>反问与人工门控：`ASK_USER/HUMAN_GATE`</li>
           <li>可观测状态：`LOOP_STATE/VERIFY_RESULT`</li>
-          <li>支持会话中断与续跑</li>
+          <li>支持会话中断与续跑（`FOLLOW` 排队、`COLLECT` 合并、`STEER` 抢占）</li>
         </ul>
       </div>
     </div>
@@ -154,10 +154,10 @@
       <div class="card">
         <h3>3.3 Hook 与技能扩展</h3>
         <ul>
-          <li>Hook：读取 `.codeflicker/config.json` 的 `PreToolUse`</li>
+          <li>Hook：读取 `.lumisight/hooks.json`（兼容回退 `.codeflicker/config.json`）</li>
           <li>命令钩子可按规则阻断危险调用</li>
-          <li>技能支持外部文件注入，不污染主流程</li>
-          <li>默认对话链路与技能链路可独立演进</li>
+          <li>技能通过白名单目录扫描注册（Markdown），运行时仅允许已注册引用</li>
+          <li>未显式指定 skill 时可由小模型在已注册 skill 列表中自动路由</li>
         </ul>
       </div>
     </div>
@@ -240,7 +240,7 @@
           <li>`lumisight.kg.enabled`</li>
           <li>`lumisight.vector.enabled`</li>
           <li>`taskType` 支持 `CHAT` 且可为空</li>
-          <li>`skillPath` 可选注入技能文件</li>
+          <li>`skillPath` 可选，指向已注册 skill 引用（id/name/path）</li>
         </ul>
       </div>
       <div class="card">
