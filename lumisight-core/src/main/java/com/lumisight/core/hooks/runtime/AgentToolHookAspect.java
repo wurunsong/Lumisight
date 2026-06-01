@@ -2,7 +2,6 @@ package com.lumisight.core.hooks.runtime;
 
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
-import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.hooks.AgentHookContext;
 import com.lumisight.hooks.AgentHookDispatcher;
 import com.lumisight.hooks.AgentHookPoint;
@@ -12,7 +11,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
-import java.util.Set;
 
 @Aspect
 @Component
@@ -24,13 +22,10 @@ public class AgentToolHookAspect {
         this.agentHookDispatcher = agentHookDispatcher;
     }
 
-    @Around("execution(* com.lumisight.core.tool.runtime.AgentToolExecutionService.execute(..)) && args(decision, enabledPermissions, limit)")
-    public Object aroundToolExecute(
-            ProceedingJoinPoint joinPoint,
-            ToolDecision decision,
-            Set<AgentToolPermission> enabledPermissions,
-            int limit
-    ) throws Throwable {
+    @Around("execution(* com.lumisight.core.tool.runtime.AgentToolExecutionService.execute(..))")
+    public Object aroundToolExecute(ProceedingJoinPoint joinPoint) throws Throwable {
+        Object[] methodArgs = joinPoint.getArgs();
+        ToolDecision decision = methodArgs.length > 0 && methodArgs[0] instanceof ToolDecision td ? td : null;
         ToolHookContext context = AgentToolHookContextHolder.get();
         String sessionId = context == null ? "" : context.sessionId();
         int round = context == null ? 0 : context.round();
