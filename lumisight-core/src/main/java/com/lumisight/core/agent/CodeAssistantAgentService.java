@@ -93,7 +93,10 @@ public class CodeAssistantAgentService {
         }
 
         AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
-        if (!request.resume() && StringUtils.hasText(request.question()) && resumeState != null && "RUNNING".equalsIgnoreCase(resumeState.status())) {
+        if (!request.resume()
+                && StringUtils.hasText(request.question())
+                && resumeState != null
+                && resumeState.status() == AgentConversationManager.ConversationStatus.RUNNING) {
             if (request.dialogueMode() == AgentDialogueMode.FOLLOW) {
                 conversationManager.enqueueFollowQuestion(sessionId, request.question());
                 return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "FOLLOW: 当前问题已排队，待上一条完成后按顺序处理。"));
@@ -123,7 +126,7 @@ public class CodeAssistantAgentService {
         if (request.resume() && resumeState != null) {
             if (resumeState.interrupted()) {
                 resumeState = new AgentConversationManager.ConversationState(
-                        resumeState.status(),
+                        AgentConversationManager.ConversationStatus.RUNNING,
                         resumeState.baseQuestion(),
                         resumeState.contexts(),
                         resumeState.nextRound(),

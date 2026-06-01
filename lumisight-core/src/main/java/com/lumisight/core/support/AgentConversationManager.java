@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,21 +30,21 @@ public class AgentConversationManager {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        states.put(sessionId, ConversationState.waiting(baseQuestion, new ArrayList<>(contexts), nextRound, null));
+        putState(sessionId, ConversationState.waitingUser(baseQuestion, new ArrayList<>(contexts), nextRound, null));
     }
 
     public void saveWaitingForGate(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        states.put(sessionId, ConversationState.waiting(baseQuestion, new ArrayList<>(contexts), nextRound, pendingDecision));
+        putState(sessionId, ConversationState.waitingGate(baseQuestion, new ArrayList<>(contexts), nextRound, pendingDecision));
     }
 
     public void saveRunning(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        states.put(sessionId, ConversationState.running(baseQuestion, new ArrayList<>(contexts), nextRound));
+        putState(sessionId, ConversationState.running(baseQuestion, new ArrayList<>(contexts), nextRound));
     }
 
     public void interrupt(String sessionId) {
@@ -54,16 +55,40 @@ public class AgentConversationManager {
         if (old == null) {
             return;
         }
-        states.put(sessionId, old.withInterrupted(true));
+        putState(sessionId, old.withInterrupted(true));
     }
 
     public void clear(String sessionId) {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
+        ConversationState old = states.get(sessionId);
+        if (old != null) {
+            putState(sessionId, old.withStatus(ConversationStatus.COMPLETED).withInterrupted(false).withoutPendingDecision());
+        }
         states.remove(sessionId);
         queuedQuestions.remove(sessionId);
         epochs.remove(sessionId);
+    }
+
+    private void putState(String sessionId, ConversationState next) {
+        ConversationState old = states.get(sessionId);
+        if (!isTransitionAllowed(old == null ? null : old.status, next.status)) {
+            throw new IllegalStateException("Illegal conversation state transition: "
+                    + (old == null ? "null" : old.status.name()) + " -> " + next.status.name()
+                    + ", sessionId=" + sessionId);
+        }
+        states.put(sessionId, next);
+    }
+
+    private boolean isTransitionAllowed(ConversationStatus from, ConversationStatus to) {
+        if (from == null) {
+            return to == ConversationStatus.RUNNING || to == ConversationStatus.WAITING_USER || to == ConversationStatus.WAITING_GATE;
+        }
+        if (from == to) {
+            return true;
+        }
+        return ALLOWED_TRANSITIONS.getOrDefault(from, EnumSet.noneOf(ConversationStatus.class)).contains(to);
     }
 
     public long nextEpoch(String sessionId) {
@@ -138,23 +163,51 @@ public class AgentConversationManager {
     }
 
     public record ConversationState(
-            String status,
+            ConversationStatus status,
             String baseQuestion,
             List<AgentContextItem> contexts,
             int nextRound,
             boolean interrupted,
             ToolDecision pendingDecision
     ) {
-        static ConversationState waiting(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
-            return new ConversationState("WAITING_USER", baseQuestion, contexts, nextRound, false, pendingDecision);
+        static ConversationState waitingUser(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
+            return new ConversationState(ConversationStatus.WAITING_USER, baseQuestion, contexts, nextRound, false, pendingDecision);
+        }
+
+        static ConversationState waitingGate(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
+            return new ConversationState(ConversationStatus.WAITING_GATE, baseQuestion, contexts, nextRound, false, pendingDecision);
         }
 
         static ConversationState running(String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
-            return new ConversationState("RUNNING", baseQuestion, contexts, nextRound, false, null);
+            return new ConversationState(ConversationStatus.RUNNING, baseQuestion, contexts, nextRound, false, null);
         }
 
         ConversationState withInterrupted(boolean interrupted) {
-            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, pendingDecision);
+            return new ConversationState(interrupted ? ConversationStatus.INTERRUPTED : status, baseQuestion, contexts, nextRound, interrupted, pendingDecision);
+        }
+
+        ConversationState withoutPendingDecision() {
+            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, null);
+        }
+
+        ConversationState withStatus(ConversationStatus nextStatus) {
+            return new ConversationState(nextStatus, baseQuestion, contexts, nextRound, interrupted, pendingDecision);
         }
     }
+
+    public enum ConversationStatus {
+        RUNNING,
+        WAITING_USER,
+        WAITING_GATE,
+        INTERRUPTED,
+        COMPLETED
+    }
 }
+}
+    private static final Map<ConversationStatus, EnumSet<ConversationStatus>> ALLOWED_TRANSITIONS = Map.of(
+            ConversationStatus.RUNNING, EnumSet.of(ConversationStatus.WAITING_USER, ConversationStatus.WAITING_GATE, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
+            ConversationStatus.WAITING_USER, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
+            ConversationStatus.WAITING_GATE, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
+            ConversationStatus.INTERRUPTED, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.COMPLETED),
+            ConversationStatus.COMPLETED, EnumSet.noneOf(ConversationStatus.class)
+    );

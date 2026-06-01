@@ -14,15 +14,19 @@ import java.util.Locale;
 @Component
 public class SkillAutoRouter {
 
-    private static final double DEFAULT_MIN_CONFIDENCE = 0.60d;
-
     private final ChatClient llmChatClient;
     private final SkillCatalog skillCatalog;
+    private final SkillRoutingProperties skillRoutingProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public SkillAutoRouter(ChatClient.Builder chatClientBuilder, SkillCatalog skillCatalog) {
+    public SkillAutoRouter(
+            ChatClient.Builder chatClientBuilder,
+            SkillCatalog skillCatalog,
+            SkillRoutingProperties skillRoutingProperties
+    ) {
         this.llmChatClient = chatClientBuilder.build();
         this.skillCatalog = skillCatalog;
+        this.skillRoutingProperties = skillRoutingProperties;
     }
 
     public RouteResult route(String question) {
@@ -66,8 +70,12 @@ public class SkillAutoRouter {
                 if (skill.id().equals(chosen)
                         || skill.name().equalsIgnoreCase(chosen)
                         || skill.id().equalsIgnoreCase(chosen.toLowerCase(Locale.ROOT))) {
-                    boolean accepted = confidence >= DEFAULT_MIN_CONFIDENCE;
-                    return new RouteResult(accepted ? skill.id() : null, confidence, reason, chosen, accepted);
+                    boolean accepted = confidence >= skillRoutingProperties.getMinConfidence();
+                    if (accepted) {
+                        return new RouteResult(skill.id(), confidence, reason, chosen, true);
+                    }
+                    String fallbackSkillId = resolveFallbackSkillId(skills);
+                    return new RouteResult(fallbackSkillId, confidence, reason, chosen, false);
                 }
             }
             return RouteResult.noMatch("unknown_skill_id: " + chosen);
@@ -81,6 +89,22 @@ public class SkillAutoRouter {
             return 0d;
         }
         return Math.max(0d, Math.min(1d, value));
+    }
+
+    private String resolveFallbackSkillId(List<RegisteredSkill> skills) {
+        if (skillRoutingProperties.getLowConfidenceFallback() != SkillRoutingProperties.LowConfidenceFallback.DEFAULT_SKILL) {
+            return null;
+        }
+        if (!StringUtils.hasText(skillRoutingProperties.getDefaultSkillId())) {
+            return null;
+        }
+        String configured = skillRoutingProperties.getDefaultSkillId().trim();
+        for (RegisteredSkill skill : skills) {
+            if (skill.id().equals(configured) || skill.name().equalsIgnoreCase(configured)) {
+                return skill.id();
+            }
+        }
+        return null;
     }
 
     public record RouteResult(
