@@ -1,18 +1,18 @@
-# Agent Protocol Contract
+# Agent 协议契约
 
-## 1. Shared Execution Semantics
-- Core orchestration is protocol-agnostic.
-- Both SSE and WebSocket eventually execute the same `AgentRequest -> Flux<AgentEvent>` pipeline.
-- Session scheduling semantics (`FOLLOW/COLLECT/STEER`, `HUMAN_GATE`, `resume`, `interrupt`) are identical across transports.
+## 1. 统一执行语义
+- Agent 核心编排与传输协议解耦。
+- 无论是 SSE 还是 WebSocket，最终都会走同一条 `AgentRequest -> Flux<AgentEvent>` 执行链路。
+- 会话调度语义（`FOLLOW/COLLECT/STEER`、`HUMAN_GATE`、`resume`、`interrupt`）在各协议下保持一致。
 
-## 2. SSE Contract
+## 2. SSE 协议
 
-### Endpoint
+### 2.1 接口
 - `POST /api/lumisight/agent/stream`
 - `Content-Type: application/json`
-- Response: `text/event-stream`
+- 响应类型：`text/event-stream`
 
-### Request Body (`AgentRunRequest`)
+### 2.2 请求体（`AgentRunRequest`）
 ```json
 {
   "taskType": "CHAT",
@@ -31,16 +31,16 @@
 }
 ```
 
-### SSE Event
-- Event name: `event.type`
-- Data: serialized `AgentEvent`
+### 2.3 事件格式
+- SSE `event` 名称：`AgentEvent.type`
+- SSE `data` 内容：序列化后的 `AgentEvent` JSON
 
-## 3. WebSocket Contract
+## 3. WebSocket 协议
 
-### Endpoint
+### 3.1 连接地址
 - `ws(s)://<host>/ws/lumisight/agent`
 
-### Inbound (`WsAgentCommand`)
+### 3.2 入站消息（`WsAgentCommand`）
 ```json
 {
   "type": "START",
@@ -55,13 +55,13 @@
 }
 ```
 
-### Command Types
-- `START`: start a new run
-- `RESUME`: resume an existing session
-- `INTERRUPT`: interrupt an existing session
-- `PING`: keepalive probe
+### 3.3 命令类型
+- `START`：发起新一轮执行
+- `RESUME`：恢复会话
+- `INTERRUPT`：中断会话
+- `PING`：心跳探测
 
-### Outbound (`WsAgentMessage`)
+### 3.4 出站消息（`WsAgentMessage`）
 ```json
 {
   "type": "EVENT",
@@ -72,20 +72,19 @@
 }
 ```
 
-### Outbound Types
-- `ACK`: command accepted
-- `EVENT`: normal `AgentEvent`
-- `PONG`: response to `PING`
-- `ERROR`: protocol/runtime failure
+### 3.5 出站类型
+- `ACK`：命令已受理
+- `EVENT`：正常业务事件（`AgentEvent`）
+- `PONG`：`PING` 的响应
+- `ERROR`：协议或运行时错误
 
-## 4. Session Timeout and Cleanup
-- `WAITING_USER` and `WAITING_GATE` are TTL-controlled.
-- Expired waiting sessions are cleaned automatically by scheduled cleanup job.
-- Default TTL:
-  - waiting user: 900s
-  - waiting gate: 1800s
+## 4. 会话超时与清理策略
+- `WAITING_USER` 与 `WAITING_GATE` 受 TTL 控制。
+- 过期等待会话会由定时任务自动清理。
+- 默认 TTL：
+  - `WAITING_USER`：900 秒
+  - `WAITING_GATE`：1800 秒
 
-## 5. WebSocket Governance
-- Connection limit, message size, allowed origins, and per-minute message rate are configurable.
-- On rate-limit exceed, server sends `ERROR` and closes with policy violation.
-
+## 5. WebSocket 治理策略
+- 连接数上限、消息大小、允许来源、每分钟消息速率都可配置。
+- 超过速率限制时，服务端会先发送 `ERROR`，随后以策略违规关闭连接。

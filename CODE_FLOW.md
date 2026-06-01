@@ -134,3 +134,21 @@
 - 验证（再次补充）：
   - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别 21 条提交（含 `7e3198c` 至 `797e9bb` 全量链路）。
   - `git log --stat`：确认变更覆盖 `api/core/hooks/skills/docs`，并新增 `SkillCatalog`、`SkillAutoRouter`、会话 `epoch` 与 Hook AOP 运行时分层实现。
+
+- 今日提交补充摘要（再次新增 8 commits，总计 29 commits）：
+  - `80b0c9f`：Skill 自动路由升级为结构化结果（`skillId/confidence/reason`），新增低置信回退与 `SKILL_ROUTE` 事件；Hook 命令执行增加超时与输出上限，避免慢脚本拖挂。
+  - `555c089`：会话状态迁移显式建模（`RUNNING/WAITING_USER/WAITING_GATE/INTERRUPTED/COMPLETED`）并加入非法迁移保护；Skill 路由阈值与回退策略改为配置化。
+  - `3c9b094`：新增会话级 single-flight 互斥，保证同一 `sessionId` 并发请求不踩状态；通过 `doFinally` 统一释放会话租约。
+  - `af2e48b`：新增 WebSocket 并存入口 `/ws/lumisight/agent`，不改 SSE 主链路；WS 入站请求复用既有 `AgentRunRequest` 与 `AgentEvent`。
+  - `1a8ad98`：协议层与核心编排解耦：引入 `AgentExecutionEngine` 与 `AgentInteractionOrchestrator`；WS 协议升级为命令式（`START/RESUME/INTERRUPT/PING`）。
+  - `76c3819`：传输适配 SPI 化：新增 `AgentTransportAdapter`、`AgentEventChannel`、`AgentStreamGateway`、`AgentTransportRegistry`，SSE/WS 统一走可插拔通道。
+  - `4378462`：补齐 `AGENT_PROTOCOL.md` 协议契约，新增会话等待 TTL 与定时清理任务；WS 增加连接数、消息大小、速率限制治理配置与策略。
+  - `3687231`：中段文档同步补充，确保当时已完成的 skill/hook/会话改造同步到 `CODE_FLOW`、架构图与 README。
+- 关键修复（再次补充）：
+  - Hook 脚本无治理风险 -> 增加命令级 timeout + 输出字节上限，并在失败/超时时显式阻断。
+  - 多请求并发进入同一会话导致状态漂移 -> 引入 single-flight 会话租约与并发分流（FOLLOW/COLLECT/STEER）。
+  - 协议层与核心流程耦合高、后续扩展困难 -> 通过 `ExecutionEngine + TransportAdapter` 双层抽象完成解耦。
+  - 等待态会话长期堆积 -> 增加 `WAITING_USER/WAITING_GATE` TTL 与定时清理。
+- 验证（再次补充）：
+  - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别 29 条提交（最新至 `4378462`）。
+  - `git log --stat`：确认新增覆盖 `api/ws/transport/core/support/docs`，包含协议文档、治理配置、清理任务与传输适配 SPI。

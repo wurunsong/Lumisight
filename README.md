@@ -30,6 +30,12 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
   - `lumisight.vector.enabled=true`
 - Milvus 自动配置已在离线模式下排除，避免无向量库环境启动超时。
 
+## 协议与传输适配（SSE/WS）
+
+- 核心编排已与传输协议解耦：统一通过 `AgentExecutionEngine` 执行主流程。
+- API 侧通过 `AgentTransportAdapter` + `AgentStreamGateway` 适配不同协议（当前内置 SSE 与 WebSocket）。
+- 协议契约文档见：`AGENT_PROTOCOL.md`（中文）。
+
 ## Sandbox 执行与回滚（2026-06-01）
 
 - 新增统一命令执行治理配置（`lumisight-core.yml`）：
@@ -187,6 +193,19 @@ mvn -pl lumisight-api -am spring-boot:run
   - `FINAL`：直接最终回答
   - `ERROR`：错误事件
 
+### Agent 接口（WebSocket）
+
+- 地址：`ws://<host>/ws/lumisight/agent`（HTTPS 场景使用 `wss://`）
+- 入站命令：`WsAgentCommand`
+  - `type`：`START` / `RESUME` / `INTERRUPT` / `PING`
+  - `requestId`：前端请求追踪 id
+  - `request`：`AgentRunRequest`（与 SSE 请求体字段一致）
+- 出站消息：`WsAgentMessage`
+  - `ACK`：命令受理
+  - `EVENT`：封装 `AgentEvent`
+  - `PONG`：心跳响应
+  - `ERROR`：协议/运行时错误
+
 ### 浏览器调试页（推荐替代 Postman）
 
 - 地址：`http://localhost:8080/agent-console.html`
@@ -214,6 +233,18 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 - `symbol_doc` 生成能力通过 `SymbolDocGenerator` 接口预留，可替换为真实模型实现。
 - AI 与向量相关配置已收敛到 `lumisight-core`，`lumisight-api` 显式导入 core 配置。
 - 启动时建议继续使用环境变量提供密钥，避免明文写入仓库。
+
+## 会话与连接治理配置（2026-06-01）
+
+- 会话等待态 TTL：
+  - `lumisight.agent.conversation.waiting-user-ttl-seconds`
+  - `lumisight.agent.conversation.waiting-gate-ttl-seconds`
+  - `lumisight.agent.conversation.cleanup-interval-ms`（定时清理周期）
+- WS 治理：
+  - `lumisight.agent.websocket.allowed-origins`
+  - `lumisight.agent.websocket.max-connections`
+  - `lumisight.agent.websocket.max-text-message-size`
+  - `lumisight.agent.websocket.message-rate-limit-per-minute`
 
 ## 本地工具能力（Agent Tool）
 
