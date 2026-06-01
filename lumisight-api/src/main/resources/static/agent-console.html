@@ -118,10 +118,6 @@
             <label>sessionId</label>
             <input id="sessionId" placeholder="可空" />
           </div>
-          <div>
-            <label>followUpAnswer</label>
-            <input id="followUpAnswer" placeholder="可空" />
-          </div>
         </div>
         <div class="row">
           <div>
@@ -178,7 +174,6 @@
           question: $("question").value.trim(),
           skillPath: maybe($("skillPath").value),
           sessionId: maybe($("sessionId").value),
-        followUpAnswer: maybe($("followUpAnswer").value),
         approveRiskyToolCall: false,
         interrupt: false,
         resume: false,

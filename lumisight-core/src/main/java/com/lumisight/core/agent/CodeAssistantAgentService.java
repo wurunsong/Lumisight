@@ -130,9 +130,7 @@ public class CodeAssistantAgentService {
             }
             contexts.addAll(resumeState.contexts());
             startRound = resumeState.nextRound();
-            if (StringUtils.hasText(request.followUpAnswer())) {
-                effectiveQuestion = resumeState.baseQuestion() + "\n用户补充信息: " + request.followUpAnswer();
-            } else if (StringUtils.hasText(resumeState.baseQuestion())) {
+            if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
                 effectiveQuestion = resumeState.baseQuestion();
             }
             events.add(AgentEvent.resumed(traceId, sessionId));

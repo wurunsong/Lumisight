@@ -63,7 +63,6 @@ public class AgentFlowSupport {
                 question,
                 request.skillPath(),
                 sessionId,
-                request.followUpAnswer(),
                 request.approveRiskyToolCall(),
                 request.interrupt(),
                 request.resume(),
@@ -177,4 +176,3 @@ public class AgentFlowSupport {
         };
     }
 }
-

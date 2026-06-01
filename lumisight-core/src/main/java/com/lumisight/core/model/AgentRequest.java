@@ -6,7 +6,6 @@ public record AgentRequest(
         String question,
         String skillPath,
         String sessionId,
-        String followUpAnswer,
         boolean approveRiskyToolCall,
         boolean interrupt,
         boolean resume,

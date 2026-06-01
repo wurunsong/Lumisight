@@ -12,7 +12,7 @@ public final class AgentRequestValidators {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
-        boolean hasQuestionInput = StringUtils.hasText(request.question()) || StringUtils.hasText(request.followUpAnswer());
+        boolean hasQuestionInput = StringUtils.hasText(request.question());
         boolean resumeWithoutText = request.resume() && StringUtils.hasText(request.sessionId());
         if (!hasQuestionInput && !resumeWithoutText) {
             throw new IllegalArgumentException("question must not be blank");
