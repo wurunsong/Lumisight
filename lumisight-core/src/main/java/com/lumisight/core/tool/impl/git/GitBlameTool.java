@@ -3,6 +3,7 @@ package com.lumisight.core.tool.impl.git;
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.ToolArgumentSpec;
+import com.lumisight.core.sandbox.SandboxCommandRunner;
 import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -16,6 +17,12 @@ import java.util.Map;
 
 @Component
 public class GitBlameTool implements PermissionedAgentTool {
+
+    private final SandboxCommandRunner commandRunner;
+
+    public GitBlameTool(SandboxCommandRunner commandRunner) {
+        this.commandRunner = commandRunner;
+    }
 
     @Override
     public String toolName() {
@@ -67,7 +74,7 @@ public class GitBlameTool implements PermissionedAgentTool {
         cmd.add("--");
         cmd.add(sourceFile);
 
-        Map<String, Object> result = GitCommandSupport.run(root, cmd);
+        Map<String, Object> result = commandRunner.run(root, cmd);
         return List.of(new AgentContextItem(
                 "git",
                 "blame",

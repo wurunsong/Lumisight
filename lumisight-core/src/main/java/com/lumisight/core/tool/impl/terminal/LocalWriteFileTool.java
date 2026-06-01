@@ -3,6 +3,7 @@ package com.lumisight.core.tool.impl.terminal;
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.ToolArgumentSpec;
+import com.lumisight.core.sandbox.SnapshotManager;
 import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -18,6 +19,12 @@ import java.util.Map;
 
 @Component
 public class LocalWriteFileTool implements PermissionedAgentTool {
+
+    private final SnapshotManager snapshotManager;
+
+    public LocalWriteFileTool(SnapshotManager snapshotManager) {
+        this.snapshotManager = snapshotManager;
+    }
 
     @Override
     public String toolName() {
@@ -63,6 +70,7 @@ public class LocalWriteFileTool implements PermissionedAgentTool {
             String content = String.valueOf(args.get("content"));
             String mode = args.get("mode") == null ? "overwrite" : String.valueOf(args.get("mode")).toLowerCase();
             Path file = LocalRepoPathSupport.resolveInRepo(root, sourceFile);
+            String snapshotId = snapshotManager.snapshotBeforeWrite(root, file);
             if (file.getParent() != null && !Files.exists(file.getParent())) {
                 Files.createDirectories(file.getParent());
             }
@@ -75,7 +83,7 @@ public class LocalWriteFileTool implements PermissionedAgentTool {
                     "local",
                     "writeRepoFile",
                     "写入完成",
-                    Map.of("sourceFile", sourceFile, "mode", mode, "length", content.length())
+                    Map.of("sourceFile", sourceFile, "mode", mode, "length", content.length(), "snapshotId", snapshotId)
             ));
         } catch (Exception e) {
             return List.of(new AgentContextItem(

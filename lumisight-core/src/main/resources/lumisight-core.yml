@@ -32,6 +32,16 @@ spring:
         collection-name: lumisight_vectors_1024
 
 lumisight:
+  sandbox:
+    enabled: ${LUMISIGHT_SANDBOX_ENABLED:true}
+    mode: ${LUMISIGHT_SANDBOX_MODE:local}
+    network-enabled: ${LUMISIGHT_SANDBOX_NETWORK_ENABLED:false}
+    timeout-seconds: ${LUMISIGHT_SANDBOX_TIMEOUT_SECONDS:20}
+    max-output-bytes: ${LUMISIGHT_SANDBOX_MAX_OUTPUT_BYTES:200000}
+    memory-mb: ${LUMISIGHT_SANDBOX_MEMORY_MB:512}
+    cpu-limit: ${LUMISIGHT_SANDBOX_CPU_LIMIT:1.0}
+    container-image: ${LUMISIGHT_SANDBOX_IMAGE:docker.io/library/openjdk:21-jdk}
+    snapshot-dir: ${LUMISIGHT_SANDBOX_SNAPSHOT_DIR:.lumisight/snapshots}
   ai:
     chat-api-key: ${CHAT_API_KEY:}
     embedding-api-key: ${EMBEDDING_API_KEY:}
