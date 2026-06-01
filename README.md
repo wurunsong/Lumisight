@@ -30,6 +30,19 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
   - `lumisight.vector.enabled=true`
 - Milvus 自动配置已在离线模式下排除，避免无向量库环境启动超时。
 
+## Sandbox 执行与回滚（2026-06-01）
+
+- 新增统一命令执行治理配置（`lumisight-core.yml`）：
+  - `lumisight.sandbox.enabled`
+  - `lumisight.sandbox.mode=local|docker`
+  - `lumisight.sandbox.network-enabled`
+  - `lumisight.sandbox.timeout-seconds`
+  - `lumisight.sandbox.max-output-bytes`
+  - `lumisight.sandbox.memory-mb` / `cpu-limit`
+  - `lumisight.sandbox.snapshot-dir`
+- Git 工具（`gitStatus/gitDiff/gitBlame`）已统一走 sandbox 执行器。
+- `writeRepoFile` 现在会返回 `snapshotId`（写前快照），可通过 `rollbackRepoFile` 回滚。
+
 ## 第 1 步：本地启动外挂知识库（Podman）
 
 > 说明：正式开发 Agent 之前，需要先构建并启动 NebulaGraph + Milvus。
@@ -149,12 +162,13 @@ mvn -pl lumisight-api -am spring-boot:run
 
 - `POST /api/lumisight/agent/stream`：以 `text/event-stream` 持续返回 Agent 事件流。
 - 请求字段：
-  - `taskType`：`CODE_EXPLAIN` / `BUG_FIX`
+  - `taskType`：`CODE_EXPLAIN` / `BUG_FIX` / `CHAT`（可为空，空时按服务默认策略处理）
   - `repoRoot`：仓库根路径
   - `question`：用户问题
   - `includeRagContext`：是否启用向量工具
   - `contextLimit`：上下文上限
   - `runMode`：`NORMAL` / `PLAN`（`PLAN` 先输出执行计划）
+  - `skillPath`：可选，指定外部技能文件路径（文件驱动 Skill 执行）
 - 事件类型：
   - `PLAN`：计划输出
   - `SKILL_SELECTED`：技能路由结果
@@ -198,7 +212,7 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 
 ## 本地工具能力（Agent Tool）
 
-- LOCAL：`grep/cat/ls/pwd/writeRepoFile`
+- LOCAL：`grep/cat/ls/pwd/writeRepoFile/rollbackRepoFile`
 - BUILD：`compileJava`
 - GIT：`gitStatus/gitDiff/gitBlame`
 - LSP：`javaGoToDefinition/javaFindReferences/lintJavaByJdtls`

@@ -96,3 +96,17 @@
 - 验证：
   - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别到 1 条提交（`7e3198c`）。
   - 浏览器页面 `http://localhost:8080/agent-console.html`：可发起 `/api/lumisight/agent/stream` 请求并接收 `LOOP_STATE/TOOL_CALL/TOOL_RESULT/TOKEN` 事件流。
+
+- 今日提交补充摘要（新增 5 commits，总计 6 commits）：
+  - `a17a1ef`：Skill 执行链路从“内置默认技能”扩展为“文件驱动技能（skillPath）”，新增 `FileBackedAgentSkill`、`SkillMarkdownParser`，并在 API 请求模型中加入 `skillPath` 字段，支持把外部技能文件直接挂载到 Agent 执行。
+  - `4bbaabb`：工具权限从粗粒度放开调整为“按请求与场景组合授权”，并把最终答案复核改为条件触发，避免普通闲聊场景每轮都走复核导致时延上升。
+  - `099864b`：Hook 机制对齐 codeflicker 风格，支持读取 `.codeflicker/config.json` 中 `PreToolUse` 规则并执行 `type=command` 钩子；失败时可阻断高风险工具调用。
+  - `a291553`：新增统一 Sandbox 命令执行器（超时、输出上限、全局网络开关、Docker 模式资源限制），Git 工具全部切换到统一执行器；新增写文件快照与 `rollbackRepoFile` 回滚工具。
+  - `74eebeb`：文档同步流程首次落地，`CODE_FLOW.md`、`agent-architecture.html`、`README.md` 与当日提交事实保持一致。
+- 关键修复（补充）：
+  - Hook 配置与用户期望不一致（代码写死式扩展）-> 改为配置文件驱动 + 命令钩子标准输入输出协议。
+  - 最终答案复核导致对话卡顿 -> 通过条件复核降低非精确问答场景延迟。
+  - 工具执行缺乏统一治理与回滚 -> 引入 SandboxCommandRunner + SnapshotManager，形成“执行约束 + 可回退”闭环。
+- 验证（补充）：
+  - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别 6 条提交（`7e3198c`、`74eebeb`、`a17a1ef`、`4bbaabb`、`099864b`、`a291553`）。
+  - `git log --stat`：确认变更覆盖 `api/core/tools/hooks/skills/docs`，并新增 `sandbox` 与 `rollback` 相关实现文件。

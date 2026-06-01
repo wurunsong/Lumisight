@@ -347,6 +347,37 @@
       </div>
     </div>
 
+    <div class="section-title">8. 今日架构增量（2026-06-01 第二阶段）</div>
+    <div class="grid row-3">
+      <div class="card">
+        <h3>8.1 Skill 执行路径升级</h3>
+        <ul>
+          <li>新增文件驱动技能：请求可携带 `skillPath` 直接执行外部技能文档</li>
+          <li>运行时新增 `FileBackedAgentSkill` + `SkillMarkdownParser` 解析链路</li>
+          <li>默认技能仍保留，形成“默认编排 + 外部技能注入”双轨</li>
+          <li>Skill 结果纳入统一事件流，便于前端可视化追踪</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>8.2 工具治理与安全边界</h3>
+        <ul>
+          <li>工具授权从粗粒度放开改为按请求动态组合权限</li>
+          <li>最终答案复核改为条件触发，减少低风险对话链路时延</li>
+          <li>Hook 系统对齐 `.codeflicker/config.json`，支持 `PreToolUse` 命令钩子</li>
+          <li>高风险调用可在钩子阶段阻断，实现“执行前门禁”</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>8.3 Sandbox 与回滚闭环</h3>
+        <ul>
+          <li>新增统一命令执行器：超时、输出上限、网络开关统一治理</li>
+          <li>支持 `local/docker` 模式；Docker 模式附带 CPU/内存/PID/网络限制</li>
+          <li>Git 工具统一接入 Sandbox 执行入口，避免各自直连进程</li>
+          <li>`writeRepoFile` 写前自动快照，新增 `rollbackRepoFile` 支持回滚</li>
+        </ul>
+      </div>
+    </div>
+
     <div class="legend">
       讲解建议：先讲整体架构，再强调当前阶段是“Agent loop 可控化 + 事件流化”，离线知识库作为基础能力支撑。
     </div>
