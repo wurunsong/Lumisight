@@ -165,6 +165,8 @@ public class CodeAssistantAgentService {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
             }
 
+            // Resume path for HUMAN_GATE: execute the previously suspended risky tool decision
+            // only after the caller explicitly sets approveRiskyToolCall=true.
             if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
                 if (!request.approveRiskyToolCall()) {
                     events.add(AgentEvent.humanGate(
