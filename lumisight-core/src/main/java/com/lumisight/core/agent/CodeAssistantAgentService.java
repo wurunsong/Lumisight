@@ -21,7 +21,6 @@ import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.hooks.AgentHookContext;
 import com.lumisight.hooks.AgentHookDispatcher;
 import com.lumisight.hooks.AgentHookPoint;
-import com.lumisight.skills.runtime.AgentSkill;
 import com.lumisight.skills.runtime.SkillContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import com.lumisight.skills.runtime.SkillRegistry;
@@ -147,9 +146,9 @@ public class CodeAssistantAgentService {
                     effectiveQuestion,
                     agentFlowSupport.buildSkillMetadata(resolvedRepoRoot, request.skillPath())
             );
-            AgentSkill skill = skillRegistry.select(skillContext);
-            SkillPlan skillPlan = skill.buildPlan(skillContext);
-            events.add(AgentEvent.skillSelected(traceId, sessionId, skill.skillName(), skillPlan.summary()));
+            SkillRegistry.ResolvedSkill resolvedSkill = skillRegistry.resolve(skillContext);
+            SkillPlan skillPlan = resolvedSkill.plan();
+            events.add(AgentEvent.skillSelected(traceId, sessionId, resolvedSkill.skillName(), skillPlan.summary()));
 
             Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
 
