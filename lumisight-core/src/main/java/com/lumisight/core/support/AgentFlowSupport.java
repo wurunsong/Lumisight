@@ -89,29 +89,6 @@ public class AgentFlowSupport {
         return enabledPermissions;
     }
 
-    public ToolDecision mapSkillStepToDecision(String step, String question) {
-        if (!StringUtils.hasText(step)) {
-            return null;
-        }
-        String s = step.toLowerCase(Locale.ROOT);
-        if (s.contains("list") || s.contains("目录")) {
-            return new ToolDecision("tool", "ls", Map.of("path", ".", "limit", 200), null, "Skill step list", null);
-        }
-        if (s.contains("read") || s.contains("读取")) {
-            return new ToolDecision("tool", "cat", Map.of("sourceFile", "README.md", "maxLines", 240), null, "Skill step read", null);
-        }
-        if (s.contains("search") || s.contains("检索") || s.contains("grep")) {
-            return new ToolDecision("tool", "grep", Map.of("pattern", question, "limit", 40), null, "Skill step search", null);
-        }
-        if (s.contains("compile") || s.contains("编译")) {
-            return new ToolDecision("tool", "compileJava", Map.of(), null, "Skill step compile", null);
-        }
-        if (s.contains("diff") || s.contains("git")) {
-            return new ToolDecision("tool", "gitDiff", Map.of("path", ".", "maxLines", 300), null, "Skill step git", null);
-        }
-        return null;
-    }
-
     public boolean requiresHumanGate(ToolDecision decision) {
         if (decision == null) {
             return false;

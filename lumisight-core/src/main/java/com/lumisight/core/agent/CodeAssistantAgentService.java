@@ -163,7 +163,6 @@ public class CodeAssistantAgentService {
 
             if (!skillPlan.executionSteps().isEmpty()) {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
-                executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions);
             }
 
             if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
@@ -379,40 +378,6 @@ public class CodeAssistantAgentService {
         } catch (Exception e) {
             fireHook(AgentHookPoint.ON_ERROR, "", 0, "", null, Map.of("stage", "parseDecision", "error", e.getMessage()));
             return decisionParser.fallbackDecision(e.getMessage());
-        }
-    }
-
-    private void executeSkillSteps(
-            SkillPlan skillPlan,
-            String effectiveQuestion,
-            List<AgentContextItem> contexts,
-            int limit,
-            List<AgentEvent> events,
-            String sessionId,
-            String traceId,
-            Set<AgentToolPermission> enabledPermissions
-    ) {
-        int round = 0;
-        for (String step : skillPlan.executionSteps()) {
-            round++;
-            ToolDecision decision = agentFlowSupport.mapSkillStepToDecision(step, effectiveQuestion);
-            if (decision == null) {
-                continue;
-            }
-            events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.TOOL_CALL.name(), "running", "执行Skill步骤: " + step));
-            events.add(AgentEvent.toolCall(traceId, sessionId, round, decision.toolName(), decision.args()));
-            AgentToolExecutionResult toolResult = executeToolWithHookContext(
-                    decision,
-                    enabledPermissions,
-                    limit,
-                    sessionId,
-                    round,
-                    effectiveQuestion
-            );
-            events.add(AgentEvent.toolResult(traceId, sessionId, round, toolResult));
-            if (!toolResult.items().isEmpty()) {
-                contexts.addAll(toolResult.items());
-            }
         }
     }
 
