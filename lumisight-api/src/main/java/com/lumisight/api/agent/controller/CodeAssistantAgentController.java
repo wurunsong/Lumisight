@@ -59,6 +59,7 @@ public class CodeAssistantAgentController {
                 taskType,
                 request.repoRoot(),
                 request.question(),
+                request.skillPath(),
                 request.sessionId(),
                 request.followUpAnswer(),
                 request.approveRiskyToolCall() != null && request.approveRiskyToolCall(),

@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 
 @Service
 public class CodeAssistantAgentService {
@@ -126,16 +127,20 @@ public class CodeAssistantAgentService {
                     request.dialogueMode().name(),
                     request.runMode().name(),
                     effectiveQuestion,
-                    Map.of("repoRoot", request.repoRoot())
+                    buildSkillMetadata(request)
             ));
             SkillPlan skillPlan = skill.buildPlan(new SkillContext(
                     request.taskType().name(),
                     request.dialogueMode().name(),
                     request.runMode().name(),
                     effectiveQuestion,
-                    Map.of("repoRoot", request.repoRoot())
+                    buildSkillMetadata(request)
             ));
             events.add(AgentEvent.skillSelected(traceId, sessionId, skill.skillName(), skillPlan.summary()));
+            if (!skillPlan.executionSteps().isEmpty()) {
+                events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
+                executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions(request));
+            }
             if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
                 if (!request.approveRiskyToolCall()) {
                     events.add(AgentEvent.humanGate(
@@ -521,6 +526,7 @@ public class CodeAssistantAgentService {
                 request.taskType(),
                 request.repoRoot(),
                 question,
+                request.skillPath(),
                 sessionId,
                 request.followUpAnswer(),
                 request.approveRiskyToolCall(),
@@ -532,6 +538,63 @@ public class CodeAssistantAgentService {
                 request.runMode(),
                 request.dialogueMode()
         );
+    }
+
+    private Map<String, Object> buildSkillMetadata(AgentRequest request) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("repoRoot", request.repoRoot());
+        metadata.put("skillPath", request.skillPath());
+        return metadata;
+    }
+
+    private void executeSkillSteps(
+            SkillPlan skillPlan,
+            String effectiveQuestion,
+            List<AgentContextItem> contexts,
+            int limit,
+            List<AgentEvent> events,
+            String sessionId,
+            String traceId,
+            Set<AgentToolPermission> enabledPermissions
+    ) {
+        int round = 0;
+        for (String step : skillPlan.executionSteps()) {
+            round++;
+            ToolDecision decision = mapSkillStepToDecision(step, effectiveQuestion);
+            if (decision == null) {
+                continue;
+            }
+            events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.TOOL_CALL.name(), "running", "执行Skill步骤: " + step));
+            events.add(AgentEvent.toolCall(traceId, sessionId, round, decision.toolName(), decision.args()));
+            AgentToolExecutionResult toolResult = executeTool(decision, enabledPermissions, limit);
+            events.add(AgentEvent.toolResult(traceId, sessionId, round, toolResult));
+            if (!toolResult.items().isEmpty()) {
+                contexts.addAll(toolResult.items());
+            }
+        }
+    }
+
+    private ToolDecision mapSkillStepToDecision(String step, String question) {
+        if (!StringUtils.hasText(step)) {
+            return null;
+        }
+        String s = step.toLowerCase();
+        if (s.contains("list") || s.contains("目录")) {
+            return new ToolDecision("tool", "ls", Map.of("path", ".", "limit", 200), null, "Skill step list", null);
+        }
+        if (s.contains("read") || s.contains("读取")) {
+            return new ToolDecision("tool", "cat", Map.of("sourceFile", "README.md", "maxLines", 240), null, "Skill step read", null);
+        }
+        if (s.contains("search") || s.contains("检索") || s.contains("grep")) {
+            return new ToolDecision("tool", "grep", Map.of("pattern", question, "limit", 40), null, "Skill step search", null);
+        }
+        if (s.contains("compile") || s.contains("编译")) {
+            return new ToolDecision("tool", "compileJava", Map.of(), null, "Skill step compile", null);
+        }
+        if (s.contains("diff") || s.contains("git")) {
+            return new ToolDecision("tool", "gitDiff", Map.of("path", ".", "maxLines", 300), null, "Skill step git", null);
+        }
+        return null;
     }
 
     private record OrchestrationResult(String directAnswer, boolean askUser) {

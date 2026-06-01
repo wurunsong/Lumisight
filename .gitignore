@@ -17,4 +17,6 @@ target/
 # Local skills (do not track in git)
 /lumisight-core/src/main/resources/*.SKILL.md
 
+.mvn/
+
 

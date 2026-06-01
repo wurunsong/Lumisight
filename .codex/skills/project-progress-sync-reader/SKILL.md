@@ -1,3 +1,10 @@
+---
+name: project-progress-sync-reader
+description: Read CODE_FLOW and architecture docs, cross-check consistency, and output actionable next steps.
+metadata:
+  short-description: Read project progress and sync gaps
+---
+
 # Project Progress Sync Reader Skill
 
 ## Purpose
@@ -12,9 +19,9 @@
 - 输出粒度：默认“简版”；可选“详细版”。
 
 ## Files To Read
-- `/Users/lilac/ai/Lumisight/CODE_FLOW.md`
-- `/Users/lilac/ai/Lumisight/agent-architecture.html`
-- （可选）`/Users/lilac/ai/Lumisight/README.md` 用于对外文档一致性校验。
+- `<repo-root>/CODE_FLOW.md`
+- `<repo-root>/agent-architecture.html`
+- （可选）`<repo-root>/README.md` 用于对外文档一致性校验。
 
 ## Mandatory Rules
 - 仅基于文件中的已存在事实输出，不臆造功能状态。

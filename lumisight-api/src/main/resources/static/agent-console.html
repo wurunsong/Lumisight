@@ -91,6 +91,8 @@
         <input id="repoRoot" value="/Users/wurunsong/personal/Lumisight" />
         <label>question</label>
         <textarea id="question">帮我分析当前工程的 Agent 主流程。</textarea>
+        <label>skillPath</label>
+        <input id="skillPath" placeholder="/abs/path/to/SKILL.md (可空)" />
         <div class="row">
           <div>
             <label>taskType</label>
@@ -170,11 +172,12 @@
 
     function payload() {
       const maybe = (v) => v && v.trim().length > 0 ? v.trim() : null;
-      return {
-        taskType: $("taskType").value,
-        repoRoot: $("repoRoot").value.trim(),
-        question: $("question").value.trim(),
-        sessionId: maybe($("sessionId").value),
+        return {
+          taskType: $("taskType").value,
+          repoRoot: $("repoRoot").value.trim(),
+          question: $("question").value.trim(),
+          skillPath: maybe($("skillPath").value),
+          sessionId: maybe($("sessionId").value),
         followUpAnswer: maybe($("followUpAnswer").value),
         approveRiskyToolCall: false,
         interrupt: false,

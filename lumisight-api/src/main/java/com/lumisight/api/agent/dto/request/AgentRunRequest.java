@@ -4,6 +4,7 @@ public record AgentRunRequest(
         String taskType,
         String repoRoot,
         String question,
+        String skillPath,
         String sessionId,
         String followUpAnswer,
         Boolean approveRiskyToolCall,

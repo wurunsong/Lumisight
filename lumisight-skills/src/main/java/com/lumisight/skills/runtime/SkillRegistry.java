@@ -4,7 +4,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 public class SkillRegistry {
@@ -18,9 +17,11 @@ public class SkillRegistry {
     }
 
     public AgentSkill select(SkillContext context) {
-        Optional<AgentSkill> selected = skills.stream()
+        return skills.stream()
                 .filter(skill -> skill.supports(context))
-                .findFirst();
-        return selected.orElseGet(DefaultAgentSkill::new);
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "No workflow skill matched current context. Please register at least one concrete AgentSkill."
+                ));
     }
 }
