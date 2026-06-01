@@ -2,11 +2,12 @@ package com.lumisight.api.agent.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.api.agent.dto.request.AgentRunRequest;
-import com.lumisight.api.agent.support.AgentRequestMapper;
-import com.lumisight.core.agent.CodeAssistantAgentService;
+import com.lumisight.api.agent.support.AgentInteractionOrchestrator;
+import com.lumisight.api.agent.ws.dto.WsAgentCommand;
+import com.lumisight.api.agent.ws.dto.WsAgentMessage;
 import com.lumisight.core.model.AgentEvent;
-import com.lumisight.core.model.AgentRequest;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -20,33 +21,37 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AgentWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
-    private final AgentRequestMapper agentRequestMapper;
-    private final CodeAssistantAgentService codeAssistantAgentService;
+    private final AgentInteractionOrchestrator interactionOrchestrator;
     private final Map<String, Disposable> subscriptions = new ConcurrentHashMap<>();
 
     public AgentWebSocketHandler(
             ObjectMapper objectMapper,
-            AgentRequestMapper agentRequestMapper,
-            CodeAssistantAgentService codeAssistantAgentService
+            AgentInteractionOrchestrator interactionOrchestrator
     ) {
         this.objectMapper = objectMapper;
-        this.agentRequestMapper = agentRequestMapper;
-        this.codeAssistantAgentService = codeAssistantAgentService;
+        this.interactionOrchestrator = interactionOrchestrator;
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        AgentRunRequest req = objectMapper.readValue(message.getPayload(), AgentRunRequest.class);
-        AgentRequest agentRequest = agentRequestMapper.toAgentRequest(req);
+        WsAgentCommand command = objectMapper.readValue(message.getPayload(), WsAgentCommand.class);
+        String commandType = normalizeType(command.type());
+        String requestId = StringUtils.hasText(command.requestId()) ? command.requestId() : "";
+        if ("PING".equals(commandType)) {
+            sendProtocol(session, new WsAgentMessage("PONG", requestId, null, "pong", System.currentTimeMillis()));
+            return;
+        }
+        AgentRunRequest req = normalizeRunRequest(commandType, command.request());
 
         Disposable old = subscriptions.remove(session.getId());
         if (old != null && !old.isDisposed()) {
             old.dispose();
         }
+        sendProtocol(session, new WsAgentMessage("ACK", requestId, null, "accepted", System.currentTimeMillis()));
 
-        Disposable disposable = codeAssistantAgentService.run(agentRequest)
-                .doOnNext(event -> sendEvent(session, event))
-                .doOnError(error -> sendEvent(session, AgentEvent.error("websocket run failed: " + error.getMessage())))
+        Disposable disposable = interactionOrchestrator.stream(req)
+                .doOnNext(event -> sendEvent(session, requestId, event))
+                .doOnError(error -> sendEvent(session, requestId, AgentEvent.error("websocket run failed: " + error.getMessage())))
                 .doFinally(signalType -> subscriptions.remove(session.getId()))
                 .subscribe();
         subscriptions.put(session.getId(), disposable);
@@ -60,12 +65,44 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendEvent(WebSocketSession session, AgentEvent event) {
+    private AgentRunRequest normalizeRunRequest(String commandType, AgentRunRequest request) {
+        AgentRunRequest base = request == null ? new AgentRunRequest(null, null, null, null, null, null, null, null, null, null, null, null, null) : request;
+        boolean interrupt = "INTERRUPT".equals(commandType) || Boolean.TRUE.equals(base.interrupt());
+        boolean resume = "RESUME".equals(commandType) || Boolean.TRUE.equals(base.resume());
+        return new AgentRunRequest(
+                base.taskType(),
+                base.repoRoot(),
+                base.question(),
+                base.skillPath(),
+                base.sessionId(),
+                base.approveRiskyToolCall(),
+                interrupt,
+                resume,
+                base.includeRagContext(),
+                base.includeKnowledgeGraphContext(),
+                base.contextLimit(),
+                base.runMode(),
+                base.dialogueMode()
+        );
+    }
+
+    private String normalizeType(String type) {
+        if (!StringUtils.hasText(type)) {
+            return "START";
+        }
+        return type.trim().toUpperCase();
+    }
+
+    private void sendEvent(WebSocketSession session, String requestId, AgentEvent event) {
+        sendProtocol(session, new WsAgentMessage("EVENT", requestId, event, null, System.currentTimeMillis()));
+    }
+
+    private void sendProtocol(WebSocketSession session, WsAgentMessage message) {
         if (!session.isOpen()) {
             return;
         }
         try {
-            String data = objectMapper.writeValueAsString(event);
+            String data = objectMapper.writeValueAsString(message);
             synchronized (session) {
                 if (session.isOpen()) {
                     session.sendMessage(new TextMessage(data));
@@ -76,4 +113,3 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         }
     }
 }
-

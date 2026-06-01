@@ -19,7 +19,9 @@ public class AgentRequestMapper {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request is required");
         }
-        AgentTaskType taskType = parseTaskType(request.taskType());
+        boolean interrupt = request.interrupt() != null && request.interrupt();
+        boolean resume = request.resume() != null && request.resume();
+        AgentTaskType taskType = parseTaskType(request.taskType(), interrupt, resume);
         AgentRunMode runMode = parseRunMode(request.runMode());
         AgentDialogueMode dialogueMode = parseDialogueMode(request.dialogueMode());
 
@@ -30,8 +32,8 @@ public class AgentRequestMapper {
                 request.skillPath(),
                 request.sessionId(),
                 request.approveRiskyToolCall() != null && request.approveRiskyToolCall(),
-                request.interrupt() != null && request.interrupt(),
-                request.resume() != null && request.resume(),
+                interrupt,
+                resume,
                 request.includeRagContext() == null || request.includeRagContext(),
                 request.includeKnowledgeGraphContext() != null && request.includeKnowledgeGraphContext(),
                 request.contextLimit(),
@@ -47,8 +49,11 @@ public class AgentRequestMapper {
         return Path.of("").toAbsolutePath().normalize().toString();
     }
 
-    private AgentTaskType parseTaskType(String value) {
+    private AgentTaskType parseTaskType(String value, boolean interrupt, boolean resume) {
         if (!StringUtils.hasText(value)) {
+            if (interrupt || resume) {
+                return AgentTaskType.CHAT;
+            }
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "taskType is required");
         }
         try {
@@ -80,4 +85,3 @@ public class AgentRequestMapper {
         }
     }
 }
-

@@ -2,10 +2,8 @@ package com.lumisight.api.agent.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.api.agent.dto.request.AgentRunRequest;
-import com.lumisight.api.agent.support.AgentRequestMapper;
-import com.lumisight.core.agent.CodeAssistantAgentService;
+import com.lumisight.api.agent.support.AgentInteractionOrchestrator;
 import com.lumisight.core.model.AgentEvent;
-import com.lumisight.core.model.AgentRequest;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,26 +15,22 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/lumisight/agent")
 public class CodeAssistantAgentController {
 
-    private final CodeAssistantAgentService codeAssistantAgentService;
+    private final AgentInteractionOrchestrator interactionOrchestrator;
     private final ObjectMapper objectMapper;
-    private final AgentRequestMapper agentRequestMapper;
 
     public CodeAssistantAgentController(
-            CodeAssistantAgentService codeAssistantAgentService,
-            ObjectMapper objectMapper,
-            AgentRequestMapper agentRequestMapper
+            AgentInteractionOrchestrator interactionOrchestrator,
+            ObjectMapper objectMapper
     ) {
-        this.codeAssistantAgentService = codeAssistantAgentService;
+        this.interactionOrchestrator = interactionOrchestrator;
         this.objectMapper = objectMapper;
-        this.agentRequestMapper = agentRequestMapper;
     }
 
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestBody AgentRunRequest request) {
-        AgentRequest agentRequest = agentRequestMapper.toAgentRequest(request);
         SseEmitter emitter = new SseEmitter(0L);
 
-        codeAssistantAgentService.run(agentRequest)
+        interactionOrchestrator.stream(request)
                 .doOnNext(event -> sendEvent(emitter, event))
                 .doOnError(emitter::completeWithError)
                 .doOnComplete(emitter::complete)

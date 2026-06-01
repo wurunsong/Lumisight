@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
-public class CodeAssistantAgentService {
+public class CodeAssistantAgentService implements AgentExecutionEngine {
 
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
@@ -83,6 +83,11 @@ public class CodeAssistantAgentService {
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
+        return execute(request);
+    }
+
+    @Override
+    public Flux<AgentEvent> execute(AgentRequest request) {
         AgentRequestValidators.validate(request);
 
         String traceId = UUID.randomUUID().toString();
