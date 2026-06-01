@@ -10,15 +10,19 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class AgentWebSocketConfig implements WebSocketConfigurer {
 
     private final AgentWebSocketHandler agentWebSocketHandler;
+    private final AgentWebSocketProperties webSocketProperties;
 
-    public AgentWebSocketConfig(AgentWebSocketHandler agentWebSocketHandler) {
+    public AgentWebSocketConfig(
+            AgentWebSocketHandler agentWebSocketHandler,
+            AgentWebSocketProperties webSocketProperties
+    ) {
         this.agentWebSocketHandler = agentWebSocketHandler;
+        this.webSocketProperties = webSocketProperties;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(agentWebSocketHandler, "/ws/lumisight/agent")
-                .setAllowedOrigins("*");
+                .setAllowedOrigins(webSocketProperties.getAllowedOrigins());
     }
 }
-

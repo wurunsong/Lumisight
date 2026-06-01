@@ -54,7 +54,18 @@ lumisight:
       - .codex/skills
       - .lumisight/skills
   agent:
+    conversation:
+      waiting-user-ttl-seconds: ${LUMISIGHT_AGENT_WAITING_USER_TTL_SECONDS:900}
+      waiting-gate-ttl-seconds: ${LUMISIGHT_AGENT_WAITING_GATE_TTL_SECONDS:1800}
+      cleanup-interval-ms: ${LUMISIGHT_AGENT_CONVERSATION_CLEANUP_INTERVAL_MS:60000}
     skill-routing:
       min-confidence: ${LUMISIGHT_AGENT_SKILL_ROUTING_MIN_CONFIDENCE:0.6}
       low-confidence-fallback: ${LUMISIGHT_AGENT_SKILL_ROUTING_LOW_CONFIDENCE_FALLBACK:NONE}
       default-skill-id: ${LUMISIGHT_AGENT_SKILL_ROUTING_DEFAULT_SKILL_ID:}
+    websocket:
+      allowed-origins: ${LUMISIGHT_AGENT_WS_ALLOWED_ORIGINS:*}
+      max-connections: ${LUMISIGHT_AGENT_WS_MAX_CONNECTIONS:200}
+      max-text-message-size: ${LUMISIGHT_AGENT_WS_MAX_TEXT_MESSAGE_SIZE:65536}
+      send-time-limit-ms: ${LUMISIGHT_AGENT_WS_SEND_TIME_LIMIT_MS:10000}
+      send-buffer-size-limit-bytes: ${LUMISIGHT_AGENT_WS_SEND_BUFFER_SIZE_LIMIT_BYTES:512000}
+      message-rate-limit-per-minute: ${LUMISIGHT_AGENT_WS_MSG_RATE_PER_MIN:120}

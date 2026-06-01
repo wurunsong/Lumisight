@@ -28,12 +28,25 @@ public class AgentConversationManager {
     private final Map<String, List<String>> queuedQuestions = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> epochs = new ConcurrentHashMap<>();
     private final Map<String, AtomicReference<String>> inFlightTraceBySession = new ConcurrentHashMap<>();
+    private final AgentConversationProperties conversationProperties;
+
+    public AgentConversationManager(AgentConversationProperties conversationProperties) {
+        this.conversationProperties = conversationProperties;
+    }
 
     public ConversationState get(String sessionId) {
         if (!StringUtils.hasText(sessionId)) {
             return null;
         }
-        return states.get(sessionId);
+        ConversationState state = states.get(sessionId);
+        if (state == null) {
+            return null;
+        }
+        if (isExpired(state, System.currentTimeMillis())) {
+            clear(sessionId);
+            return null;
+        }
+        return state;
     }
 
     public boolean tryEnterSession(String sessionId, String traceId) {
@@ -115,7 +128,7 @@ public class AgentConversationManager {
                     + (old == null ? "null" : old.status.name()) + " -> " + next.status.name()
                     + ", sessionId=" + sessionId);
         }
-        states.put(sessionId, next);
+        states.put(sessionId, next.withLastUpdatedAt(System.currentTimeMillis()));
     }
 
     private boolean isTransitionAllowed(ConversationStatus from, ConversationStatus to) {
@@ -199,36 +212,67 @@ public class AgentConversationManager {
         return next;
     }
 
+    public int purgeExpiredSessions() {
+        long now = System.currentTimeMillis();
+        int removed = 0;
+        for (String sessionId : states.keySet()) {
+            ConversationState state = states.get(sessionId);
+            if (state != null && isExpired(state, now)) {
+                clear(sessionId);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    private boolean isExpired(ConversationState state, long now) {
+        if (state.status != ConversationStatus.WAITING_USER && state.status != ConversationStatus.WAITING_GATE) {
+            return false;
+        }
+        long ttlSeconds = state.status == ConversationStatus.WAITING_GATE
+                ? conversationProperties.getWaitingGateTtlSeconds()
+                : conversationProperties.getWaitingUserTtlSeconds();
+        if (ttlSeconds <= 0) {
+            return false;
+        }
+        return now - state.lastUpdatedAt > ttlSeconds * 1000L;
+    }
+
     public record ConversationState(
             ConversationStatus status,
             String baseQuestion,
             List<AgentContextItem> contexts,
             int nextRound,
             boolean interrupted,
-            ToolDecision pendingDecision
+            ToolDecision pendingDecision,
+            long lastUpdatedAt
     ) {
         static ConversationState waitingUser(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
-            return new ConversationState(ConversationStatus.WAITING_USER, baseQuestion, contexts, nextRound, false, pendingDecision);
+            return new ConversationState(ConversationStatus.WAITING_USER, baseQuestion, contexts, nextRound, false, pendingDecision, System.currentTimeMillis());
         }
 
         static ConversationState waitingGate(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
-            return new ConversationState(ConversationStatus.WAITING_GATE, baseQuestion, contexts, nextRound, false, pendingDecision);
+            return new ConversationState(ConversationStatus.WAITING_GATE, baseQuestion, contexts, nextRound, false, pendingDecision, System.currentTimeMillis());
         }
 
         static ConversationState running(String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
-            return new ConversationState(ConversationStatus.RUNNING, baseQuestion, contexts, nextRound, false, null);
+            return new ConversationState(ConversationStatus.RUNNING, baseQuestion, contexts, nextRound, false, null, System.currentTimeMillis());
         }
 
         ConversationState withInterrupted(boolean interrupted) {
-            return new ConversationState(interrupted ? ConversationStatus.INTERRUPTED : status, baseQuestion, contexts, nextRound, interrupted, pendingDecision);
+            return new ConversationState(interrupted ? ConversationStatus.INTERRUPTED : status, baseQuestion, contexts, nextRound, interrupted, pendingDecision, lastUpdatedAt);
         }
 
         ConversationState withoutPendingDecision() {
-            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, null);
+            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, null, lastUpdatedAt);
         }
 
         ConversationState withStatus(ConversationStatus nextStatus) {
-            return new ConversationState(nextStatus, baseQuestion, contexts, nextRound, interrupted, pendingDecision);
+            return new ConversationState(nextStatus, baseQuestion, contexts, nextRound, interrupted, pendingDecision, lastUpdatedAt);
+        }
+
+        ConversationState withLastUpdatedAt(long timestamp) {
+            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, pendingDecision, timestamp);
         }
     }
 

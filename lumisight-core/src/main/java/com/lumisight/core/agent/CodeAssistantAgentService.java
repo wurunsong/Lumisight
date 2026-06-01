@@ -155,7 +155,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                             resumeState.contexts(),
                             resumeState.nextRound(),
                             false,
-                            resumeState.pendingDecision()
+                            resumeState.pendingDecision(),
+                            System.currentTimeMillis()
                     );
                 }
                 contexts.addAll(resumeState.contexts());

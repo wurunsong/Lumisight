@@ -17,25 +17,48 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import reactor.core.Disposable;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class AgentWebSocketHandler extends TextWebSocketHandler implements AgentTransportAdapter {
 
     private final ObjectMapper objectMapper;
     private final AgentStreamGateway streamGateway;
+    private final AgentWebSocketProperties webSocketProperties;
     private final Map<String, Disposable> subscriptions = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentLinkedDeque<Long>> messageTimestamps = new ConcurrentHashMap<>();
+    private final AtomicInteger activeConnections = new AtomicInteger(0);
 
     public AgentWebSocketHandler(
             ObjectMapper objectMapper,
-            AgentStreamGateway streamGateway
+            AgentStreamGateway streamGateway,
+            AgentWebSocketProperties webSocketProperties
     ) {
         this.objectMapper = objectMapper;
         this.streamGateway = streamGateway;
+        this.webSocketProperties = webSocketProperties;
+    }
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        if (activeConnections.incrementAndGet() > webSocketProperties.getMaxConnections()) {
+            activeConnections.decrementAndGet();
+            session.close(CloseStatus.SERVICE_OVERLOAD);
+            return;
+        }
+        session.setTextMessageSizeLimit(webSocketProperties.getMaxTextMessageSize());
+        super.afterConnectionEstablished(session);
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        if (!allowMessage(session.getId())) {
+            sendProtocol(session, new WsAgentMessage("ERROR", "", null, "rate limit exceeded", System.currentTimeMillis()));
+            session.close(CloseStatus.POLICY_VIOLATION);
+            return;
+        }
         WsAgentCommand command = objectMapper.readValue(message.getPayload(), WsAgentCommand.class);
         String commandType = normalizeType(command.type());
         String requestId = StringUtils.hasText(command.requestId()) ? command.requestId() : "";
@@ -57,7 +80,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        activeConnections.updateAndGet(v -> Math.max(0, v - 1));
         Disposable disposable = subscriptions.remove(session.getId());
+        messageTimestamps.remove(session.getId());
         if (disposable != null && !disposable.isDisposed()) {
             disposable.dispose();
         }
@@ -89,6 +114,24 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
             return "START";
         }
         return type.trim().toUpperCase();
+    }
+
+    private boolean allowMessage(String sessionId) {
+        long now = System.currentTimeMillis();
+        long cutoff = now - 60_000L;
+        ConcurrentLinkedDeque<Long> deque = messageTimestamps.computeIfAbsent(sessionId, k -> new ConcurrentLinkedDeque<>());
+        while (true) {
+            Long first = deque.peekFirst();
+            if (first == null || first >= cutoff) {
+                break;
+            }
+            deque.pollFirst();
+        }
+        if (deque.size() >= webSocketProperties.getMessageRateLimitPerMinute()) {
+            return false;
+        }
+        deque.addLast(now);
+        return true;
     }
 
     private void sendEvent(WebSocketSession session, String requestId, AgentEvent event) {
