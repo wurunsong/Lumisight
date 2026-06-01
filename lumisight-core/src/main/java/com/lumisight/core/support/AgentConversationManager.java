@@ -11,19 +11,56 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class AgentConversationManager {
 
+    private static final Map<ConversationStatus, EnumSet<ConversationStatus>> ALLOWED_TRANSITIONS = Map.of(
+            ConversationStatus.RUNNING, EnumSet.of(ConversationStatus.WAITING_USER, ConversationStatus.WAITING_GATE, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
+            ConversationStatus.WAITING_USER, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
+            ConversationStatus.WAITING_GATE, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
+            ConversationStatus.INTERRUPTED, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.COMPLETED),
+            ConversationStatus.COMPLETED, EnumSet.noneOf(ConversationStatus.class)
+    );
+
     private final Map<String, ConversationState> states = new ConcurrentHashMap<>();
     private final Map<String, List<String>> queuedQuestions = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> epochs = new ConcurrentHashMap<>();
+    private final Map<String, AtomicReference<String>> inFlightTraceBySession = new ConcurrentHashMap<>();
 
     public ConversationState get(String sessionId) {
         if (!StringUtils.hasText(sessionId)) {
             return null;
         }
         return states.get(sessionId);
+    }
+
+    public boolean tryEnterSession(String sessionId, String traceId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return true;
+        }
+        AtomicReference<String> holder = inFlightTraceBySession.computeIfAbsent(sessionId, k -> new AtomicReference<>());
+        String mark = StringUtils.hasText(traceId) ? traceId : "UNKNOWN";
+        return holder.compareAndSet(null, mark);
+    }
+
+    public void leaveSession(String sessionId, String traceId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return;
+        }
+        AtomicReference<String> holder = inFlightTraceBySession.get(sessionId);
+        if (holder == null) {
+            return;
+        }
+        if (StringUtils.hasText(traceId)) {
+            holder.compareAndSet(traceId, null);
+        } else {
+            holder.set(null);
+        }
+        if (holder.get() == null) {
+            inFlightTraceBySession.remove(sessionId, holder);
+        }
     }
 
     public void saveWaiting(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
@@ -203,11 +240,3 @@ public class AgentConversationManager {
         COMPLETED
     }
 }
-}
-    private static final Map<ConversationStatus, EnumSet<ConversationStatus>> ALLOWED_TRANSITIONS = Map.of(
-            ConversationStatus.RUNNING, EnumSet.of(ConversationStatus.WAITING_USER, ConversationStatus.WAITING_GATE, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
-            ConversationStatus.WAITING_USER, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
-            ConversationStatus.WAITING_GATE, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
-            ConversationStatus.INTERRUPTED, EnumSet.of(ConversationStatus.RUNNING, ConversationStatus.COMPLETED),
-            ConversationStatus.COMPLETED, EnumSet.noneOf(ConversationStatus.class)
-    );

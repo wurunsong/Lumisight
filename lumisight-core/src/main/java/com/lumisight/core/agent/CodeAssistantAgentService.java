@@ -91,58 +91,77 @@ public class CodeAssistantAgentService {
             conversationManager.interrupt(sessionId);
             return Flux.just(AgentEvent.interrupted(traceId, sessionId, 0));
         }
-
-        AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
-        if (!request.resume()
-                && StringUtils.hasText(request.question())
-                && resumeState != null
-                && resumeState.status() == AgentConversationManager.ConversationStatus.RUNNING) {
-            if (request.dialogueMode() == AgentDialogueMode.FOLLOW) {
-                conversationManager.enqueueFollowQuestion(sessionId, request.question());
-                return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "FOLLOW: 当前问题已排队，待上一条完成后按顺序处理。"));
+        if (!conversationManager.tryEnterSession(sessionId, traceId)) {
+            if (!request.resume() && StringUtils.hasText(request.question())) {
+                if (request.dialogueMode() == AgentDialogueMode.FOLLOW) {
+                    conversationManager.enqueueFollowQuestion(sessionId, request.question());
+                    return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "FOLLOW: 检测到并发请求，当前问题已排队。"));
+                }
+                if (request.dialogueMode() == AgentDialogueMode.COLLECT) {
+                    conversationManager.mergeCollectQuestion(sessionId, request.question());
+                    return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "COLLECT: 检测到并发请求，问题已合并。"));
+                }
+                if (request.dialogueMode() == AgentDialogueMode.STEER) {
+                    conversationManager.nextEpoch(sessionId);
+                    conversationManager.interrupt(sessionId);
+                    return Flux.just(AgentEvent.state(traceId, sessionId, 0, "STEER", "queued", "STEER: 已标记抢占，等待当前执行让出会话。"));
+                }
             }
-            if (request.dialogueMode() == AgentDialogueMode.COLLECT) {
-                conversationManager.mergeCollectQuestion(sessionId, request.question());
-                return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待处理问题，当前回复完成后统一处理。"));
-            }
-            if (request.dialogueMode() == AgentDialogueMode.STEER) {
-                conversationManager.nextEpoch(sessionId);
-                conversationManager.interrupt(sessionId);
-            }
-        }
-        long runEpoch = conversationManager.nextEpoch(sessionId);
-        String effectiveQuestion = request.question();
-        if (request.resume() && !StringUtils.hasText(effectiveQuestion) && conversationManager.hasQueuedQuestion(sessionId)) {
-            effectiveQuestion = conversationManager.pollQueuedQuestion(sessionId);
-        }
-        String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
-        int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
-        List<AgentContextItem> contexts = new ArrayList<>();
-        List<AgentEvent> events = new ArrayList<>();
-        String directAnswer = null;
-        boolean askUser = false;
-        int startRound = 1;
-
-        if (request.resume() && resumeState != null) {
-            if (resumeState.interrupted()) {
-                resumeState = new AgentConversationManager.ConversationState(
-                        AgentConversationManager.ConversationStatus.RUNNING,
-                        resumeState.baseQuestion(),
-                        resumeState.contexts(),
-                        resumeState.nextRound(),
-                        false,
-                        resumeState.pendingDecision()
-                );
-            }
-            contexts.addAll(resumeState.contexts());
-            startRound = resumeState.nextRound();
-            if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
-                effectiveQuestion = resumeState.baseQuestion();
-            }
-            events.add(AgentEvent.resumed(traceId, sessionId));
+            return Flux.just(AgentEvent.state(traceId, sessionId, 0, "BUSY", "busy", "当前会话正在执行，请稍后重试。"));
         }
 
-        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
+        try {
+            AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
+            if (!request.resume()
+                    && StringUtils.hasText(request.question())
+                    && resumeState != null
+                    && resumeState.status() == AgentConversationManager.ConversationStatus.RUNNING) {
+                if (request.dialogueMode() == AgentDialogueMode.FOLLOW) {
+                    conversationManager.enqueueFollowQuestion(sessionId, request.question());
+                    return withSessionLease(sessionId, traceId, Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "FOLLOW: 当前问题已排队，待上一条完成后按顺序处理。")));
+                }
+                if (request.dialogueMode() == AgentDialogueMode.COLLECT) {
+                    conversationManager.mergeCollectQuestion(sessionId, request.question());
+                    return withSessionLease(sessionId, traceId, Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待处理问题，当前回复完成后统一处理。")));
+                }
+                if (request.dialogueMode() == AgentDialogueMode.STEER) {
+                    conversationManager.nextEpoch(sessionId);
+                    conversationManager.interrupt(sessionId);
+                }
+            }
+            long runEpoch = conversationManager.nextEpoch(sessionId);
+            String effectiveQuestion = request.question();
+            if (request.resume() && !StringUtils.hasText(effectiveQuestion) && conversationManager.hasQueuedQuestion(sessionId)) {
+                effectiveQuestion = conversationManager.pollQueuedQuestion(sessionId);
+            }
+            String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
+            int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
+            List<AgentContextItem> contexts = new ArrayList<>();
+            List<AgentEvent> events = new ArrayList<>();
+            String directAnswer = null;
+            boolean askUser = false;
+            int startRound = 1;
+
+            if (request.resume() && resumeState != null) {
+                if (resumeState.interrupted()) {
+                    resumeState = new AgentConversationManager.ConversationState(
+                            AgentConversationManager.ConversationStatus.RUNNING,
+                            resumeState.baseQuestion(),
+                            resumeState.contexts(),
+                            resumeState.nextRound(),
+                            false,
+                            resumeState.pendingDecision()
+                    );
+                }
+                contexts.addAll(resumeState.contexts());
+                startRound = resumeState.nextRound();
+                if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
+                    effectiveQuestion = resumeState.baseQuestion();
+                }
+                events.add(AgentEvent.resumed(traceId, sessionId));
+            }
+
+            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
             events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
             events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
 
@@ -179,17 +198,17 @@ public class CodeAssistantAgentService {
 
             // 会话恢复到 HUMAN_GATE 场景：这里执行“上次被挂起的高风险工具决策（pendingDecision）”。
             // 只有调用方显式传入 approveRiskyToolCall=true 才会继续执行该工具。
-            if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
-                if (!request.approveRiskyToolCall()) {
-                    events.add(AgentEvent.humanGate(
+                if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
+                    if (!request.approveRiskyToolCall()) {
+                        events.add(AgentEvent.humanGate(
                             traceId,
                             sessionId,
                             startRound,
                             resumeState.pendingDecision().toolName(),
-                            "检测到待确认写操作，请设置 approveRiskyToolCall=true 后继续。"
-                    ));
-                    return Flux.fromIterable(events);
-                }
+                                "检测到待确认写操作，请设置 approveRiskyToolCall=true 后继续。"
+                        ));
+                        return withSessionLease(sessionId, traceId, Flux.fromIterable(events));
+                    }
                 AgentToolExecutionResult gatedResult = executeToolWithHookContext(
                         resumeState.pendingDecision(),
                         enabledPermissions,
@@ -233,10 +252,10 @@ public class CodeAssistantAgentService {
         }
 
         if (askUser) {
-            return Flux.fromIterable(events);
+                return withSessionLease(sessionId, traceId, Flux.fromIterable(events));
         }
         if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
-            return Flux.just(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
+                return withSessionLease(sessionId, traceId, Flux.just(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。")));
         }
 
         conversationManager.clear(sessionId);
@@ -244,7 +263,7 @@ public class CodeAssistantAgentService {
             fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", true));
             events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.FINAL.name(), "ok", "直接输出最终结果"));
             events.add(AgentEvent.finalText(traceId, sessionId, directAnswer));
-            return Flux.fromIterable(events);
+                return withSessionLease(sessionId, traceId, Flux.fromIterable(events));
         }
 
         AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
@@ -257,7 +276,11 @@ public class CodeAssistantAgentService {
                 .content()
                 .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
                 .map(content -> AgentEvent.token(traceId, sessionId, content));
-        return Flux.concat(Flux.fromIterable(events), stream);
+            return withSessionLease(sessionId, traceId, Flux.concat(Flux.fromIterable(events), stream));
+        } catch (Throwable t) {
+            conversationManager.leaveSession(sessionId, traceId);
+            throw t;
+        }
     }
 
     public Flux<String> runText(AgentRequest request) {
@@ -414,6 +437,10 @@ public class CodeAssistantAgentService {
                 toolName,
                 metadata == null ? Map.of() : metadata
         ));
+    }
+
+    private Flux<AgentEvent> withSessionLease(String sessionId, String traceId, Flux<AgentEvent> flux) {
+        return flux.doFinally(signalType -> conversationManager.leaveSession(sessionId, traceId));
     }
 
     private record OrchestrationResult(String directAnswer, boolean askUser) {
