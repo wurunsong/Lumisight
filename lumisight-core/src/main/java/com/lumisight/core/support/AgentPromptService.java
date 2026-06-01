@@ -20,6 +20,9 @@ public class AgentPromptService {
         if (taskType == AgentTaskType.BUG_FIX) {
             return "你是一名资深 Java 工程师。请聚焦根因分析、低风险修复方案和可验证的补丁建议。输出要结构清晰，先给结论，再给依据。";
         }
+        if (taskType == AgentTaskType.CHAT) {
+            return "你是一名专业且友好的工程助手。请先准确理解用户意图，再给出清晰、简洁、可执行的回答；必要时提出补充问题以避免误解。";
+        }
         return "你是一名资深 Java 工程师。请清晰解释代码意图、架构关系、控制流程和关键取舍。解释要贴近工程实践，并尽量给出可落地建议。";
     }
 
@@ -57,6 +60,7 @@ public class AgentPromptService {
         builder.append("规则:\\n");
         builder.append("- 若上下文不足，action=tool，并选择一个已启用工具。\\n");
         builder.append("- 若信息足够，action=final，并在finalAnswer给出最终回答。\\n");
+        builder.append("- 若用户问题不要求精确事实（如严格行号/版本号/错误码/可执行补丁），可直接给出结论并结束，不必强行走复核导向。\\n");
         builder.append("- 允许 action=ask_user，当关键信息缺失且无法通过工具补全时使用。\\n");
         builder.append("- 禁止输出Markdown。\\n");
         builder.append("当前对话管理策略:\\n").append(dialogueModeGuidance(dialogueMode)).append("\\n");

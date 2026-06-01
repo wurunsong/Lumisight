@@ -2,5 +2,6 @@ package com.lumisight.core.model;
 
 public enum AgentTaskType {
     CODE_EXPLAIN,
-    BUG_FIX
+    BUG_FIX,
+    CHAT
 }

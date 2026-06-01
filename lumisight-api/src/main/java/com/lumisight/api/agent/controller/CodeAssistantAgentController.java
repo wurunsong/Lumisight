@@ -18,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.http.HttpStatus;
 
+import java.nio.file.Path;
+
 @RestController
 @RequestMapping("/api/lumisight/agent")
 public class CodeAssistantAgentController {
@@ -57,7 +59,7 @@ public class CodeAssistantAgentController {
 
         return new AgentRequest(
                 taskType,
-                request.repoRoot(),
+                normalizeRepoRoot(request.repoRoot(), request.skillPath()),
                 request.question(),
                 request.skillPath(),
                 request.sessionId(),
@@ -71,6 +73,23 @@ public class CodeAssistantAgentController {
                 runMode,
                 dialogueMode
         );
+    }
+
+    private String normalizeRepoRoot(String repoRoot, String skillPath) {
+        if (StringUtils.hasText(repoRoot)) {
+            return repoRoot.trim();
+        }
+        if (StringUtils.hasText(skillPath)) {
+            try {
+                Path skill = Path.of(skillPath).toAbsolutePath().normalize();
+                Path parent = skill.getParent();
+                if (parent != null) {
+                    return parent.toString();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return Path.of("").toAbsolutePath().normalize().toString();
     }
 
     private AgentTaskType parseTaskType(String value) {

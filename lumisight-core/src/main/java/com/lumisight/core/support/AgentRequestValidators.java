@@ -12,9 +12,6 @@ public final class AgentRequestValidators {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
-        if (!StringUtils.hasText(request.repoRoot())) {
-            throw new IllegalArgumentException("repoRoot must not be blank");
-        }
         boolean hasQuestionInput = StringUtils.hasText(request.question()) || StringUtils.hasText(request.followUpAnswer());
         boolean resumeWithoutText = request.resume() && StringUtils.hasText(request.sessionId());
         if (!hasQuestionInput && !resumeWithoutText) {

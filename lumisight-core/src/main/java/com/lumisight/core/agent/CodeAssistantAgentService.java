@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -37,6 +38,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 
 @Service
 public class CodeAssistantAgentService {
@@ -44,13 +46,8 @@ public class CodeAssistantAgentService {
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
     private static final int TOOL_MAX_RETRY = 2;
-    private static final Set<AgentToolPermission> DEFAULT_RAG_TOOL_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.HYBRID_VECTOR_READ,
-            AgentToolPermission.MCP_CAPABILITY_CALL,
+    private static final Set<AgentToolPermission> BASE_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.LOCAL_FS_READ,
-            AgentToolPermission.LOCAL_FS_WRITE,
-            AgentToolPermission.LSP_JAVA_READ,
-            AgentToolPermission.BUILD_COMPILE,
             AgentToolPermission.GIT_READ
     );
 
@@ -91,6 +88,7 @@ public class CodeAssistantAgentService {
 
         AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
         String effectiveQuestion = request.question();
+        String resolvedRepoRoot = resolveRepoRoot(request.repoRoot(), request.skillPath());
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         List<AgentContextItem> contexts = new ArrayList<>();
         List<AgentEvent> events = new ArrayList<>();
@@ -119,7 +117,7 @@ public class CodeAssistantAgentService {
             events.add(AgentEvent.resumed(traceId, sessionId));
         }
 
-        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(request.repoRoot(), limit)) {
+        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
             events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
             events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), dialogueModeDescription(request.dialogueMode().name())));
             AgentSkill skill = skillRegistry.select(new SkillContext(
@@ -127,19 +125,20 @@ public class CodeAssistantAgentService {
                     request.dialogueMode().name(),
                     request.runMode().name(),
                     effectiveQuestion,
-                    buildSkillMetadata(request)
+                    buildSkillMetadata(resolvedRepoRoot, request.skillPath())
             ));
             SkillPlan skillPlan = skill.buildPlan(new SkillContext(
                     request.taskType().name(),
                     request.dialogueMode().name(),
                     request.runMode().name(),
                     effectiveQuestion,
-                    buildSkillMetadata(request)
+                    buildSkillMetadata(resolvedRepoRoot, request.skillPath())
             ));
             events.add(AgentEvent.skillSelected(traceId, sessionId, skill.skillName(), skillPlan.summary()));
+            Set<AgentToolPermission> enabledPermissions = enabledPermissions(request, skillPlan);
             if (!skillPlan.executionSteps().isEmpty()) {
                 events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
-                executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions(request));
+                executeSkillSteps(skillPlan, effectiveQuestion, contexts, limit, events, sessionId, traceId, enabledPermissions);
             }
             if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
                 if (!request.approveRiskyToolCall()) {
@@ -152,7 +151,7 @@ public class CodeAssistantAgentService {
                     ));
                     return Flux.fromIterable(events);
                 }
-                AgentToolExecutionResult gatedResult = executeTool(resumeState.pendingDecision(), enabledPermissions(request), limit);
+                AgentToolExecutionResult gatedResult = executeTool(resumeState.pendingDecision(), enabledPermissions, limit);
                 events.add(AgentEvent.toolResult(traceId, sessionId, startRound, gatedResult));
                 contexts.addAll(gatedResult.items());
                 conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, startRound + 1);
@@ -169,7 +168,7 @@ public class CodeAssistantAgentService {
                 events.add(AgentEvent.plan(traceId, sessionId, plan));
                 fireHook(AgentHookPoint.AFTER_PLAN, sessionId, 0, effectiveQuestion, null, Map.of("plan", plan));
             }
-            OrchestrationResult result = runManualOrchestration(request, effectiveQuestion, contexts, limit, startRound, events, sessionId, traceId);
+            OrchestrationResult result = runManualOrchestration(request, effectiveQuestion, contexts, limit, startRound, events, sessionId, traceId, enabledPermissions);
             directAnswer = result.directAnswer();
             askUser = result.askUser();
         }
@@ -214,9 +213,9 @@ public class CodeAssistantAgentService {
             int startRound,
             List<AgentEvent> events,
             String sessionId,
-            String traceId
+            String traceId,
+            Set<AgentToolPermission> enabledPermissions
     ) {
-        Set<AgentToolPermission> enabledPermissions = enabledPermissions(request);
         for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
             AgentConversationManager.ConversationState state = conversationManager.get(sessionId);
             if (state != null && state.interrupted()) {
@@ -255,8 +254,13 @@ public class CodeAssistantAgentService {
             }
             if ("final".equalsIgnoreCase(decision.action())) {
                 if (StringUtils.hasText(decision.finalAnswer())) {
-                    VerifyResult verifyResult = verifyFinalAnswer(withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts);
-                    events.add(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
+                    boolean shouldVerify = shouldVerifyFinalAnswer(request, effectiveQuestion, decision.finalAnswer(), contexts);
+                    VerifyResult verifyResult = shouldVerify
+                            ? verifyFinalAnswer(withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts)
+                            : new VerifyResult(true, "问题不要求精确事实，跳过复核");
+                    if (shouldVerify) {
+                        events.add(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
+                    }
                     if (verifyResult.pass()) {
                         events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
                         return new OrchestrationResult(decision.finalAnswer(), false);
@@ -304,10 +308,27 @@ public class CodeAssistantAgentService {
         return new OrchestrationResult(null, false);
     }
 
-    private Set<AgentToolPermission> enabledPermissions(AgentRequest request) {
+    private Set<AgentToolPermission> enabledPermissions(AgentRequest request, SkillPlan skillPlan) {
         Set<AgentToolPermission> enabledPermissions = EnumSet.noneOf(AgentToolPermission.class);
+        enabledPermissions.addAll(BASE_TOOL_PERMISSIONS);
         if (request.includeRagContext()) {
-            enabledPermissions.addAll(DEFAULT_RAG_TOOL_PERMISSIONS);
+            enabledPermissions.add(AgentToolPermission.HYBRID_VECTOR_READ);
+        }
+        if (request.includeKnowledgeGraphContext()) {
+            enabledPermissions.add(AgentToolPermission.KG_ONE_HOP_READ);
+            enabledPermissions.add(AgentToolPermission.METHOD_SOURCE_READ);
+        }
+        if (request.taskType() != null && request.taskType().name().equals("BUG_FIX")) {
+            enabledPermissions.add(AgentToolPermission.LSP_JAVA_READ);
+            enabledPermissions.add(AgentToolPermission.BUILD_COMPILE);
+        }
+        if (skillPlan != null && skillPlan.preferredTools() != null) {
+            for (String toolName : skillPlan.preferredTools()) {
+                PermissionedAgentTool tool = agentToolRegistry.get(normalizeToolName(toolName));
+                if (tool != null) {
+                    enabledPermissions.add(tool.permission());
+                }
+            }
         }
         return enabledPermissions;
     }
@@ -540,11 +561,28 @@ public class CodeAssistantAgentService {
         );
     }
 
-    private Map<String, Object> buildSkillMetadata(AgentRequest request) {
+    private Map<String, Object> buildSkillMetadata(String repoRoot, String skillPath) {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("repoRoot", request.repoRoot());
-        metadata.put("skillPath", request.skillPath());
+        metadata.put("repoRoot", repoRoot);
+        metadata.put("skillPath", skillPath);
         return metadata;
+    }
+
+    private String resolveRepoRoot(String repoRoot, String skillPath) {
+        if (StringUtils.hasText(repoRoot)) {
+            return repoRoot.trim();
+        }
+        if (StringUtils.hasText(skillPath)) {
+            try {
+                Path skill = Path.of(skillPath).toAbsolutePath().normalize();
+                Path parent = skill.getParent();
+                if (parent != null) {
+                    return parent.toString();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return Path.of("").toAbsolutePath().normalize().toString();
     }
 
     private void executeSkillSteps(
@@ -635,6 +673,30 @@ public class CodeAssistantAgentService {
         } catch (Exception e) {
             return new VerifyResult(true, "复核器异常，默认放行");
         }
+    }
+
+    private boolean shouldVerifyFinalAnswer(
+            AgentRequest request,
+            String question,
+            String candidateAnswer,
+            List<AgentContextItem> contexts
+    ) {
+        if (request.taskType() != null && "BUG_FIX".equals(request.taskType().name())) {
+            return true;
+        }
+        String text = (question == null ? "" : question) + "\n" + (candidateAnswer == null ? "" : candidateAnswer);
+        String lower = text.toLowerCase(Locale.ROOT);
+        if (lower.contains("行号")
+                || lower.contains("stacktrace")
+                || lower.contains("堆栈")
+                || lower.contains("错误码")
+                || lower.contains("版本")
+                || lower.contains("精确")
+                || lower.contains("patch")
+                || lower.contains("diff")) {
+            return true;
+        }
+        return contexts != null && contexts.size() >= 8;
     }
 
     private record VerifyResult(boolean pass, String reason) {
