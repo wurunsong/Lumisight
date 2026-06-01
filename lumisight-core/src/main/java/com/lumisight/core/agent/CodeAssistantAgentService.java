@@ -100,9 +100,11 @@ public class CodeAssistantAgentService {
                 return Flux.just(AgentEvent.state(traceId, sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待处理问题，当前回复完成后统一处理。"));
             }
             if (request.dialogueMode() == AgentDialogueMode.STEER) {
+                conversationManager.nextEpoch(sessionId);
                 conversationManager.interrupt(sessionId);
             }
         }
+        long runEpoch = conversationManager.nextEpoch(sessionId);
         String effectiveQuestion = request.question();
         if (request.resume() && !StringUtils.hasText(effectiveQuestion) && conversationManager.hasQueuedQuestion(sessionId)) {
             effectiveQuestion = conversationManager.pollQueuedQuestion(sessionId);
@@ -204,7 +206,8 @@ public class CodeAssistantAgentService {
                     events,
                     sessionId,
                     traceId,
-                    enabledPermissions
+                    enabledPermissions,
+                    runEpoch
             );
             directAnswer = result.directAnswer();
             askUser = result.askUser();
@@ -212,6 +215,9 @@ public class CodeAssistantAgentService {
 
         if (askUser) {
             return Flux.fromIterable(events);
+        }
+        if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
+            return Flux.just(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
         }
 
         conversationManager.clear(sessionId);
@@ -230,6 +236,7 @@ public class CodeAssistantAgentService {
                 .user(finalPrompt)
                 .stream()
                 .content()
+                .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
                 .map(content -> AgentEvent.token(traceId, sessionId, content));
         return Flux.concat(Flux.fromIterable(events), stream);
     }
@@ -254,9 +261,13 @@ public class CodeAssistantAgentService {
             List<AgentEvent> events,
             String sessionId,
             String traceId,
-            Set<AgentToolPermission> enabledPermissions
+            Set<AgentToolPermission> enabledPermissions,
+            long runEpoch
     ) {
         for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
+            if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
+                return new OrchestrationResult(null, true);
+            }
             AgentConversationManager.ConversationState state = conversationManager.get(sessionId);
             if (state != null && state.interrupted()) {
                 events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));

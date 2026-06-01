@@ -9,12 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class AgentConversationManager {
 
     private final Map<String, ConversationState> states = new ConcurrentHashMap<>();
     private final Map<String, List<String>> queuedQuestions = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> epochs = new ConcurrentHashMap<>();
 
     public ConversationState get(String sessionId) {
         if (!StringUtils.hasText(sessionId)) {
@@ -61,6 +63,26 @@ public class AgentConversationManager {
         }
         states.remove(sessionId);
         queuedQuestions.remove(sessionId);
+        epochs.remove(sessionId);
+    }
+
+    public long nextEpoch(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return 0L;
+        }
+        return epochs.computeIfAbsent(sessionId, k -> new AtomicLong(0)).incrementAndGet();
+    }
+
+    public long currentEpoch(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return 0L;
+        }
+        AtomicLong epoch = epochs.get(sessionId);
+        return epoch == null ? 0L : epoch.get();
+    }
+
+    public boolean isActiveEpoch(String sessionId, long epoch) {
+        return currentEpoch(sessionId) == epoch;
     }
 
     public boolean hasQueuedQuestion(String sessionId) {
