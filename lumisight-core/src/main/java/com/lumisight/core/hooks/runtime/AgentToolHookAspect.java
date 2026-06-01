@@ -26,7 +26,9 @@ public class AgentToolHookAspect {
     public Object aroundToolExecute(ProceedingJoinPoint joinPoint) throws Throwable {
         Object[] methodArgs = joinPoint.getArgs();
         ToolDecision decision = methodArgs.length > 0 && methodArgs[0] instanceof ToolDecision td ? td : null;
-        ToolHookContext context = AgentToolHookContextHolder.get();
+        ToolHookContext context = methodArgs.length > 3 && methodArgs[3] instanceof ToolHookContext thc
+                ? thc
+                : ToolHookContext.empty();
         String sessionId = context == null ? "" : context.sessionId();
         int round = context == null ? 0 : context.round();
         String question = context == null ? "" : context.question();

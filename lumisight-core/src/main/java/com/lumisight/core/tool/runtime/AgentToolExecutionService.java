@@ -1,5 +1,6 @@
 package com.lumisight.core.tool.runtime;
 
+import com.lumisight.core.hooks.runtime.ToolHookContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
@@ -27,6 +28,10 @@ public class AgentToolExecutionService {
     }
 
     public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit) {
+        return execute(decision, enabledPermissions, limit, ToolHookContext.empty());
+    }
+
+    public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit, ToolHookContext hookContext) {
         String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
         String toolName = normalizeToolName(requestedToolName);
         Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());

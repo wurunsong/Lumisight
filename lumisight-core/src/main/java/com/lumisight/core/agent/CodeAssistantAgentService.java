@@ -145,7 +145,16 @@ public class CodeAssistantAgentService {
 
             String skillRef = request.skillPath();
             if (!StringUtils.hasText(skillRef)) {
-                skillRef = skillAutoRouter.route(effectiveQuestion);
+                SkillAutoRouter.RouteResult routeResult = skillAutoRouter.route(effectiveQuestion);
+                events.add(AgentEvent.skillRouted(
+                        traceId,
+                        sessionId,
+                        routeResult.candidateSkillId(),
+                        routeResult.confidence(),
+                        routeResult.accepted(),
+                        routeResult.reason()
+                ));
+                skillRef = routeResult.skillId();
             }
 
             SkillContext skillContext = new SkillContext(

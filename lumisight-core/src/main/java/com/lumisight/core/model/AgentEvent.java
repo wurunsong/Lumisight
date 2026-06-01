@@ -25,6 +25,25 @@ public record AgentEvent(
                 traceId, sessionId, 0, "SKILL_SELECT", "ok");
     }
 
+    public static AgentEvent skillRouted(String traceId, String sessionId, String candidateSkillId, double confidence, boolean accepted, String reason) {
+        return base(
+                "SKILL_ROUTE",
+                accepted ? "自动路由技能: " + candidateSkillId : "自动路由低置信，回退默认流程",
+                null,
+                Map.of(
+                        "candidateSkillId", candidateSkillId == null ? "" : candidateSkillId,
+                        "confidence", confidence,
+                        "accepted", accepted,
+                        "reason", reason == null ? "" : reason
+                ),
+                traceId,
+                sessionId,
+                0,
+                "SKILL_ROUTE",
+                accepted ? "ok" : "fallback"
+        );
+    }
+
     public static AgentEvent plan(String message) {
         return base("PLAN", message, null, Map.of(), "", "", 0, "PLAN", "ok");
     }

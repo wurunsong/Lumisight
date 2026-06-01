@@ -5,4 +5,7 @@ public record ToolHookContext(
         int round,
         String question
 ) {
+    public static ToolHookContext empty() {
+        return new ToolHookContext("", 0, "");
+    }
 }

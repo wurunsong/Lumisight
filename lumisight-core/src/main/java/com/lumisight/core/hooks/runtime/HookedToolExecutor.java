@@ -25,12 +25,11 @@ public class HookedToolExecutor {
             int round,
             String question
     ) {
-        AgentToolHookContextHolder.set(new ToolHookContext(sessionId, round, question));
-        try {
-            return agentToolExecutionService.execute(decision, enabledPermissions, limit);
-        } finally {
-            AgentToolHookContextHolder.clear();
-        }
+        return agentToolExecutionService.execute(
+                decision,
+                enabledPermissions,
+                limit,
+                new ToolHookContext(sessionId, round, question)
+        );
     }
 }
-
