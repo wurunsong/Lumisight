@@ -151,6 +151,7 @@ public class AgentPromptService {
                     } else {
                         builder.append(category).append(" 类型工具");
                     }
+                    builder.append(" 使用时不要只满足必填参数；应根据当前任务主动补齐能缩小范围、减少噪音、提升精度的非必填参数。");
                     builder.append(" [category=").append(category).append(", permission=").append(tool.permission()).append("]");
                     if (!tool.argumentSpecs().isEmpty()) {
                         builder.append("\\n  argsSchema: {");
