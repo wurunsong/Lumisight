@@ -10,6 +10,7 @@ import com.lumisight.core.model.AgentRunMode;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.model.AgentDialogueMode;
+import com.lumisight.core.model.ToolCall;
 import com.lumisight.core.support.AgentConversationManager;
 import com.lumisight.core.support.AgentDecisionParser;
 import com.lumisight.core.support.AgentFinalAnswerVerifier;
@@ -363,35 +364,58 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 break;
             }
 
-            if (agentFlowSupport.requiresHumanGate(decision) && !request.approveRiskyToolCall()) {
-                conversationManager.saveWaitingForGate(sessionId, effectiveQuestion, contexts, round, decision);
-                events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
-                events.add(AgentEvent.humanGate(
+            List<ToolDecision> toolCalls = expandToolCalls(decision);
+            if (toolCalls.isEmpty()) {
+                break;
+            }
+            List<List<ToolDecision>> batches = hookedToolExecutor.partitionToolCalls(toolCalls, enabledPermissions);
+            boolean producedContext = false;
+            for (List<ToolDecision> batch : batches) {
+                ToolDecision gatedDecision = findHumanGatedDecision(batch);
+                if (gatedDecision != null && !request.approveRiskyToolCall()) {
+                    conversationManager.saveWaitingForGate(sessionId, effectiveQuestion, contexts, round, gatedDecision);
+                    events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
+                    events.add(AgentEvent.humanGate(
+                            traceId,
+                            sessionId,
+                            round,
+                            gatedDecision.toolName(),
+                            "即将执行写操作工具 `" + gatedDecision.toolName() + "`，请确认后继续（approveRiskyToolCall=true）。"
+                    ));
+                    return new OrchestrationResult(null, true, false);
+                }
+
+                events.add(AgentEvent.state(
                         traceId,
                         sessionId,
                         round,
-                        decision.toolName(),
-                        "即将执行写操作工具 `" + decision.toolName() + "`，请确认后继续（approveRiskyToolCall=true）。"
+                        AgentLoopState.TOOL_CALL.name(),
+                        "running",
+                        batch.size() > 1 ? "开始并发工具调用" : "开始工具调用"
                 ));
-                return new OrchestrationResult(null, true, false);
+                for (ToolDecision toolCall : batch) {
+                    events.add(AgentEvent.toolCall(traceId, sessionId, round, toolCall.toolName(), toolCall.args()));
+                }
+                List<AgentToolExecutionResult> batchResults = hookedToolExecutor.executeBatch(
+                        batch,
+                        enabledPermissions,
+                        limit,
+                        sessionId,
+                        round,
+                        effectiveQuestion
+                );
+                for (AgentToolExecutionResult batchResult : batchResults) {
+                    events.add(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
+                    if (!batchResult.items().isEmpty()) {
+                        producedContext = true;
+                        contexts.addAll(batchResult.items());
+                    }
+                }
+                conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round + 1);
             }
-
-            events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.TOOL_CALL.name(), "running", "开始工具调用"));
-            events.add(AgentEvent.toolCall(traceId, sessionId, round, decision.toolName(), decision.args()));
-            AgentToolExecutionResult toolResult = executeToolWithHookContext(
-                    decision,
-                    enabledPermissions,
-                    limit,
-                    sessionId,
-                    round,
-                    effectiveQuestion
-            );
-            events.add(AgentEvent.toolResult(traceId, sessionId, round, toolResult));
-            if (toolResult.items().isEmpty()) {
+            if (!producedContext) {
                 break;
             }
-            contexts.addAll(toolResult.items());
-            conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round + 1);
         }
         return new OrchestrationResult(null, false, false);
     }
@@ -414,6 +438,43 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             String question
     ) {
         return hookedToolExecutor.execute(decision, enabledPermissions, limit, sessionId, round, question);
+    }
+
+    private List<ToolDecision> expandToolCalls(ToolDecision decision) {
+        if (decision.toolCalls() != null && !decision.toolCalls().isEmpty()) {
+            return decision.toolCalls().stream()
+                    .map(toolCall -> new ToolDecision(
+                            "tool",
+                            toolCall.toolName(),
+                            toolCall.args() == null ? Map.of() : toolCall.args(),
+                            List.of(),
+                            null,
+                            decision.reason(),
+                            null
+                    ))
+                    .toList();
+        }
+        if (!StringUtils.hasText(decision.toolName())) {
+            return List.of();
+        }
+        return List.of(new ToolDecision(
+                "tool",
+                decision.toolName(),
+                decision.args() == null ? Map.of() : decision.args(),
+                List.of(),
+                null,
+                decision.reason(),
+                null
+        ));
+    }
+
+    private ToolDecision findHumanGatedDecision(List<ToolDecision> batch) {
+        for (ToolDecision toolDecision : batch) {
+            if (agentFlowSupport.requiresHumanGate(toolDecision)) {
+                return toolDecision;
+            }
+        }
+        return null;
     }
 
     private void fireHook(AgentHookPoint point, String sessionId, int round, String question, String toolName, Map<String, Object> metadata) {

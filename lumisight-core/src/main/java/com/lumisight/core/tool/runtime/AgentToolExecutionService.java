@@ -31,6 +31,16 @@ public class AgentToolExecutionService {
         return execute(decision, enabledPermissions, limit, ToolHookContext.empty());
     }
 
+    public boolean isConcurrencySafe(ToolDecision decision, Set<AgentToolPermission> enabledPermissions) {
+        String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
+        String toolName = normalizeToolName(requestedToolName);
+        Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
+        PermissionedAgentTool tool = agentToolRegistry.get(toolName);
+        return tool != null
+                && enabledPermissions.contains(tool.permission())
+                && tool.isConcurrencySafe(args);
+    }
+
     public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit, ToolHookContext hookContext) {
         String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
         String toolName = normalizeToolName(requestedToolName);

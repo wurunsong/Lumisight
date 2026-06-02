@@ -60,12 +60,14 @@ public class AgentPromptService {
         appendSkillGuidance(builder, skillPlan, false);
         builder.append("你在执行手动工具编排。每轮只能输出一个JSON对象，不要输出其他文本。\\n");
         builder.append("JSON结构:\\n");
-        builder.append("{\\\"action\\\":\\\"tool|ask_user|final\\\",\\\"toolName\\\":\\\"...\\\",\\\"args\\\":{},\\\"finalAnswer\\\":\\\"...\\\",\\\"askUserQuestion\\\":\\\"...\\\",\\\"reason\\\":\\\"...\\\"}\\n");
+        builder.append("{\\\"action\\\":\\\"tool|ask_user|final\\\",\\\"toolName\\\":\\\"...\\\",\\\"args\\\":{},\\\"toolCalls\\\":[{\\\"toolName\\\":\\\"...\\\",\\\"args\\\":{}}],\\\"finalAnswer\\\":\\\"...\\\",\\\"askUserQuestion\\\":\\\"...\\\",\\\"reason\\\":\\\"...\\\"}\\n");
         builder.append("规则:\\n");
-        builder.append("- 若上下文不足，action=tool，并选择一个已启用工具。\\n");
+        builder.append("- 若上下文不足，action=tool，并选择一个或多个已启用工具。\\n");
         builder.append("- 若信息足够，action=final，并在finalAnswer给出最终回答。\\n");
         builder.append("- 若用户问题不要求精确事实（如严格行号/版本号/错误码/可执行补丁），可直接给出结论并结束，不必强行走复核导向。\\n");
         builder.append("- 允许 action=ask_user，当关键信息缺失且无法通过工具补全时使用。\\n");
+        builder.append("- 只有当多个工具彼此独立、且属于并发安全的只读检索类调用时，才使用 toolCalls 一次返回多个工具。\\n");
+        builder.append("- 若包含写操作、编译、回滚、或存在顺序依赖，请只返回单个工具，不要并发。\\n");
         builder.append("- 禁止输出Markdown。\\n");
         builder.append("当前对话管理策略:\\n").append(dialogueModeGuidance(dialogueMode)).append("\\n");
         builder.append("已启用工具:\\n").append(enabledToolHints(enabledPermissions, registry));

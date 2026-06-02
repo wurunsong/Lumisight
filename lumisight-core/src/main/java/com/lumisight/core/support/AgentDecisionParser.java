@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.model.ToolDecision;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -17,7 +18,7 @@ public class AgentDecisionParser {
     }
 
     public ToolDecision fallbackDecision(String errorMessage) {
-        return new ToolDecision("final", null, Map.of(), "模型决策解析失败，直接给出最终回答。", errorMessage, null);
+        return new ToolDecision("final", null, Map.of(), List.of(), "模型决策解析失败，直接给出最终回答。", errorMessage, null);
     }
 
     public String extractJsonObject(String raw) {
@@ -32,4 +33,3 @@ public class AgentDecisionParser {
         return raw;
     }
 }
-

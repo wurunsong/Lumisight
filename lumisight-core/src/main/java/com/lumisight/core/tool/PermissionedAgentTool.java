@@ -23,4 +23,15 @@ public interface PermissionedAgentTool {
     default List<String> validateArgs(Map<String, Object> args) {
         return List.of();
     }
+
+    default boolean isReadOnly() {
+        return switch (permission()) {
+            case HYBRID_VECTOR_READ, KG_ONE_HOP_READ, METHOD_SOURCE_READ, LOCAL_FS_READ, LSP_JAVA_READ, GIT_READ -> true;
+            default -> false;
+        };
+    }
+
+    default boolean isConcurrencySafe(Map<String, Object> args) {
+        return isReadOnly();
+    }
 }
