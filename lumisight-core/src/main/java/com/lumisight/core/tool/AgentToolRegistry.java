@@ -11,25 +11,25 @@ import java.util.stream.Collectors;
 @Component
 public class AgentToolRegistry {
 
-    private final Map<String, PermissionedAgentTool> toolsByName;
-    private final Map<AgentToolCategory, List<PermissionedAgentTool>> toolsByCategory;
+    private final Map<String, PermissionedAgentTool<?>> toolsByName;
+    private final Map<AgentToolCategory, List<PermissionedAgentTool<?>>> toolsByCategory;
 
-    public AgentToolRegistry(List<PermissionedAgentTool> tools) {
+    public AgentToolRegistry(List<PermissionedAgentTool<?>> tools) {
         this.toolsByName = tools.stream().collect(Collectors.toMap(PermissionedAgentTool::toolName, Function.identity()));
         this.toolsByCategory = new EnumMap<>(AgentToolCategory.class);
         for (AgentToolCategory category : AgentToolCategory.values()) {
-            List<PermissionedAgentTool> categoryTools = tools.stream()
+            List<PermissionedAgentTool<?>> categoryTools = tools.stream()
                     .filter(tool -> tool.category() == category)
                     .collect(Collectors.toList());
             this.toolsByCategory.put(category, categoryTools);
         }
     }
 
-    public PermissionedAgentTool get(String toolName) {
+    public PermissionedAgentTool<?> get(String toolName) {
         return toolsByName.get(toolName);
     }
 
-    public List<PermissionedAgentTool> getByCategory(AgentToolCategory category) {
+    public List<PermissionedAgentTool<?>> getByCategory(AgentToolCategory category) {
         return toolsByCategory.getOrDefault(category, List.of());
     }
 }

@@ -4,6 +4,7 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentTaskType;
+import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
@@ -142,7 +143,7 @@ public class AgentPromptService {
                 AgentToolCategory.GIT
         );
         for (AgentToolCategory category : categories) {
-            for (PermissionedAgentTool tool : registry.getByCategory(category)) {
+            for (PermissionedAgentTool<?> tool : registry.getByCategory(category)) {
                 if (enabledPermissions.contains(tool.permission())) {
                     builder.append("- ").append(tool.toolName()).append("(...): ");
                     if (tool.description() != null && !tool.description().isBlank()) {
@@ -154,7 +155,7 @@ public class AgentPromptService {
                     if (!tool.argumentSpecs().isEmpty()) {
                         builder.append("\\n  argsSchema: {");
                         builder.append(tool.argumentSpecs().stream()
-                                .map(spec -> "\"" + spec.name() + "\":{"
+                                .map((ToolArgumentSpec spec) -> "\"" + spec.name() + "\":{"
                                         + "\"type\":\"" + spec.type() + "\""
                                         + ",\"required\":" + spec.required()
                                         + (spec.description() != null && !spec.description().isBlank()
