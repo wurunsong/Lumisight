@@ -6,8 +6,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -24,7 +29,7 @@ public class SandboxCommandExecutor {
             return new CommandExecutionResult(false, -1, false, "empty command");
         }
         CommandExecutionPolicy policy = request.policy() == null
-                ? new CommandExecutionPolicy(false, 20_000L, 200_000)
+                ? new CommandExecutionPolicy("local", false, 20_000L, 200_000, 512L, 1.0d, "docker.io/library/openjdk:21-jdk", List.of(), List.of())
                 : request.policy();
         if (!policy.networkEnabled() && looksLikeNetworkCommand(request.command())) {
             return new CommandExecutionResult(
@@ -37,16 +42,79 @@ public class SandboxCommandExecutor {
         Path workingDir = request.workingDir() == null
                 ? Path.of("").toAbsolutePath().normalize()
                 : request.workingDir().toAbsolutePath().normalize();
+        String mode = policy.mode().trim().toLowerCase(Locale.ROOT);
+        if ("docker".equals(mode)) {
+            return runDocker(workingDir, request, policy);
+        }
+        if ("mac-seatbelt".equals(mode)) {
+            return runMacSeatbelt(workingDir, request, policy);
+        }
+        return runProcess(workingDir, request.command(), request.stdin(), policy);
+    }
+
+    private CommandExecutionResult runDocker(Path workingDir, CommandExecutionRequest request, CommandExecutionPolicy policy) {
         try {
-            ProcessBuilder builder = new ProcessBuilder(request.command());
+            List<String> dockerCmd = new ArrayList<>();
+            dockerCmd.add("docker");
+            dockerCmd.add("run");
+            dockerCmd.add("--rm");
+            dockerCmd.add("--workdir");
+            dockerCmd.add("/workspace");
+            dockerCmd.add("-v");
+            dockerCmd.add(workingDir + ":/workspace");
+            dockerCmd.add("--cpus");
+            dockerCmd.add(String.valueOf(policy.cpuLimit()));
+            dockerCmd.add("--memory");
+            dockerCmd.add(policy.memoryMb() + "m");
+            dockerCmd.add("--pids-limit");
+            dockerCmd.add("128");
+            dockerCmd.add("--security-opt");
+            dockerCmd.add("no-new-privileges:true");
+            dockerCmd.add("--network");
+            dockerCmd.add(policy.networkEnabled() ? "bridge" : "none");
+            dockerCmd.add(policy.containerImage());
+            dockerCmd.addAll(request.command());
+            return runProcess(workingDir, dockerCmd, request.stdin(), policy);
+        } catch (Exception e) {
+            return new CommandExecutionResult(false, -1, false, "命令执行异常: " + e.getMessage());
+        }
+    }
+
+    private CommandExecutionResult runMacSeatbelt(Path workingDir, CommandExecutionRequest request, CommandExecutionPolicy policy) {
+        Path profileFile = null;
+        try {
+            profileFile = Files.createTempFile("lumisight-seatbelt-", ".sb");
+            Files.writeString(profileFile, buildSeatbeltProfile(workingDir, policy), StandardCharsets.UTF_8);
+            List<String> wrapped = new ArrayList<>();
+            wrapped.add("sandbox-exec");
+            wrapped.add("-f");
+            wrapped.add(profileFile.toString());
+            wrapped.addAll(request.command());
+            return runProcess(workingDir, wrapped, request.stdin(), policy);
+        } catch (Exception e) {
+            return new CommandExecutionResult(false, -1, false, "seatbelt 沙箱执行失败: " + e.getMessage());
+        } finally {
+            if (profileFile != null) {
+                try {
+                    Files.deleteIfExists(profileFile);
+                } catch (Exception ignored) {
+                    // profile cleanup failure should not affect command result.
+                }
+            }
+        }
+    }
+
+    private CommandExecutionResult runProcess(Path workingDir, List<String> command, String stdin, CommandExecutionPolicy policy) {
+        try {
+            ProcessBuilder builder = new ProcessBuilder(command);
             builder.directory(workingDir.toFile());
             builder.redirectErrorStream(true);
             Process process = builder.start();
             OutputCollector collector = new OutputCollector(process.getInputStream(), policy.maxOutputBytes());
             CompletableFuture<Void> outputFuture = CompletableFuture.runAsync(collector, OUTPUT_COLLECTOR_POOL);
-            if (request.stdin() != null) {
+            if (stdin != null) {
                 try (OutputStream os = process.getOutputStream()) {
-                    os.write(request.stdin().getBytes(StandardCharsets.UTF_8));
+                    os.write(stdin.getBytes(StandardCharsets.UTF_8));
                 }
             } else {
                 process.getOutputStream().close();
@@ -72,6 +140,82 @@ public class SandboxCommandExecutor {
         } catch (Exception ignored) {
             // output collection timeout should not override process result.
         }
+    }
+
+    private String buildSeatbeltProfile(Path workingDir, CommandExecutionPolicy policy) {
+        Set<String> readPaths = new LinkedHashSet<>();
+        Set<String> writePaths = new LinkedHashSet<>();
+        addBaseSeatbeltPaths(readPaths, writePaths);
+        readPaths.add(workingDir.toString());
+        readPaths.addAll(policy.readablePaths());
+        writePaths.addAll(policy.writablePaths());
+        StringBuilder builder = new StringBuilder();
+        builder.append("(version 1)\n");
+        builder.append("(deny default)\n");
+        builder.append("(import \"system.sb\")\n");
+        builder.append("(allow signal (target self))\n");
+        builder.append("(allow process-fork)\n");
+        builder.append("(allow file-read-metadata)\n");
+        builder.append("(allow file-map-executable\n");
+        appendSubpaths(builder, baseExecutablePaths());
+        builder.append(")\n");
+        builder.append("(allow process-exec\n");
+        appendSubpaths(builder, baseExecutablePaths());
+        builder.append(")\n");
+        builder.append("(allow file-read*\n");
+        appendSubpaths(builder, readPaths);
+        builder.append(")\n");
+        if (!writePaths.isEmpty()) {
+            builder.append("(allow file-write*\n");
+            appendSubpaths(builder, writePaths);
+            builder.append(")\n");
+        }
+        if (policy.networkEnabled()) {
+            builder.append("(allow network-outbound)\n");
+        }
+        return builder.toString();
+    }
+
+    private void addBaseSeatbeltPaths(Set<String> readPaths, Set<String> writePaths) {
+        readPaths.addAll(baseExecutablePaths());
+        readPaths.add("/etc");
+        readPaths.add("/private/etc");
+        readPaths.add("/dev");
+        String tmpDir = System.getenv("TMPDIR");
+        if (tmpDir != null && !tmpDir.isBlank()) {
+            readPaths.add(tmpDir);
+            writePaths.add(tmpDir);
+        }
+        readPaths.add("/tmp");
+        readPaths.add("/private/tmp");
+        writePaths.add("/tmp");
+        writePaths.add("/private/tmp");
+        readPaths.add("/private/var/folders");
+        writePaths.add("/private/var/folders");
+    }
+
+    private List<String> baseExecutablePaths() {
+        return List.of(
+                "/System",
+                "/usr",
+                "/bin",
+                "/Library",
+                "/usr/local",
+                "/opt/homebrew"
+        );
+    }
+
+    private void appendSubpaths(StringBuilder builder, Iterable<String> paths) {
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            builder.append("    (subpath ").append(quote(path)).append(")\n");
+        }
+    }
+
+    private String quote(String path) {
+        return "\"" + path.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private boolean looksLikeNetworkCommand(List<String> command) {

@@ -184,7 +184,17 @@ public class ConfigurableAgentHook implements AgentHook {
                     Path.of("").toAbsolutePath().normalize(),
                     command,
                     payloadJson,
-                    new CommandExecutionPolicy(sandboxProperties.isNetworkEnabled(), hook.timeoutMs(), hook.maxOutputBytes())
+                    new CommandExecutionPolicy(
+                            sandboxProperties.isEnabled() ? sandboxProperties.getMode() : "local",
+                            sandboxProperties.isNetworkEnabled(),
+                            hook.timeoutMs(),
+                            hook.maxOutputBytes(),
+                            sandboxProperties.getMemoryMb(),
+                            sandboxProperties.getCpuLimit(),
+                            sandboxProperties.getContainerImage(),
+                            List.of(Path.of("").toAbsolutePath().normalize().toString(), HOOKS_ROOT.toString()),
+                            List.of(Path.of("").toAbsolutePath().normalize().toString())
+                    )
             ));
             if (result.timedOut()) {
                 throw new IllegalStateException("Hook command timeout (" + hook.timeoutMs() + "ms): " + hook.command());
