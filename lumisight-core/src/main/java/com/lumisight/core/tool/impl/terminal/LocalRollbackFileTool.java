@@ -39,6 +39,11 @@ public class LocalRollbackFileTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "根据快照ID回滚文件写入结果，用于撤销之前的本地写操作。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(new ToolArgumentSpec("snapshotId", "string", true, "writeRepoFile 返回的快照ID"));
     }

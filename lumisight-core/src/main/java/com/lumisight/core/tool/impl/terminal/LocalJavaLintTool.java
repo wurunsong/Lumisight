@@ -41,6 +41,11 @@ public class LocalJavaLintTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "对指定 Java 文件集合执行编译器级静态诊断，返回错误和警告，适合快速发现语法或类型问题。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", false, "单文件相对路径"),

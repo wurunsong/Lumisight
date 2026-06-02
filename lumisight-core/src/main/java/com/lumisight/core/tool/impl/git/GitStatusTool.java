@@ -38,6 +38,11 @@ public class GitStatusTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "查看仓库当前 git 状态，了解哪些文件被修改、暂存或未跟踪。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("short", "boolean", false, "是否使用短格式")

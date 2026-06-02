@@ -35,6 +35,11 @@ public class LocalGrepTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "在仓库文件中搜索关键字或模式，适合快速定位符号、配置项、报错文本和调用点。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("pattern", "string", true, "检索关键词"),

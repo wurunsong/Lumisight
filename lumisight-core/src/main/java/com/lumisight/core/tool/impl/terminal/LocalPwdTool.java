@@ -31,6 +31,11 @@ public class LocalPwdTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "返回当前工具运行使用的仓库根目录，适合确认执行上下文和相对路径基准。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of();
     }

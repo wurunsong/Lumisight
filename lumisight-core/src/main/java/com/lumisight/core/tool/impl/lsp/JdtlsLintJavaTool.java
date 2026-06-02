@@ -44,6 +44,11 @@ public class JdtlsLintJavaTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "通过 JDT Language Server 获取 Java 诊断信息，适合做更贴近 IDE 的语义级检查。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", false, "单文件相对路径"),

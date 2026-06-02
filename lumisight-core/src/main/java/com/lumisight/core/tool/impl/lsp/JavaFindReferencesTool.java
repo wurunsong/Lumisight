@@ -35,6 +35,11 @@ public class JavaFindReferencesTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "基于 Java 语言服务查找符号引用位置，适合分析调用方和影响范围。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("symbol", "string", true, "要检索引用的符号名"),

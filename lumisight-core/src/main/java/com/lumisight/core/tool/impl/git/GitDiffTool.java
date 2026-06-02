@@ -39,6 +39,11 @@ public class GitDiffTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "查看当前仓库工作区或暂存区的 git diff，适合核对本地改动内容。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", false, "文件相对路径"),

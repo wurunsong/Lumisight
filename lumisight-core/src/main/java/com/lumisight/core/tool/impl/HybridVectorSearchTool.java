@@ -47,6 +47,11 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "同时检索代码向量和注释文档向量，适合既要实现细节又要语义说明的检索场景。";
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         String codeQuery = args.get("codeQuery") == null ? "" : String.valueOf(args.get("codeQuery"));
         String naturalLanguageQuery = args.get("naturalLanguageQuery") == null ? "" : String.valueOf(args.get("naturalLanguageQuery"));

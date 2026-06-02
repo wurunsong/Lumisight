@@ -41,6 +41,11 @@ public class LocalCompileJavaTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "对指定 Java 文件或文件集合执行本地编译校验，用于验证修改是否引入编译错误。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", false, "单文件相对路径"),

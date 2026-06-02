@@ -141,11 +141,19 @@ public class AgentPromptService {
         for (AgentToolCategory category : categories) {
             for (PermissionedAgentTool tool : registry.getByCategory(category)) {
                 if (enabledPermissions.contains(tool.permission())) {
-                    builder.append("- ").append(tool.toolName()).append("(...): ").append(category).append(" 类型工具");
+                    builder.append("- ").append(tool.toolName()).append("(...): ");
+                    if (tool.description() != null && !tool.description().isBlank()) {
+                        builder.append(tool.description());
+                    } else {
+                        builder.append(category).append(" 类型工具");
+                    }
+                    builder.append(" [category=").append(category).append(", permission=").append(tool.permission()).append("]");
                     if (!tool.argumentSpecs().isEmpty()) {
                         builder.append("，参数: ");
                         builder.append(tool.argumentSpecs().stream()
-                                .map(spec -> spec.name() + ":" + spec.type() + (spec.required() ? "(必填)" : ""))
+                                .map(spec -> spec.name() + ":" + spec.type()
+                                        + (spec.required() ? "(必填)" : "")
+                                        + (spec.description() != null && !spec.description().isBlank() ? "[" + spec.description() + "]" : ""))
                                 .reduce((a, b) -> a + ", " + b)
                                 .orElse(""));
                     }

@@ -40,6 +40,11 @@ public class GitBlameTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "按行查看文件 blame 信息，定位某段代码最后由谁在什么时候修改。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", true, "文件相对路径"),

@@ -42,6 +42,11 @@ public class McpCapabilityTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "调用 MCP 扩展能力，把请求转发给已注册的 capability，适合访问补充型外部能力。";
+    }
+
+    @Override
     public List<String> validateArgs(Map<String, Object> args) {
         return ToolArgumentValidators.requireText(args, "capability", "capability");
     }

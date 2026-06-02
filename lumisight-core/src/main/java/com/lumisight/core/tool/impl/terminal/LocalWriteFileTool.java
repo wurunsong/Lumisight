@@ -42,6 +42,11 @@ public class LocalWriteFileTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "写入或覆盖仓库内文件内容，可创建新文件或修改已有文件，属于高风险写操作。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", true, "文件相对路径"),

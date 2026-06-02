@@ -44,6 +44,11 @@ public class MethodSourceLookupTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "根据 sourceFile、startLine、endLine 读取方法对应源码片段，适合从图谱或定位信息回查真实实现。";
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         return fetchMethodSourceByLocation(
                 args.get("sourceFile") == null ? "" : String.valueOf(args.get("sourceFile")),

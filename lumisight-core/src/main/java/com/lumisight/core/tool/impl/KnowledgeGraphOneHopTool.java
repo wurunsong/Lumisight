@@ -40,6 +40,11 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "根据知识图谱节点ID查询一跳邻接关系，用于补充类、方法、调用链之间的结构化依赖信息。";
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         String kgNodeId = args.get("kgNodeId") == null ? "" : String.valueOf(args.get("kgNodeId"));
         Integer limit = parseLimit(args.get("limit"), defaultLimit);

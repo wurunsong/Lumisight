@@ -35,6 +35,11 @@ public class JavaGoToDefinitionTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "基于 Java 语言服务定位符号定义位置，适合从引用点跳到真正定义。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("symbol", "string", true, "要跳转的符号名"),

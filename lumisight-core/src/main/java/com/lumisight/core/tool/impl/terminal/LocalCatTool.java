@@ -33,6 +33,11 @@ public class LocalCatTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "读取仓库内单个文件内容，支持按起止行截取源码片段，适合定位实现细节和查看局部上下文。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("sourceFile", "string", true, "文件相对路径"),

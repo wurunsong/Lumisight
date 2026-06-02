@@ -16,6 +16,10 @@ public interface PermissionedAgentTool {
 
     List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit);
 
+    default String description() {
+        return "";
+    }
+
     default List<ToolArgumentSpec> argumentSpecs() {
         return List.of();
     }

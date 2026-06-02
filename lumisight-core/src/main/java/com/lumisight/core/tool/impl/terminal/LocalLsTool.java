@@ -34,6 +34,11 @@ public class LocalLsTool implements PermissionedAgentTool {
     }
 
     @Override
+    public String description() {
+        return "列出仓库内目录内容，返回文件和子目录名称，适合先摸清目录结构再决定深入查看哪个文件。";
+    }
+
+    @Override
     public List<ToolArgumentSpec> argumentSpecs() {
         return List.of(
                 new ToolArgumentSpec("path", "string", false, "相对 repoRoot 的目录路径"),
