@@ -30,6 +30,7 @@ public class AgentRequestMapper {
                 normalizeRepoRoot(request.repoRoot()),
                 request.question(),
                 request.skillPath(),
+                normalizeUserId(request.userId()),
                 request.sessionId(),
                 request.approveRiskyToolCall() != null && request.approveRiskyToolCall(),
                 interrupt,
@@ -40,6 +41,13 @@ public class AgentRequestMapper {
                 runMode,
                 dialogueMode
         );
+    }
+
+    private String normalizeUserId(String userId) {
+        if (StringUtils.hasText(userId)) {
+            return userId.trim();
+        }
+        return "debug-user";
     }
 
     private String normalizeRepoRoot(String repoRoot) {

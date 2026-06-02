@@ -66,17 +66,36 @@
     button.warn { background: var(--danger); }
     .status { margin-top: 8px; font-size: 13px; color: var(--muted); }
     .panel-title { margin: 0 0 8px; font-size: 14px; color: var(--muted); }
+    .runs { display: grid; gap: 12px; }
+    .run-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: #f8fcfa;
+    }
+    .run-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .run-title {
+      font-weight: 700;
+      color: var(--brand-2);
+    }
     .stream, .final {
       font-family: "IBM Plex Mono", monospace;
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 10px;
-      background: #f8fcfa;
+      background: #ffffff;
       white-space: pre-wrap;
       overflow: auto;
     }
-    .stream { height: 420px; font-size: 12px; }
-    .final { min-height: 120px; font-size: 13px; margin-top: 10px; }
+    .stream { height: 220px; font-size: 12px; }
+    .final { min-height: 80px; font-size: 13px; margin-top: 10px; }
     @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -88,49 +107,75 @@
       <section class="card">
         <h2>Request</h2>
         <label>repoRoot</label>
-        <input id="repoRoot" value="/Users/wurunsong/personal/Lumisight" />
+        <input id="repoRoot" placeholder="/path/to/repo" />
         <label>question</label>
-        <textarea id="question">帮我分析当前工程的 Agent 主流程。</textarea>
+        <textarea id="question" placeholder="输入你的问题"></textarea>
         <label>skillPath</label>
         <input id="skillPath" placeholder="registered skill id/name/path (可空)" />
         <div class="row">
           <div>
             <label>taskType</label>
-            <select id="taskType"><option>BUG_FIX</option><option>CODE_EXPLAIN</option><option>CHAT</option></select>
+            <select id="taskType">
+              <option>BUG_FIX</option>
+              <option>CODE_EXPLAIN</option>
+              <option selected>CHAT</option>
+            </select>
           </div>
           <div>
             <label>runMode</label>
-            <select id="runMode"><option>NORMAL</option><option>PLAN</option></select>
+            <select id="runMode">
+              <option value="" selected>请选择</option>
+              <option>NORMAL</option>
+              <option>PLAN</option>
+            </select>
           </div>
         </div>
         <div class="row">
           <div>
             <label>dialogueMode</label>
-            <select id="dialogueMode"><option>FOLLOW</option><option>COLLECT</option><option>STEER</option></select>
+            <select id="dialogueMode">
+              <option value="" selected>请选择</option>
+              <option>FOLLOW</option>
+              <option>COLLECT</option>
+              <option>STEER</option>
+            </select>
           </div>
           <div>
             <label>contextLimit</label>
-            <input id="contextLimit" type="number" value="5" min="1" />
+            <input id="contextLimit" type="number" min="1" placeholder="可空" />
           </div>
         </div>
         <div class="row">
           <div>
+            <label>userId</label>
+            <input id="userId" placeholder="自动生成并复用" />
+          </div>
+          <div>
             <label>sessionId</label>
-            <input id="sessionId" placeholder="可空" />
+            <input id="sessionId" placeholder="自动生成并复用" />
           </div>
         </div>
         <div class="row">
           <div>
             <label>includeRagContext</label>
-            <select id="includeRagContext"><option value="false">false</option><option value="true">true</option></select>
+            <select id="includeRagContext">
+              <option value="" selected>请选择</option>
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
           </div>
           <div>
             <label>includeKnowledgeGraphContext</label>
-            <select id="includeKnowledgeGraphContext"><option value="false">false</option><option value="true">true</option></select>
+            <select id="includeKnowledgeGraphContext">
+              <option value="" selected>请选择</option>
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
           </div>
         </div>
         <div class="btns">
           <button id="sendBtn">Start Stream</button>
+          <button class="alt" id="newSessionBtn" type="button">New Session</button>
           <button class="alt" id="clearBtn" type="button">Clear</button>
           <button class="warn" id="stopBtn" type="button">Stop</button>
         </div>
@@ -138,28 +183,76 @@
       </section>
       <section class="card">
         <h2>Response</h2>
-        <p class="panel-title">SSE Events</p>
-        <div class="stream" id="stream"></div>
-        <p class="panel-title">Final / Token Text</p>
-        <div class="final" id="final"></div>
+        <p class="panel-title">Per-request Streams</p>
+        <div class="runs" id="runs"></div>
       </section>
     </div>
   </div>
   <script>
     const $ = (id) => document.getElementById(id);
-    const streamBox = $("stream");
-    const finalBox = $("final");
+    const runsBox = $("runs");
     const statusBox = $("status");
-    let aborter = null;
+    const SESSION_KEY = "lumisight.agent.sessionId";
+    const USER_KEY = "lumisight.agent.userId";
+    const activeAborters = new Set();
 
-    function appendStream(line) {
-      streamBox.textContent += line + "\n";
-      streamBox.scrollTop = streamBox.scrollHeight;
+    function randomId(prefix) {
+      return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
-    function appendFinal(text) {
-      finalBox.textContent += text;
-      finalBox.scrollTop = finalBox.scrollHeight;
+    function ensureIdentity() {
+      const savedUserId = localStorage.getItem(USER_KEY);
+      const savedSessionId = localStorage.getItem(SESSION_KEY);
+      $("userId").value = savedUserId || randomId("debug-user");
+      $("sessionId").value = savedSessionId || randomId("session");
+      localStorage.setItem(USER_KEY, $("userId").value);
+      localStorage.setItem(SESSION_KEY, $("sessionId").value);
+    }
+
+    function resetSession() {
+      $("sessionId").value = randomId("session");
+      localStorage.setItem(SESSION_KEY, $("sessionId").value);
+      statusBox.textContent = "new session ready";
+    }
+
+    function createRunView(requestBody) {
+      const card = document.createElement("div");
+      card.className = "run-card";
+
+      const head = document.createElement("div");
+      head.className = "run-head";
+
+      const title = document.createElement("div");
+      title.className = "run-title";
+      title.textContent = `${requestBody.dialogueMode || "FOLLOW"} | ${requestBody.question || "(empty question)"}`;
+
+      const meta = document.createElement("div");
+      meta.textContent = `${requestBody.sessionId || "-"} @ ${new Date().toLocaleTimeString()}`;
+
+      head.appendChild(title);
+      head.appendChild(meta);
+
+      const stream = document.createElement("div");
+      stream.className = "stream";
+
+      const final = document.createElement("div");
+      final.className = "final";
+
+      card.appendChild(head);
+      card.appendChild(stream);
+      card.appendChild(final);
+      runsBox.prepend(card);
+
+      return {
+        appendStream(line) {
+          stream.textContent += line + "\n";
+          stream.scrollTop = stream.scrollHeight;
+        },
+        appendFinal(text) {
+          final.textContent += text;
+          final.scrollTop = final.scrollHeight;
+        }
+      };
     }
 
     function asBool(value) {
@@ -168,41 +261,45 @@
 
     function payload() {
       const maybe = (v) => v && v.trim().length > 0 ? v.trim() : null;
-        return {
-          taskType: $("taskType").value,
-          repoRoot: $("repoRoot").value.trim(),
-          question: $("question").value.trim(),
+      const maybeNumber = (v) => {
+        const text = maybe(v);
+        return text ? Number(text) : null;
+      };
+      return {
+          taskType: maybe($("taskType").value),
+          repoRoot: maybe($("repoRoot").value),
+          question: maybe($("question").value),
           skillPath: maybe($("skillPath").value),
+          userId: maybe($("userId").value),
           sessionId: maybe($("sessionId").value),
         approveRiskyToolCall: false,
         interrupt: false,
         resume: false,
-        includeRagContext: asBool($("includeRagContext").value),
-        includeKnowledgeGraphContext: asBool($("includeKnowledgeGraphContext").value),
-        contextLimit: Number($("contextLimit").value || 5),
-        runMode: $("runMode").value,
-        dialogueMode: $("dialogueMode").value
+        includeRagContext: maybe($("includeRagContext").value) == null ? null : asBool($("includeRagContext").value),
+        includeKnowledgeGraphContext: maybe($("includeKnowledgeGraphContext").value) == null ? null : asBool($("includeKnowledgeGraphContext").value),
+        contextLimit: maybeNumber($("contextLimit").value),
+        runMode: maybe($("runMode").value),
+        dialogueMode: maybe($("dialogueMode").value)
       };
     }
 
     async function start() {
-      if (aborter) {
-        aborter.abort();
-      }
-      streamBox.textContent = "";
-      finalBox.textContent = "";
-      aborter = new AbortController();
-      statusBox.textContent = "connecting...";
+      const requestBody = payload();
+      const runView = createRunView(requestBody);
+      const aborter = new AbortController();
+      activeAborters.add(aborter);
+      statusBox.textContent = activeAborters.size > 1 ? "streaming multiple requests..." : "connecting...";
 
       const response = await fetch("/api/lumisight/agent/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload()),
+        body: JSON.stringify(requestBody),
         signal: aborter.signal
       });
       if (!response.ok || !response.body) {
+        activeAborters.delete(aborter);
         statusBox.textContent = "failed: HTTP " + response.status;
-        appendStream("HTTP error: " + response.status);
+        runView.appendStream("HTTP error: " + response.status);
         return;
       }
       statusBox.textContent = "streaming...";
@@ -213,7 +310,8 @@
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          statusBox.textContent = "completed";
+          activeAborters.delete(aborter);
+          statusBox.textContent = activeAborters.isEmpty() ? "completed" : "streaming...";
           break;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -227,11 +325,11 @@
             if (line.startsWith("data:")) data += line.slice(5).trim();
           }
           if (!data) continue;
-          appendStream(`[${eventName}] ${data}`);
+          runView.appendStream(`[${eventName}] ${data}`);
           try {
             const obj = JSON.parse(data);
             if (obj.type === "TOKEN" || obj.type === "FINAL" || obj.type === "ASK_USER" || obj.type === "ERROR") {
-              appendFinal((obj.message || "") + "\n");
+              runView.appendFinal((obj.message || "") + "\n");
             }
           } catch (_) {}
         }
@@ -239,22 +337,34 @@
     }
 
     $("sendBtn").addEventListener("click", () => {
+      localStorage.setItem(USER_KEY, $("userId").value);
+      localStorage.setItem(SESSION_KEY, $("sessionId").value);
       start().catch((e) => {
+        activeAborters.forEach((controller) => {
+          if (controller.signal.aborted) {
+            activeAborters.delete(controller);
+          }
+        });
+        if (e.name === "AbortError") {
+          statusBox.textContent = activeAborters.isEmpty() ? "stopped" : "streaming...";
+          return;
+        }
         statusBox.textContent = "failed";
-        appendStream("Exception: " + e.message);
       });
     });
+    $("newSessionBtn").addEventListener("click", () => {
+      resetSession();
+    });
     $("clearBtn").addEventListener("click", () => {
-      streamBox.textContent = "";
-      finalBox.textContent = "";
+      runsBox.textContent = "";
       statusBox.textContent = "idle";
     });
     $("stopBtn").addEventListener("click", () => {
-      if (aborter) {
-        aborter.abort();
-        statusBox.textContent = "stopped";
-      }
+      activeAborters.forEach((controller) => controller.abort());
+      activeAborters.clear();
+      statusBox.textContent = "stopped";
     });
+    ensureIdentity();
   </script>
 </body>
 </html>

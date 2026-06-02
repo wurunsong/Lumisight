@@ -5,6 +5,7 @@ public record AgentRequest(
         String repoRoot,
         String question,
         String skillPath,
+        String userId,
         String sessionId,
         boolean approveRiskyToolCall,
         boolean interrupt,

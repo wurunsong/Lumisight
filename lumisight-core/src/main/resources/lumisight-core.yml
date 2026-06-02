@@ -51,7 +51,6 @@ lumisight:
     enabled: false
   skills:
     allowed-paths:
-      - .codex/skills
       - .lumisight/skills
   agent:
     conversation:

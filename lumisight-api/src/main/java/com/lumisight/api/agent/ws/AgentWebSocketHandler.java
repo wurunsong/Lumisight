@@ -89,7 +89,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
     }
 
     private AgentRunRequest normalizeRunRequest(String commandType, AgentRunRequest request) {
-        AgentRunRequest base = request == null ? new AgentRunRequest(null, null, null, null, null, null, null, null, null, null, null, null, null) : request;
+        AgentRunRequest base = request == null ? new AgentRunRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null) : request;
         boolean interrupt = "INTERRUPT".equals(commandType) || Boolean.TRUE.equals(base.interrupt());
         boolean resume = "RESUME".equals(commandType) || Boolean.TRUE.equals(base.resume());
         return new AgentRunRequest(
@@ -97,6 +97,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
                 base.repoRoot(),
                 base.question(),
                 base.skillPath(),
+                base.userId(),
                 base.sessionId(),
                 base.approveRiskyToolCall(),
                 interrupt,

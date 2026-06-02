@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class AgentConversationManager {
@@ -25,9 +24,7 @@ public class AgentConversationManager {
     );
 
     private final Map<String, ConversationState> states = new ConcurrentHashMap<>();
-    private final Map<String, List<String>> queuedQuestions = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> epochs = new ConcurrentHashMap<>();
-    private final Map<String, AtomicReference<String>> inFlightTraceBySession = new ConcurrentHashMap<>();
     private final AgentConversationProperties conversationProperties;
 
     public AgentConversationManager(AgentConversationProperties conversationProperties) {
@@ -47,33 +44,6 @@ public class AgentConversationManager {
             return null;
         }
         return state;
-    }
-
-    public boolean tryEnterSession(String sessionId, String traceId) {
-        if (!StringUtils.hasText(sessionId)) {
-            return true;
-        }
-        AtomicReference<String> holder = inFlightTraceBySession.computeIfAbsent(sessionId, k -> new AtomicReference<>());
-        String mark = StringUtils.hasText(traceId) ? traceId : "UNKNOWN";
-        return holder.compareAndSet(null, mark);
-    }
-
-    public void leaveSession(String sessionId, String traceId) {
-        if (!StringUtils.hasText(sessionId)) {
-            return;
-        }
-        AtomicReference<String> holder = inFlightTraceBySession.get(sessionId);
-        if (holder == null) {
-            return;
-        }
-        if (StringUtils.hasText(traceId)) {
-            holder.compareAndSet(traceId, null);
-        } else {
-            holder.set(null);
-        }
-        if (holder.get() == null) {
-            inFlightTraceBySession.remove(sessionId, holder);
-        }
     }
 
     public void saveWaiting(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
@@ -117,7 +87,6 @@ public class AgentConversationManager {
             putState(sessionId, old.withStatus(ConversationStatus.COMPLETED).withInterrupted(false).withoutPendingDecision());
         }
         states.remove(sessionId);
-        queuedQuestions.remove(sessionId);
         epochs.remove(sessionId);
     }
 
@@ -158,58 +127,6 @@ public class AgentConversationManager {
 
     public boolean isActiveEpoch(String sessionId, long epoch) {
         return currentEpoch(sessionId) == epoch;
-    }
-
-    public boolean hasQueuedQuestion(String sessionId) {
-        if (!StringUtils.hasText(sessionId)) {
-            return false;
-        }
-        List<String> queue = queuedQuestions.get(sessionId);
-        return queue != null && !queue.isEmpty();
-    }
-
-    public void enqueueFollowQuestion(String sessionId, String question) {
-        if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(question)) {
-            return;
-        }
-        queuedQuestions.compute(sessionId, (k, queue) -> {
-            List<String> result = queue == null ? new ArrayList<>() : new ArrayList<>(queue);
-            result.add(question);
-            return result;
-        });
-    }
-
-    public void mergeCollectQuestion(String sessionId, String question) {
-        if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(question)) {
-            return;
-        }
-        queuedQuestions.compute(sessionId, (k, queue) -> {
-            List<String> result = queue == null ? new ArrayList<>() : new ArrayList<>(queue);
-            if (result.isEmpty()) {
-                result.add(question);
-            } else {
-                String merged = result.get(0) + "\n用户追加问题: " + question;
-                result.set(0, merged);
-            }
-            return result;
-        });
-    }
-
-    public String pollQueuedQuestion(String sessionId) {
-        if (!StringUtils.hasText(sessionId)) {
-            return null;
-        }
-        List<String> queue = queuedQuestions.get(sessionId);
-        if (queue == null || queue.isEmpty()) {
-            return null;
-        }
-        String next = queue.remove(0);
-        if (queue.isEmpty()) {
-            queuedQuestions.remove(sessionId);
-        } else {
-            queuedQuestions.put(sessionId, queue);
-        }
-        return next;
     }
 
     public int purgeExpiredSessions() {

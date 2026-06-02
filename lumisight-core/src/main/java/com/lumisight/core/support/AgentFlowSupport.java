@@ -52,6 +52,7 @@ public class AgentFlowSupport {
                 request.repoRoot(),
                 question,
                 request.skillPath(),
+                request.userId(),
                 sessionId,
                 request.approveRiskyToolCall(),
                 request.interrupt(),
