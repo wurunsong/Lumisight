@@ -15,7 +15,9 @@ spring:
       api-key: ${CHAT_API_KEY:${OPENAI_API_KEY:}}
       chat:
         options:
-          model: ${CHAT_MODEL:deepseek-chat}
+          model: ${CHAT_MODEL:deepseek-v4-pro}
+    retry:
+      max-attempts: ${SPRING_AI_RETRY_MAX_ATTEMPTS:1}
       embedding:
         base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
         embeddings-path: ${EMBEDDING_PATH:/v1/embeddings}
@@ -45,6 +47,8 @@ lumisight:
   ai:
     chat-api-key: ${CHAT_API_KEY:}
     embedding-api-key: ${EMBEDDING_API_KEY:}
+    chat-connect-timeout-seconds: ${LUMISIGHT_AI_CHAT_CONNECT_TIMEOUT_SECONDS:10}
+    chat-read-timeout-seconds: ${LUMISIGHT_AI_CHAT_READ_TIMEOUT_SECONDS:120}
   kg:
     enabled: false
   vector:
