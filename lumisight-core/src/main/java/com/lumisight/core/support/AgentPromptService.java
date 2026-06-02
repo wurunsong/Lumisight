@@ -68,6 +68,9 @@ public class AgentPromptService {
         builder.append("- 允许 action=ask_user，当关键信息缺失且无法通过工具补全时使用。\\n");
         builder.append("- 只有当多个工具彼此独立、且属于并发安全的只读检索类调用时，才使用 toolCalls 一次返回多个工具。\\n");
         builder.append("- 若包含写操作、编译、回滚、或存在顺序依赖，请只返回单个工具，不要并发。\\n");
+        builder.append("- 生成 args 时必须严格参考每个工具的 argsSchema 与 exampleArgs；不要遗漏完成当前任务所需的关键参数。\\n");
+        builder.append("- 可选参数不是一律省略：当它们能明显缩小范围、减少噪音、或提高定位精度时，应主动填写。\\n");
+        builder.append("- 对于 cat、grep、gitDiff 这类检索工具，优先提供必要的范围/过滤参数，避免无界读取。\\n");
         builder.append("- 禁止输出Markdown。\\n");
         builder.append("当前对话管理策略:\\n").append(dialogueModeGuidance(dialogueMode)).append("\\n");
         builder.append("已启用工具:\\n").append(enabledToolHints(enabledPermissions, registry));
