@@ -2,11 +2,10 @@ package com.lumisight.core.tool.impl;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
-import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import com.lumisight.mcp.capability.McpCapability;
 import com.lumisight.mcp.registry.McpCapabilityRegistry;
 import org.springframework.ai.tool.annotation.Tool;
@@ -18,7 +17,13 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-public class McpCapabilityTool implements PermissionedAgentTool {
+public class McpCapabilityTool implements PermissionedAgentTool<McpCapabilityTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "MCP能力名称", required = true, example = "readRepoFileSnippet") String capability,
+            @ToolArg(description = "MCP能力参数", exampleJson = "{\"sourceFile\":\"README.md\",\"startLine\":1,\"endLine\":20}") Map<String, Object> args
+    ) {
+    }
 
     private final McpCapabilityRegistry capabilityRegistry;
 
@@ -42,38 +47,18 @@ public class McpCapabilityTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "调用 MCP 扩展能力，把请求转发给已注册的 capability，适合访问补充型外部能力。";
     }
 
     @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        return ToolArgumentValidators.requireText(args, "capability", "capability");
-    }
-
-    @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("capability", "string", true, "MCP能力名称"),
-                new ToolArgumentSpec("args", "object", false, "MCP能力参数")
-        );
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "capability", "readRepoFileSnippet",
-                "args", Map.of(
-                        "sourceFile", "README.md",
-                        "startLine", 1,
-                        "endLine", 20
-                )
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
-        String capabilityName = args.get("capability") == null ? "" : String.valueOf(args.get("capability"));
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
+        String capabilityName = args.capability();
         McpCapability capability = capabilityRegistry.get(capabilityName);
         if (capability == null) {
             return List.of(new AgentContextItem(
@@ -84,11 +69,8 @@ public class McpCapabilityTool implements PermissionedAgentTool {
             ));
         }
         Map<String, Object> capabilityArgs = new HashMap<>();
-        Object rawArgs = args.get("args");
-        if (rawArgs instanceof Map<?, ?> map) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                capabilityArgs.put(String.valueOf(entry.getKey()), entry.getValue());
-            }
+        if (args.args() != null) {
+            capabilityArgs.putAll(args.args());
         }
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
         capabilityArgs.putIfAbsent("repoRoot", context.repoRoot());
@@ -107,6 +89,6 @@ public class McpCapabilityTool implements PermissionedAgentTool {
             @ToolParam(description = "能力名，例如 listRepoFiles/readRepoFileSnippet") String capability,
             @ToolParam(description = "能力参数对象") Map<String, Object> args
     ) {
-        return invoke(Map.of("capability", capability, "args", args == null ? Map.of() : args), 5);
+        return invoke(new Args(capability, args == null ? Map.of() : args), 5);
     }
 }

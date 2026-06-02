@@ -2,21 +2,25 @@ package com.lumisight.core.tool.impl;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
-import com.lumisight.core.support.ToolArgumentValidators;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 
 @Component
-public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
+public class KnowledgeGraphOneHopTool implements PermissionedAgentTool<KnowledgeGraphOneHopTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "图谱节点ID", required = true, example = "method:com.lumisight.core.agent.CodeAssistantAgentService#execute") String kgNodeId,
+            @ToolArg(description = "返回条数", example = "50") Integer limit
+    ) {
+    }
 
     private final KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider;
 
@@ -40,36 +44,19 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "根据知识图谱节点ID查询一跳邻接关系，用于补充类、方法、调用链之间的结构化依赖信息。";
     }
 
     @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
-        String kgNodeId = args.get("kgNodeId") == null ? "" : String.valueOf(args.get("kgNodeId"));
-        Integer limit = parseLimit(args.get("limit"), defaultLimit);
-        return fetchOneHopByKgNodeId(kgNodeId, limit);
-    }
-
-    @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("kgNodeId", "string", true, "图谱节点ID"),
-                new ToolArgumentSpec("limit", "integer", false, "返回条数")
-        );
-    }
-
-    @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        return ToolArgumentValidators.requireText(args, "kgNodeId", "kgNodeId");
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "kgNodeId", "method:com.lumisight.core.agent.CodeAssistantAgentService#execute",
-                "limit", 50
-        );
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
+        Integer limit = args.limit() == null ? defaultLimit : args.limit();
+        return fetchOneHopByKgNodeId(args.kgNodeId(), limit);
     }
 
     @Tool(description = "根据知识图谱节点ID查询一跳邻接信息。输入来自注释文档向量召回的kgNodeId，返回中心节点及其一跳相邻边，用于补充结构化依赖关系。")
@@ -80,15 +67,5 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
         int finalLimit = limit == null ? context.defaultLimit() : limit;
         return knowledgeGraphOneHopProvider.retrieveByNodeId(context.repoRoot(), kgNodeId, finalLimit);
-    }
-
-    private Integer parseLimit(Object value, int defaultLimit) {
-        if (value == null) {
-            return defaultLimit;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return Integer.parseInt(String.valueOf(value));
     }
 }

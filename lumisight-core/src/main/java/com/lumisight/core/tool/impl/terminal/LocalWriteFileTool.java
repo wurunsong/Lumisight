@@ -2,23 +2,30 @@ package com.lumisight.core.tool.impl.terminal;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.sandbox.SnapshotManager;
-import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 @Component
-public class LocalWriteFileTool implements PermissionedAgentTool {
+public class LocalWriteFileTool implements PermissionedAgentTool<LocalWriteFileTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "文件相对路径", required = true, example = "src/main/java/com/example/Foo.java") String sourceFile,
+            @ToolArg(description = "写入内容", required = true, example = "public class Foo {}") String content,
+            @ToolArg(description = "写入模式 overwrite/append", example = "overwrite") String mode
+    ) {
+    }
 
     private final SnapshotManager snapshotManager;
 
@@ -42,24 +49,19 @@ public class LocalWriteFileTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "写入或覆盖仓库内文件内容，可创建新文件或修改已有文件，属于高风险写操作。";
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("sourceFile", "string", true, "文件相对路径"),
-                new ToolArgumentSpec("content", "string", true, "写入内容"),
-                new ToolArgumentSpec("mode", "string", false, "写入模式 overwrite/append")
-        );
-    }
-
-    @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        List<String> errors = ToolArgumentValidators.requireText(args, "sourceFile", "sourceFile");
-        errors.addAll(ToolArgumentValidators.requireText(args, "content", "content"));
-        String mode = args.get("mode") == null ? "overwrite" : String.valueOf(args.get("mode")).toLowerCase();
+    public List<String> validateArgs(Args args) {
+        List<String> errors = new ArrayList<>();
+        String mode = modeOrDefault(args.mode());
         if (!"overwrite".equals(mode) && !"append".equals(mode)) {
             errors.add("mode 仅支持 overwrite 或 append");
         }
@@ -67,13 +69,13 @@ public class LocalWriteFileTool implements PermissionedAgentTool {
     }
 
     @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
             Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
-            String sourceFile = String.valueOf(args.get("sourceFile"));
-            String content = String.valueOf(args.get("content"));
-            String mode = args.get("mode") == null ? "overwrite" : String.valueOf(args.get("mode")).toLowerCase();
+            String sourceFile = args.sourceFile();
+            String content = args.content();
+            String mode = modeOrDefault(args.mode());
             Path file = LocalRepoPathSupport.resolveInRepo(root, sourceFile);
             String snapshotId = snapshotManager.snapshotBeforeWrite(root, file);
             if (file.getParent() != null && !Files.exists(file.getParent())) {
@@ -98,5 +100,9 @@ public class LocalWriteFileTool implements PermissionedAgentTool {
                     Map.of()
             ));
         }
+    }
+
+    private String modeOrDefault(String mode) {
+        return mode == null ? "overwrite" : mode.toLowerCase();
     }
 }

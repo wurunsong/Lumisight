@@ -2,10 +2,10 @@ package com.lumisight.core.tool.impl.terminal;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import javax.tools.Diagnostic;
@@ -23,7 +23,14 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 @Component
-public class LocalCompileJavaTool implements PermissionedAgentTool {
+public class LocalCompileJavaTool implements PermissionedAgentTool<LocalCompileJavaTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "单文件相对路径", example = "lumisight-core/src/main/java/com/lumisight/core/agent/CodeAssistantAgentService.java") String sourceFile,
+            @ToolArg(description = "批量匹配模式", example = "agent") String filePattern,
+            @ToolArg(description = "最多编译文件数", example = "50") Integer maxFiles
+    ) {
+    }
 
     @Override
     public String toolName() {
@@ -41,34 +48,23 @@ public class LocalCompileJavaTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "对指定 Java 文件或文件集合执行本地编译校验，用于验证修改是否引入编译错误。";
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("sourceFile", "string", false, "单文件相对路径"),
-                new ToolArgumentSpec("filePattern", "string", false, "批量匹配模式"),
-                new ToolArgumentSpec("maxFiles", "integer", false, "最多编译文件数")
-        );
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "sourceFile", "lumisight-core/src/main/java/com/lumisight/core/agent/CodeAssistantAgentService.java"
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
             Path repoRoot = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
-            String sourceFile = stringValue(args.get("sourceFile"));
-            String filePattern = stringValue(args.get("filePattern"));
-            int maxFiles = intValue(args.get("maxFiles"), 50);
+            String sourceFile = args.sourceFile() == null ? "" : args.sourceFile();
+            String filePattern = args.filePattern() == null ? "" : args.filePattern();
+            int maxFiles = args.maxFiles() == null ? 50 : args.maxFiles();
             List<Path> files = resolveFiles(repoRoot, sourceFile, filePattern, maxFiles);
             if (files.isEmpty()) {
                 return List.of(new AgentContextItem("build", "compileJava", "未找到可编译的 Java 文件", Map.of("checkedFiles", 0)));
@@ -140,24 +136,6 @@ public class LocalCompileJavaTool implements PermissionedAgentTool {
             return root.relativize(file.toAbsolutePath().normalize()).toString();
         } catch (Exception e) {
             return file.toString();
-        }
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (Exception e) {
-            return defaultValue;
         }
     }
 }

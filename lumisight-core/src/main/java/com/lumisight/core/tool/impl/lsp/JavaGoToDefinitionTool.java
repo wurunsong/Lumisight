@@ -2,11 +2,10 @@ package com.lumisight.core.tool.impl.lsp;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
-import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -17,7 +16,13 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 @Component
-public class JavaGoToDefinitionTool implements PermissionedAgentTool {
+public class JavaGoToDefinitionTool implements PermissionedAgentTool<JavaGoToDefinitionTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "要跳转的符号名", required = true, example = "CodeAssistantAgentService") String symbol,
+            @ToolArg(description = "最多返回定义条数", example = "10") Integer limit
+    ) {
+    }
 
     @Override
     public String toolName() {
@@ -35,35 +40,19 @@ public class JavaGoToDefinitionTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "基于 Java 语言服务定位符号定义位置，适合从引用点跳到真正定义。";
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("symbol", "string", true, "要跳转的符号名"),
-                new ToolArgumentSpec("limit", "integer", false, "最多返回定义条数")
-        );
-    }
-
-    @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        return ToolArgumentValidators.requireText(args, "symbol", "symbol");
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "symbol", "CodeAssistantAgentService",
-                "limit", 10
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
-        String symbol = String.valueOf(args.get("symbol"));
-        int limit = intValue(args.get("limit"), defaultLimit <= 0 ? 20 : defaultLimit);
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
+        String symbol = args.symbol();
+        int limit = args.limit() == null ? (defaultLimit <= 0 ? 20 : defaultLimit) : args.limit();
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
         try {
             Path root = JavaLspPathSupport.requireRepoRoot(context.repoRoot());
@@ -115,20 +104,6 @@ public class JavaGoToDefinitionTool implements PermissionedAgentTool {
                     "definition 查询失败: " + e.getMessage(),
                     Map.of("symbol", symbol)
             ));
-        }
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (Exception e) {
-            return defaultValue;
         }
     }
 }

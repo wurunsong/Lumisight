@@ -2,10 +2,10 @@ package com.lumisight.core.tool.impl.terminal;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -16,7 +16,13 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 @Component
-public class LocalLsTool implements PermissionedAgentTool {
+public class LocalLsTool implements PermissionedAgentTool<LocalLsTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "相对 repoRoot 的目录路径", example = "lumisight-core/src/main/java/com/lumisight/core") String path,
+            @ToolArg(description = "最多返回条数", example = "50") Integer limit
+    ) {
+    }
 
     @Override
     public String toolName() {
@@ -34,25 +40,22 @@ public class LocalLsTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "列出仓库内目录内容，返回文件和子目录名称，适合先摸清目录结构再决定深入查看哪个文件。";
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("path", "string", false, "相对 repoRoot 的目录路径"),
-                new ToolArgumentSpec("limit", "integer", false, "最多返回条数")
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
             Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
-            String pathArg = args.get("path") == null ? "" : String.valueOf(args.get("path"));
-            int limit = intValue(args.get("limit"), defaultLimit <= 0 ? 200 : defaultLimit);
+            String pathArg = args.path() == null ? "" : args.path();
+            int limit = args.limit() == null ? (defaultLimit <= 0 ? 200 : defaultLimit) : args.limit();
             Path target = LocalRepoPathSupport.resolveInRepo(root, pathArg);
             if (!Files.exists(target) || !Files.isDirectory(target)) {
                 return error("ls", "目录不存在: " + pathArg);
@@ -76,28 +79,6 @@ public class LocalLsTool implements PermissionedAgentTool {
             }
         } catch (Exception e) {
             return error("ls", "ls 执行失败: " + e.getMessage());
-        }
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "path", "lumisight-core/src/main/java/com/lumisight/core",
-                "limit", 50
-        );
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (Exception e) {
-            return defaultValue;
         }
     }
 

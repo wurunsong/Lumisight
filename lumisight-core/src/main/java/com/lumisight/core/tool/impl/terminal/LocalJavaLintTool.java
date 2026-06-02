@@ -2,10 +2,10 @@ package com.lumisight.core.tool.impl.terminal;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import javax.tools.Diagnostic;
@@ -23,7 +23,15 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 @Component
-public class LocalJavaLintTool implements PermissionedAgentTool {
+public class LocalJavaLintTool implements PermissionedAgentTool<LocalJavaLintTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "单文件相对路径", example = "src/main/java/com/example/Foo.java") String sourceFile,
+            @ToolArg(description = "批量匹配模式（包含匹配）", example = "agent") String filePattern,
+            @ToolArg(description = "最多检查文件数", example = "10") Integer maxFiles,
+            @ToolArg(description = "最多返回问题数", example = "50") Integer maxIssues
+    ) {
+    }
 
     @Override
     public String toolName() {
@@ -41,43 +49,24 @@ public class LocalJavaLintTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "对指定 Java 文件集合执行编译器级静态诊断，返回错误和警告，适合快速发现语法或类型问题。";
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("sourceFile", "string", false, "单文件相对路径"),
-                new ToolArgumentSpec("filePattern", "string", false, "批量匹配模式（包含匹配）"),
-                new ToolArgumentSpec("maxFiles", "integer", false, "最多检查文件数"),
-                new ToolArgumentSpec("maxIssues", "integer", false, "最多返回问题数")
-        );
-    }
-
-    @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        return List.of();
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "filePattern", "agent",
-                "maxFiles", 10,
-                "maxIssues", 50
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
             Path repoRoot = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
-            String sourceFile = stringValue(args.get("sourceFile"));
-            String filePattern = stringValue(args.get("filePattern"));
-            int maxFiles = intValue(args.get("maxFiles"), 20);
-            int maxIssues = intValue(args.get("maxIssues"), 200);
+            String sourceFile = args.sourceFile() == null ? "" : args.sourceFile();
+            String filePattern = args.filePattern() == null ? "" : args.filePattern();
+            int maxFiles = args.maxFiles() == null ? 20 : args.maxFiles();
+            int maxIssues = args.maxIssues() == null ? 200 : args.maxIssues();
 
             List<Path> files = resolveFiles(repoRoot, sourceFile, filePattern, maxFiles);
             if (files.isEmpty()) {
@@ -182,24 +171,6 @@ public class LocalJavaLintTool implements PermissionedAgentTool {
             return root.relativize(file.toAbsolutePath().normalize()).toString();
         } catch (Exception e) {
             return file.toString();
-        }
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (Exception e) {
-            return defaultValue;
         }
     }
 }

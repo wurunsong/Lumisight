@@ -2,23 +2,29 @@ package com.lumisight.core.tool.impl;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.port.CodeVectorContextProvider;
 import com.lumisight.core.port.CommentVectorContextProvider;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 @Component
-public class HybridVectorSearchTool implements PermissionedAgentTool {
+public class HybridVectorSearchTool implements PermissionedAgentTool<HybridVectorSearchTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "代码导向查询", example = "AgentSessionDispatcher submit follow collect steer") String codeQuery,
+            @ToolArg(description = "自然语言查询", example = "会话调度与消息投递机制") String naturalLanguageQuery,
+            @ToolArg(description = "返回条数", example = "5") Integer limit
+    ) {
+    }
 
     private final CodeVectorContextProvider codeVectorContextProvider;
     private final CommentVectorContextProvider commentVectorContextProvider;
@@ -47,32 +53,20 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "同时检索代码向量和注释文档向量，适合既要实现细节又要语义说明的检索场景。";
     }
 
     @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
-        String codeQuery = args.get("codeQuery") == null ? "" : String.valueOf(args.get("codeQuery"));
-        String naturalLanguageQuery = args.get("naturalLanguageQuery") == null ? "" : String.valueOf(args.get("naturalLanguageQuery"));
-        Integer limit = parseLimit(args.get("limit"), defaultLimit);
-        return searchHybridVector(codeQuery, naturalLanguageQuery, limit);
-    }
-
-    @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("codeQuery", "string", false, "代码导向查询"),
-                new ToolArgumentSpec("naturalLanguageQuery", "string", false, "自然语言查询"),
-                new ToolArgumentSpec("limit", "integer", false, "返回条数")
-        );
-    }
-
-    @Override
-    public List<String> validateArgs(Map<String, Object> args) {
+    public List<String> validateArgs(Args args) {
         List<String> errors = new ArrayList<>();
-        String codeQuery = args.get("codeQuery") == null ? "" : String.valueOf(args.get("codeQuery"));
-        String naturalLanguageQuery = args.get("naturalLanguageQuery") == null ? "" : String.valueOf(args.get("naturalLanguageQuery"));
+        String codeQuery = args.codeQuery() == null ? "" : args.codeQuery();
+        String naturalLanguageQuery = args.naturalLanguageQuery() == null ? "" : args.naturalLanguageQuery();
         if (codeQuery.isBlank() && naturalLanguageQuery.isBlank()) {
             errors.add("codeQuery 和 naturalLanguageQuery 不能同时为空");
         }
@@ -80,12 +74,11 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
     }
 
     @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "codeQuery", "AgentSessionDispatcher submit follow collect steer",
-                "naturalLanguageQuery", "会话调度与消息投递机制",
-                "limit", 5
-        );
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
+        String codeQuery = args.codeQuery() == null ? "" : args.codeQuery();
+        String naturalLanguageQuery = args.naturalLanguageQuery() == null ? "" : args.naturalLanguageQuery();
+        Integer limit = args.limit() == null ? defaultLimit : args.limit();
+        return searchHybridVector(codeQuery, naturalLanguageQuery, limit);
     }
 
     @Tool(description = "并发执行双向量库检索：codeQuery 用于代码向量库，naturalLanguageQuery 用于注释文档向量库。适合需要同时拿实现细节和语义说明的场景。")
@@ -108,15 +101,5 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
         merged.addAll(codeFuture.join());
         merged.addAll(commentFuture.join());
         return merged;
-    }
-
-    private Integer parseLimit(Object value, int defaultLimit) {
-        if (value == null) {
-            return defaultLimit;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return Integer.parseInt(String.valueOf(value));
     }
 }

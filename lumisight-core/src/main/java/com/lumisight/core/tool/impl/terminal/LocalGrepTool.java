@@ -2,11 +2,10 @@ package com.lumisight.core.tool.impl.terminal;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
-import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -17,7 +16,15 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 @Component
-public class LocalGrepTool implements PermissionedAgentTool {
+public class LocalGrepTool implements PermissionedAgentTool<LocalGrepTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "检索关键词", required = true, example = "AgentSessionDispatcher") String pattern,
+            @ToolArg(description = "文件名过滤", example = ".java") String filePattern,
+            @ToolArg(description = "最大命中条数", example = "20") Integer limit,
+            @ToolArg(description = "是否区分大小写", example = "false") Boolean caseSensitive
+    ) {
+    }
 
     @Override
     public String toolName() {
@@ -35,43 +42,24 @@ public class LocalGrepTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Class<Args> argsType() {
+        return Args.class;
+    }
+
+    @Override
     public String description() {
         return "在仓库文件中搜索关键字或模式，适合快速定位符号、配置项、报错文本和调用点。";
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("pattern", "string", true, "检索关键词"),
-                new ToolArgumentSpec("filePattern", "string", false, "文件名过滤"),
-                new ToolArgumentSpec("limit", "integer", false, "最大命中条数"),
-                new ToolArgumentSpec("caseSensitive", "boolean", false, "是否区分大小写")
-        );
-    }
-
-    @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        return ToolArgumentValidators.requireText(args, "pattern", "pattern");
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "pattern", "AgentSessionDispatcher",
-                "filePattern", ".java",
-                "limit", 20
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
             Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
-            String pattern = String.valueOf(args.get("pattern"));
-            String filePattern = args.get("filePattern") == null ? "" : String.valueOf(args.get("filePattern"));
-            boolean caseSensitive = boolValue(args.get("caseSensitive"), false);
-            int limit = intValue(args.get("limit"), defaultLimit <= 0 ? 100 : defaultLimit);
+            String pattern = args.pattern();
+            String filePattern = args.filePattern() == null ? "" : args.filePattern();
+            boolean caseSensitive = args.caseSensitive() != null && args.caseSensitive();
+            int limit = args.limit() == null ? (defaultLimit <= 0 ? 100 : defaultLimit) : args.limit();
             String lookup = caseSensitive ? pattern : pattern.toLowerCase();
             List<Map<String, Object>> matches = new ArrayList<>();
 
@@ -115,30 +103,6 @@ public class LocalGrepTool implements PermissionedAgentTool {
         } catch (Exception e) {
             return error("grep", "grep 执行失败: " + e.getMessage());
         }
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (Exception e) {
-            return defaultValue;
-        }
-    }
-
-    private boolean boolValue(Object value, boolean defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return Boolean.parseBoolean(String.valueOf(value));
     }
 
     private List<AgentContextItem> error(String sourceId, String message) {

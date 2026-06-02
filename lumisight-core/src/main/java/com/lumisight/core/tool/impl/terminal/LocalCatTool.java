@@ -2,11 +2,10 @@ package com.lumisight.core.tool.impl.terminal;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.model.ToolArgumentSpec;
-import com.lumisight.core.support.ToolArgumentValidators;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -15,7 +14,15 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-public class LocalCatTool implements PermissionedAgentTool {
+public class LocalCatTool implements PermissionedAgentTool<LocalCatTool.Args> {
+
+    public record Args(
+            @ToolArg(description = "文件相对路径", required = true, example = "README.md") String sourceFile,
+            @ToolArg(description = "起始行", example = "1") Integer startLine,
+            @ToolArg(description = "结束行", example = "40") Integer endLine,
+            @ToolArg(description = "最大返回行数", example = "300") Integer maxLines
+    ) {
+    }
 
     @Override
     public String toolName() {
@@ -38,38 +45,19 @@ public class LocalCatTool implements PermissionedAgentTool {
     }
 
     @Override
-    public List<ToolArgumentSpec> argumentSpecs() {
-        return List.of(
-                new ToolArgumentSpec("sourceFile", "string", true, "文件相对路径"),
-                new ToolArgumentSpec("startLine", "integer", false, "起始行"),
-                new ToolArgumentSpec("endLine", "integer", false, "结束行"),
-                new ToolArgumentSpec("maxLines", "integer", false, "最大返回行数")
-        );
+    public Class<Args> argsType() {
+        return Args.class;
     }
 
     @Override
-    public List<String> validateArgs(Map<String, Object> args) {
-        return ToolArgumentValidators.requireText(args, "sourceFile", "sourceFile");
-    }
-
-    @Override
-    public Map<String, Object> exampleArgs() {
-        return Map.of(
-                "sourceFile", "README.md",
-                "startLine", 1,
-                "endLine", 40
-        );
-    }
-
-    @Override
-    public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
+    public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
             Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
-            String sourceFile = String.valueOf(args.get("sourceFile"));
-            Integer startLine = intValue(args.get("startLine"));
-            Integer endLine = intValue(args.get("endLine"));
-            int maxLines = intValue(args.get("maxLines"), 300);
+            String sourceFile = args.sourceFile();
+            Integer startLine = args.startLine();
+            Integer endLine = args.endLine();
+            int maxLines = args.maxLines() == null ? 300 : args.maxLines();
             Path file = LocalRepoPathSupport.resolveInRepo(root, sourceFile);
             if (!Files.exists(file) || !Files.isRegularFile(file)) {
                 return error("cat", "文件不存在: " + sourceFile);
@@ -93,25 +81,6 @@ public class LocalCatTool implements PermissionedAgentTool {
         } catch (Exception e) {
             return error("cat", "cat 执行失败: " + e.getMessage());
         }
-    }
-
-    private Integer intValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private int intValue(Object value, int defaultValue) {
-        Integer parsed = intValue(value);
-        return parsed == null ? defaultValue : parsed;
     }
 
     private List<AgentContextItem> error(String sourceId, String message) {

@@ -6,7 +6,7 @@ import com.lumisight.core.model.ToolArgumentSpec;
 import java.util.List;
 import java.util.Map;
 
-public interface PermissionedAgentTool {
+public interface PermissionedAgentTool<T> {
 
     String toolName();
 
@@ -14,21 +14,23 @@ public interface PermissionedAgentTool {
 
     AgentToolPermission permission();
 
-    List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit);
+    Class<T> argsType();
+
+    List<AgentContextItem> invoke(T args, int defaultLimit);
 
     default String description() {
         return "";
     }
 
     default List<ToolArgumentSpec> argumentSpecs() {
-        return List.of();
+        return ToolArgsSupport.argumentSpecs(argsType());
     }
 
     default Map<String, Object> exampleArgs() {
-        return Map.of();
+        return ToolArgsSupport.exampleArgs(argsType());
     }
 
-    default List<String> validateArgs(Map<String, Object> args) {
+    default List<String> validateArgs(T args) {
         return List.of();
     }
 
@@ -39,7 +41,7 @@ public interface PermissionedAgentTool {
         };
     }
 
-    default boolean isConcurrencySafe(Map<String, Object> args) {
+    default boolean isConcurrencySafe(T args) {
         return isReadOnly();
     }
 }

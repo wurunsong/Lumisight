@@ -1,5 +1,6 @@
 package com.lumisight.core.tool.runtime;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.hooks.runtime.ToolHookContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentToolExecutionResult;
@@ -22,9 +23,11 @@ public class AgentToolExecutionService {
     private static final int TOOL_MAX_RETRY = 2;
 
     private final AgentToolRegistry agentToolRegistry;
+    private final ObjectMapper objectMapper;
 
-    public AgentToolExecutionService(AgentToolRegistry agentToolRegistry) {
+    public AgentToolExecutionService(AgentToolRegistry agentToolRegistry, ObjectMapper objectMapper) {
         this.agentToolRegistry = agentToolRegistry;
+        this.objectMapper = objectMapper;
     }
 
     public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit) {
@@ -35,17 +38,17 @@ public class AgentToolExecutionService {
         String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
         String toolName = normalizeToolName(requestedToolName);
         Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
-        PermissionedAgentTool tool = agentToolRegistry.get(toolName);
+        PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
         return tool != null
                 && enabledPermissions.contains(tool.permission())
-                && tool.isConcurrencySafe(args);
+                && isConcurrencySafe(tool, args);
     }
 
     public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit, ToolHookContext hookContext) {
         String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
         String toolName = normalizeToolName(requestedToolName);
         Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
-        PermissionedAgentTool tool = agentToolRegistry.get(toolName);
+        PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
         if (tool == null) {
             return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName));
         }
@@ -56,11 +59,17 @@ public class AgentToolExecutionService {
         if (!schemaErrors.isEmpty()) {
             return errorToolResult(toolName, "schema_invalid", "工具参数结构校验失败", Map.of("errors", schemaErrors));
         }
-        List<String> validationErrors = tool.validateArgs(args);
+        Object typedArgs;
+        try {
+            typedArgs = bindArgs(tool, args);
+        } catch (IllegalArgumentException e) {
+            return errorToolResult(toolName, "schema_invalid", "工具参数转换失败", Map.of("errors", List.of(e.getMessage())));
+        }
+        List<String> validationErrors = validateArgs(tool, typedArgs);
         if (!validationErrors.isEmpty()) {
             return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors));
         }
-        AgentToolExecutionResult primary = invokeWithRetry(tool, args, limit, TOOL_MAX_RETRY);
+        AgentToolExecutionResult primary = invokeWithRetry(tool, typedArgs, limit, TOOL_MAX_RETRY);
         if ("ok".equals(primary.status())) {
             return primary;
         }
@@ -122,12 +131,32 @@ public class AgentToolExecutionService {
         return args;
     }
 
-    private AgentToolExecutionResult invokeWithRetry(PermissionedAgentTool tool, Map<String, Object> args, int limit, int maxRetry) {
+    private <T> boolean isConcurrencySafe(PermissionedAgentTool<T> tool, Map<String, Object> rawArgs) {
+        T typedArgs = bindArgs(tool, rawArgs);
+        return tool.isConcurrencySafe(typedArgs);
+    }
+
+    private <T> T bindArgs(PermissionedAgentTool<T> tool, Map<String, Object> rawArgs) {
+        try {
+            Map<String, Object> safeArgs = rawArgs == null ? Map.of() : rawArgs;
+            return objectMapper.convertValue(safeArgs, tool.argsType());
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
+    }
+
+    private <T> List<String> validateArgs(PermissionedAgentTool<T> tool, Object typedArgs) {
+        return tool.validateArgs(tool.argsType().cast(typedArgs));
+    }
+
+    private <T> AgentToolExecutionResult invokeWithRetry(PermissionedAgentTool<T> tool, Object typedArgs, int limit, int maxRetry) {
         String toolName = tool.toolName();
         Exception lastError = null;
         for (int attempt = 1; attempt <= maxRetry; attempt++) {
             try {
-                List<AgentContextItem> items = tool.invoke(args, limit);
+                List<AgentContextItem> items = tool.invoke(tool.argsType().cast(typedArgs), limit);
                 return new AgentToolExecutionResult(toolName, "ok", "工具执行成功", items, Map.of("count", items.size(), "attempt", attempt));
             } catch (Exception e) {
                 lastError = e;
@@ -141,7 +170,7 @@ public class AgentToolExecutionService {
         if (!StringUtils.hasText(fallbackName)) {
             return null;
         }
-        PermissionedAgentTool fallback = agentToolRegistry.get(fallbackName);
+        PermissionedAgentTool<?> fallback = agentToolRegistry.get(fallbackName);
         if (fallback == null || !enabledPermissions.contains(fallback.permission())) {
             return null;
         }
@@ -150,11 +179,17 @@ public class AgentToolExecutionService {
         if (!schemaErrors.isEmpty()) {
             return null;
         }
-        List<String> errors = fallback.validateArgs(fallbackArgs);
+        Object typedArgs;
+        try {
+            typedArgs = bindArgs(fallback, fallbackArgs);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        List<String> errors = validateArgs(fallback, typedArgs);
         if (!errors.isEmpty()) {
             return null;
         }
-        AgentToolExecutionResult result = invokeWithRetry(fallback, fallbackArgs, limit, 1);
+        AgentToolExecutionResult result = invokeWithRetry(fallback, typedArgs, limit, 1);
         if ("ok".equals(result.status())) {
             return new AgentToolExecutionResult(
                     result.toolName(),
