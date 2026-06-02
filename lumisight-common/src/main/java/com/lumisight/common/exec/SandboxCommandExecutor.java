@@ -84,7 +84,7 @@ public class SandboxCommandExecutor {
         Path profileFile = null;
         try {
             profileFile = Files.createTempFile("lumisight-seatbelt-", ".sb");
-            Files.writeString(profileFile, buildSeatbeltProfile(workingDir, policy), StandardCharsets.UTF_8);
+            Files.writeString(profileFile, buildSeatbeltProfile(workingDir, request.command(), policy), StandardCharsets.UTF_8);
             List<String> wrapped = new ArrayList<>();
             wrapped.add("sandbox-exec");
             wrapped.add("-f");
@@ -142,13 +142,20 @@ public class SandboxCommandExecutor {
         }
     }
 
-    private String buildSeatbeltProfile(Path workingDir, CommandExecutionPolicy policy) {
+    private String buildSeatbeltProfile(Path workingDir, List<String> command, CommandExecutionPolicy policy) {
         Set<String> readPaths = new LinkedHashSet<>();
         Set<String> writePaths = new LinkedHashSet<>();
         addBaseSeatbeltPaths(readPaths, writePaths);
         readPaths.add(workingDir.toString());
         readPaths.addAll(policy.readablePaths());
         writePaths.addAll(policy.writablePaths());
+        Path executablePath = resolveExecutablePath(command);
+        if (executablePath != null) {
+            Path executableParent = executablePath.getParent();
+            if (executableParent != null) {
+                readPaths.add(executableParent.toString());
+            }
+        }
         StringBuilder builder = new StringBuilder();
         builder.append("(version 1)\n");
         builder.append("(deny default)\n");
@@ -157,10 +164,10 @@ public class SandboxCommandExecutor {
         builder.append("(allow process-fork)\n");
         builder.append("(allow file-read-metadata)\n");
         builder.append("(allow file-map-executable\n");
-        appendSubpaths(builder, baseExecutablePaths());
+        appendSubpaths(builder, executablePaths(executablePath));
         builder.append(")\n");
         builder.append("(allow process-exec\n");
-        appendSubpaths(builder, baseExecutablePaths());
+        appendSubpaths(builder, executablePaths(executablePath));
         builder.append(")\n");
         builder.append("(allow file-read*\n");
         appendSubpaths(builder, readPaths);
@@ -203,6 +210,42 @@ public class SandboxCommandExecutor {
                 "/usr/local",
                 "/opt/homebrew"
         );
+    }
+
+    private List<String> executablePaths(Path executablePath) {
+        Set<String> paths = new LinkedHashSet<>(baseExecutablePaths());
+        if (executablePath != null && executablePath.getParent() != null) {
+            paths.add(executablePath.getParent().toString());
+        }
+        return List.copyOf(paths);
+    }
+
+    private Path resolveExecutablePath(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            return null;
+        }
+        String executable = command.get(0);
+        if (executable == null || executable.isBlank()) {
+            return null;
+        }
+        Path path = Path.of(executable);
+        if (path.isAbsolute()) {
+            return Files.exists(path) ? path.toAbsolutePath().normalize() : null;
+        }
+        String envPath = System.getenv("PATH");
+        if (envPath == null || envPath.isBlank()) {
+            return null;
+        }
+        for (String entry : envPath.split(":")) {
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            Path candidate = Path.of(entry).resolve(executable).normalize();
+            if (Files.exists(candidate) && Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return candidate.toAbsolutePath().normalize();
+            }
+        }
+        return null;
     }
 
     private void appendSubpaths(StringBuilder builder, Iterable<String> paths) {
