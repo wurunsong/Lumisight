@@ -251,6 +251,13 @@
         appendFinal(text) {
           final.textContent += text;
           final.scrollTop = final.scrollHeight;
+        },
+        appendFinalLine(text) {
+          if (final.textContent.length > 0 && !final.textContent.endsWith("\n")) {
+            final.textContent += "\n";
+          }
+          final.textContent += text + "\n";
+          final.scrollTop = final.scrollHeight;
         }
       };
     }
@@ -311,7 +318,7 @@
         const { value, done } = await reader.read();
         if (done) {
           activeAborters.delete(aborter);
-          statusBox.textContent = activeAborters.isEmpty() ? "completed" : "streaming...";
+          statusBox.textContent = activeAborters.size === 0 ? "completed" : "streaming...";
           break;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -328,8 +335,10 @@
           runView.appendStream(`[${eventName}] ${data}`);
           try {
             const obj = JSON.parse(data);
-            if (obj.type === "TOKEN" || obj.type === "FINAL" || obj.type === "ASK_USER" || obj.type === "ERROR") {
-              runView.appendFinal((obj.message || "") + "\n");
+            if (obj.type === "TOKEN") {
+              runView.appendFinal(obj.message || "");
+            } else if (obj.type === "FINAL" || obj.type === "ASK_USER" || obj.type === "ERROR") {
+              runView.appendFinalLine(obj.message || "");
             }
           } catch (_) {}
         }
@@ -346,7 +355,7 @@
           }
         });
         if (e.name === "AbortError") {
-          statusBox.textContent = activeAborters.isEmpty() ? "stopped" : "streaming...";
+          statusBox.textContent = activeAborters.size === 0 ? "stopped" : "streaming...";
           return;
         }
         statusBox.textContent = "failed";
