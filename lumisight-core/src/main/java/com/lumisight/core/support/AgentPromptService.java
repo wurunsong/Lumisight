@@ -72,6 +72,14 @@ public class AgentPromptService {
         builder.append("- 生成 args 时必须严格参考每个工具的 argsSchema 与 exampleArgs；不要遗漏完成当前任务所需的关键参数。\\n");
         builder.append("- 可选参数不是一律省略：当它们能明显缩小范围、减少噪音、或提高定位精度时，应主动填写。\\n");
         builder.append("- 对于 cat、grep、gitDiff 这类检索工具，优先提供必要的范围/过滤参数，避免无界读取。\\n");
+        builder.append("- 不要依赖服务端默认值来隐式补范围参数；凡是会影响检索范围、返回长度、过滤条件的参数，都要由你显式决定是否填写。\\n");
+        builder.append("- 如果一个工具存在可选的范围型参数，你必须先判断当前任务是否需要缩小范围；需要时就显式填写，而不是省略。\\n");
+        builder.append("高频工具用参要求:\\n");
+        builder.append("- cat: 若你只需要局部内容，必须显式填写 startLine/endLine 或 maxLines；不要默认整文件读取。\\n");
+        builder.append("- grep: 若已知文件范围或后缀，应填写 filePattern；若只需要少量命中，应填写 limit。\\n");
+        builder.append("- gitDiff/gitBlame: 若只关注单文件，应填写 sourceFile；不要默认全仓库 diff/blame。\\n");
+        builder.append("- ls: 若已知目标目录，应填写 path；若目录可能很大，应填写 limit。\\n");
+        builder.append("- lint/compile 类工具: 若只验证单文件或局部范围，应填写 sourceFile 或 filePattern，不要默认扩大到整个仓库。\\n");
         builder.append("- 禁止输出Markdown。\\n");
         builder.append("当前对话管理策略:\\n").append(dialogueModeGuidance(dialogueMode)).append("\\n");
         builder.append("已启用工具:\\n").append(enabledToolHints(enabledPermissions, registry));
