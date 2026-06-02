@@ -2,14 +2,15 @@ package com.lumisight.hooks;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumisight.common.exec.CommandExecutionPolicy;
+import com.lumisight.common.exec.CommandExecutionRequest;
+import com.lumisight.common.exec.CommandExecutionResult;
+import com.lumisight.common.exec.SandboxCommandExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ public class ConfigurableAgentHook implements AgentHook {
     private static final Logger log = LoggerFactory.getLogger(ConfigurableAgentHook.class);
     private static final String DEFAULT_CONFIG_PATH = ".lumisight/hooks.json";
     private static final String LEGACY_CONFIG_PATH = ".codeflicker/config.json";
+    private static final Path HOOKS_ROOT = Path.of(".lumisight/hooks").toAbsolutePath().normalize();
     private static final long DEFAULT_TIMEOUT_MS = 3_000L;
     private static final int DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
     private static final Map<AgentHookPoint, String> POINT_KEYS = Map.of(
@@ -40,6 +42,7 @@ public class ConfigurableAgentHook implements AgentHook {
     );
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SandboxCommandExecutor commandExecutor = new SandboxCommandExecutor();
     private final Map<AgentHookPoint, List<HookRule>> rulesByPoint;
 
     public ConfigurableAgentHook() {
@@ -141,10 +144,11 @@ public class ConfigurableAgentHook implements AgentHook {
                     continue;
                 }
                 String command = asString(hookMap.get("command"), "");
+                List<String> args = asStringList(hookMap.get("args"));
                 long timeoutMs = asLong(hookMap.get("timeoutMs"), DEFAULT_TIMEOUT_MS);
                 int maxOutputBytes = (int) asLong(hookMap.get("maxOutputBytes"), DEFAULT_MAX_OUTPUT_BYTES);
                 if (!command.isBlank()) {
-                    commandHooks.add(new CommandHook(command, timeoutMs, Math.max(1024, maxOutputBytes)));
+                    commandHooks.add(new CommandHook(command, args, timeoutMs, Math.max(1024, maxOutputBytes)));
                 }
             }
             if (!commandHooks.isEmpty()) {
@@ -171,34 +175,26 @@ public class ConfigurableAgentHook implements AgentHook {
             throw new IllegalStateException("serialize hook payload failed: " + e.getMessage());
         }
 
-        ProcessBuilder pb = new ProcessBuilder("bash", "-lc", hook.command());
-        pb.redirectErrorStream(true);
         try {
-            Process process = pb.start();
-            ByteArrayOutputStream mergedOutput = new ByteArrayOutputStream();
-            Thread reader = new Thread(() -> readLimited(process.getInputStream(), mergedOutput, hook.maxOutputBytes()), "hook-output-reader");
-            reader.setDaemon(true);
-            reader.start();
-            try (OutputStream os = process.getOutputStream()) {
-                os.write(payloadJson.getBytes(StandardCharsets.UTF_8));
-            }
-            boolean finished = process.waitFor(hook.timeoutMs(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
+            List<String> command = resolveHookCommand(hook);
+            CommandExecutionResult result = commandExecutor.run(new CommandExecutionRequest(
+                    Path.of("").toAbsolutePath().normalize(),
+                    command,
+                    payloadJson,
+                    new CommandExecutionPolicy(false, hook.timeoutMs(), hook.maxOutputBytes())
+            ));
+            if (result.timedOut()) {
                 throw new IllegalStateException("Hook command timeout (" + hook.timeoutMs() + "ms): " + hook.command());
             }
-            reader.join(Math.min(300L, hook.timeoutMs()));
-            String output = mergedOutput.toString(StandardCharsets.UTF_8).trim();
-            int exitCode = process.exitValue();
-
-            if (exitCode != 0) {
+            String output = result.output() == null ? "" : result.output().trim();
+            if (result.exitCode() != 0) {
                 throw new IllegalStateException("Hook command blocked request: " + hook.command() + " | " + output);
             }
             if (!output.isBlank() && output.startsWith("{")) {
-                Map<String, Object> result = objectMapper.readValue(output, new TypeReference<>() {});
-                Object cont = result.get("continue");
+                Map<String, Object> hookResult = objectMapper.readValue(output, new TypeReference<>() {});
+                Object cont = hookResult.get("continue");
                 if (cont instanceof Boolean bool && !bool) {
-                    String reason = asString(result.get("reason"), "blocked by hook");
+                    String reason = asString(hookResult.get("reason"), "blocked by hook");
                     throw new IllegalStateException(reason);
                 }
             }
@@ -228,23 +224,47 @@ public class ConfigurableAgentHook implements AgentHook {
         }
     }
 
-    private void readLimited(InputStream in, ByteArrayOutputStream out, int limitBytes) {
-        byte[] buffer = new byte[1024];
-        int total = 0;
-        try (in; out) {
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                if (total >= limitBytes) {
-                    continue;
-                }
-                int remain = limitBytes - total;
-                int writeSize = Math.min(remain, read);
-                out.write(buffer, 0, writeSize);
-                total += writeSize;
-            }
-        } catch (Exception ignored) {
-            // hook command output read failures should not hide main error reason.
+    private List<String> asStringList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
         }
+        List<String> result = new ArrayList<>();
+        for (Object item : list) {
+            if (item != null) {
+                String text = String.valueOf(item).trim();
+                if (!text.isBlank()) {
+                    result.add(text);
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private List<String> resolveHookCommand(CommandHook hook) {
+        Path scriptPath = Path.of(hook.command());
+        if (!scriptPath.isAbsolute()) {
+            scriptPath = Path.of("").toAbsolutePath().normalize().resolve(scriptPath).normalize();
+        } else {
+            scriptPath = scriptPath.toAbsolutePath().normalize();
+        }
+        if (!scriptPath.startsWith(HOOKS_ROOT)) {
+            throw new IllegalStateException("Hook command must stay under " + HOOKS_ROOT + ": " + hook.command());
+        }
+        if (!Files.exists(scriptPath) || !Files.isRegularFile(scriptPath)) {
+            throw new IllegalStateException("Hook command file not found: " + scriptPath);
+        }
+        List<String> command = new ArrayList<>();
+        String fileName = scriptPath.getFileName().toString().toLowerCase();
+        if (fileName.endsWith(".js")) {
+            command.add("node");
+        } else if (fileName.endsWith(".py")) {
+            command.add("python3");
+        } else if (fileName.endsWith(".sh")) {
+            command.add("bash");
+        }
+        command.add(scriptPath.toString());
+        command.addAll(hook.args());
+        return List.copyOf(command);
     }
 
     private Path resolveConfigPath(String configuredPath) {
@@ -272,6 +292,6 @@ public class ConfigurableAgentHook implements AgentHook {
         }
     }
 
-    private record CommandHook(String command, long timeoutMs, int maxOutputBytes) {
+    private record CommandHook(String command, List<String> args, long timeoutMs, int maxOutputBytes) {
     }
 }
