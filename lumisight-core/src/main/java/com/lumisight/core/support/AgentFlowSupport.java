@@ -79,14 +79,6 @@ public class AgentFlowSupport {
             enabledPermissions.add(AgentToolPermission.LSP_JAVA_READ);
             enabledPermissions.add(AgentToolPermission.BUILD_COMPILE);
         }
-        if (skillPlan != null && skillPlan.preferredTools() != null) {
-            for (String toolName : skillPlan.preferredTools()) {
-                PermissionedAgentTool tool = agentToolRegistry.get(normalizeToolName(toolName));
-                if (tool != null) {
-                    enabledPermissions.add(tool.permission());
-                }
-            }
-        }
         return enabledPermissions;
     }
 
@@ -120,17 +112,5 @@ public class AgentFlowSupport {
             return true;
         }
         return contexts != null && contexts.size() >= 8;
-    }
-
-    private String normalizeToolName(String requestedToolName) {
-        if (!StringUtils.hasText(requestedToolName)) {
-            return "";
-        }
-        return switch (requestedToolName.trim()) {
-            case "read_file", "readFile", "open_file", "openFile", "get_file_content" -> "cat";
-            case "read_directory", "list_directory", "get_directory_structure", "listDir" -> "ls";
-            case "search_files", "search_in_files", "find_in_files" -> "grep";
-            default -> requestedToolName.trim();
-        };
     }
 }

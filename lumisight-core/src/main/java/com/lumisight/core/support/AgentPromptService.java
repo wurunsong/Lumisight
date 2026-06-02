@@ -8,6 +8,7 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.skills.runtime.SkillPlan;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -26,12 +27,13 @@ public class AgentPromptService {
         return "你是一名资深 Java 工程师。请清晰解释代码意图、架构关系、控制流程和关键取舍。解释要贴近工程实践，并尽量给出可落地建议。";
     }
 
-    public String buildFinalAnswerPrompt(AgentRequest request, List<AgentContextItem> contexts, int limit) {
+    public String buildFinalAnswerPrompt(AgentRequest request, List<AgentContextItem> contexts, int limit, SkillPlan skillPlan) {
         StringBuilder builder = new StringBuilder();
         builder.append("TaskType: ").append(request.taskType()).append("\\n");
         builder.append("RepoRoot: ").append(request.repoRoot()).append("\\n");
         builder.append("ContextLimit: ").append(limit).append("\\n");
         builder.append("用户问题: ").append(request.question()).append("\\n\\n");
+        appendSkillGuidance(builder, skillPlan, true);
         builder.append("已检索上下文:\\n");
         if (contexts.isEmpty()) {
             builder.append("- 无\\n");
@@ -50,10 +52,12 @@ public class AgentPromptService {
             AgentTaskType taskType,
             AgentDialogueMode dialogueMode,
             Set<AgentToolPermission> enabledPermissions,
-            AgentToolRegistry registry
+            AgentToolRegistry registry,
+            SkillPlan skillPlan
     ) {
         StringBuilder builder = new StringBuilder();
         builder.append(systemPrompt(taskType)).append("\\n");
+        appendSkillGuidance(builder, skillPlan, false);
         builder.append("你在执行手动工具编排。每轮只能输出一个JSON对象，不要输出其他文本。\\n");
         builder.append("JSON结构:\\n");
         builder.append("{\\\"action\\\":\\\"tool|ask_user|final\\\",\\\"toolName\\\":\\\"...\\\",\\\"args\\\":{},\\\"finalAnswer\\\":\\\"...\\\",\\\"askUserQuestion\\\":\\\"...\\\",\\\"reason\\\":\\\"...\\\"}\\n");
@@ -68,11 +72,18 @@ public class AgentPromptService {
         return builder.toString();
     }
 
-    public String orchestratorUserPrompt(AgentRequest request, List<AgentContextItem> contexts, int limit, int round, int maxRounds) {
+    public String orchestratorUserPrompt(AgentRequest request, List<AgentContextItem> contexts, int limit, int round, int maxRounds, SkillPlan skillPlan) {
         StringBuilder builder = new StringBuilder();
         builder.append("轮次: ").append(round).append("/").append(maxRounds).append("\\n");
         builder.append("用户问题: ").append(request.question()).append("\\n");
         builder.append("上下文上限: ").append(limit).append("\\n\\n");
+        if (skillPlan != null && skillPlan.executionSteps() != null && !skillPlan.executionSteps().isEmpty()) {
+            builder.append("当前技能建议执行步骤:\\n");
+            for (String step : skillPlan.executionSteps()) {
+                builder.append("- ").append(step).append("\\n");
+            }
+            builder.append("\\n");
+        }
         builder.append("当前上下文:\\n");
         if (contexts.isEmpty()) {
             builder.append("- 无\\n");
@@ -86,10 +97,11 @@ public class AgentPromptService {
         return builder.toString();
     }
 
-    public String planPrompt(AgentRequest request) {
+    public String planPrompt(AgentRequest request, SkillPlan skillPlan) {
         StringBuilder builder = new StringBuilder();
         builder.append("请先给出执行计划，不要直接回答问题。\\n");
         builder.append("用户问题: ").append(request.question()).append("\\n");
+        appendSkillGuidance(builder, skillPlan, true);
         builder.append("输出要求: 按步骤列出你计划调用的工具、每步目标和预期产出。");
         return builder.toString();
     }
@@ -150,5 +162,39 @@ public class AgentPromptService {
             return "- STEER: 主动引导用户收敛问题；当范围过大时先提出拆解路径，再执行关键工具。";
         }
         return "- FOLLOW: 严格跟随用户当前问题，最短路径完成回答。";
+    }
+
+    private void appendSkillGuidance(StringBuilder builder, SkillPlan skillPlan, boolean includeOutputContract) {
+        if (skillPlan == null) {
+            return;
+        }
+        if (skillPlan.summary() != null && !skillPlan.summary().isBlank()) {
+            builder.append("当前技能摘要: ").append(skillPlan.summary()).append("\\n");
+        }
+        if (skillPlan.executionSteps() != null && !skillPlan.executionSteps().isEmpty()) {
+            builder.append("技能执行提示:\\n");
+            for (String step : skillPlan.executionSteps()) {
+                builder.append("- ").append(step).append("\\n");
+            }
+        }
+        if (includeOutputContract && skillPlan.outputContract() != null && !skillPlan.outputContract().isBlank()) {
+            builder.append("技能输出约束: ").append(skillPlan.outputContract()).append("\\n");
+        }
+        if (skillPlan.rawSkillContent() != null && !skillPlan.rawSkillContent().isBlank()) {
+            builder.append("技能原文参考:\\n");
+            builder.append(trimSkillContent(skillPlan.rawSkillContent())).append("\\n");
+        }
+        if (builder.length() > 0) {
+            builder.append("\\n");
+        }
+    }
+
+    private String trimSkillContent(String rawSkillContent) {
+        String normalized = rawSkillContent.trim();
+        int maxChars = 4000;
+        if (normalized.length() <= maxChars) {
+            return normalized;
+        }
+        return normalized.substring(0, maxChars) + "\\n...(技能内容已截断)";
     }
 }

@@ -109,6 +109,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             boolean askUser = false;
             boolean interrupted = false;
             int startRound = 1;
+            SkillPlan skillPlan = new SkillPlan(
+                    "未指定技能，走默认编排",
+                    List.of(),
+                    "",
+                    ""
+            );
 
             if (request.resume() && resumeState != null) {
                 if (resumeState.interrupted()) {
@@ -152,7 +158,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 }
             }
 
-            SkillPlan skillPlan;
             if (shouldResolveSkill) {
                 SkillContext skillContext = new SkillContext(
                         request.taskType().name(),
@@ -164,13 +169,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 SkillRegistry.ResolvedSkill resolvedSkill = skillRegistry.resolve(skillContext);
                 skillPlan = resolvedSkill.plan();
                 events.add(AgentEvent.skillSelected(traceId, sessionId, resolvedSkill.skillName(), skillPlan.summary()));
-            } else {
-                skillPlan = new SkillPlan(
-                        "未指定技能，走默认编排",
-                        List.of(),
-                        List.of(),
-                        ""
-                );
             }
 
             Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
@@ -211,7 +209,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
                 String plan = llmChatClient.prompt()
                         .system(agentPromptService.systemPrompt(request.taskType()))
-                        .user(agentPromptService.planPrompt(request))
+                        .user(agentPromptService.planPrompt(request, skillPlan))
                         .call()
                         .content();
                 events.add(AgentEvent.plan(traceId, sessionId, plan));
@@ -221,6 +219,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             OrchestrationResult result = runManualOrchestration(
                     request,
                     effectiveQuestion,
+                    skillPlan,
                     contexts,
                     limit,
                     startRound,
@@ -253,7 +252,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
 
         AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
-        String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit);
+        String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit, skillPlan);
         fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", false));
         Flux<AgentEvent> stream = llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
@@ -282,6 +281,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     private OrchestrationResult runManualOrchestration(
             AgentRequest request,
             String effectiveQuestion,
+            SkillPlan skillPlan,
             List<AgentContextItem> contexts,
             int limit,
             int startRound,
@@ -310,14 +310,16 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                             request.taskType(),
                             request.dialogueMode(),
                             enabledPermissions,
-                            agentToolRegistry
+                            agentToolRegistry,
+                            skillPlan
                     ))
                     .user(agentPromptService.orchestratorUserPrompt(
                             agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId),
                             contexts,
                             limit,
                             round,
-                            MAX_TOOL_ROUNDS
+                            MAX_TOOL_ROUNDS,
+                            skillPlan
                     ))
                     .call()
                     .content();
