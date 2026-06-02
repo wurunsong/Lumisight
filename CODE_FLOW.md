@@ -153,3 +153,28 @@
 - 验证（再次补充）：
   - `git log --since="2026-06-01 00:00:00" --until="2026-06-01 23:59:59"`：识别 29 条提交（最新至 `4378462`）。
   - `git log --stat`：确认新增覆盖 `api/ws/transport/core/support/docs`，包含协议文档、治理配置、清理任务与传输适配 SPI。
+
+## 2026-06-02
+- 今日提交摘要（23 commits）：
+  - 会话接入层从“入口直接驱动执行”重构为“按 `sessionId` 分发的 mailbox/worker 模型”：新增 `AgentSessionDispatcher`，同会话串行、跨会话并行；`FOLLOW/COLLECT/STEER` 统一在消息投递层决策。
+  - Skill 正式进入提示词主链路：`SkillPlan` 新增原文内容承载，编排/计划/最终回答 prompt 都可注入 skill 摘要、步骤、输出约束与原文片段；同时补充中文自我介绍测试 skill。
+  - 工具执行从单调用升级为“连续并发安全批次”模型：支持一次决策返回 `toolCalls`，按连续块分批，批间串行、批内并发，读工具可并发执行。
+  - Hook 与 Tool 命令执行统一到共享执行内核：抽出 `CommandExecutionRequest/Policy/Result` 与共享 runner，Hook 不再走任意 `bash -lc`，改为受限脚本目录执行。
+  - Sandbox 能力升级为复用操作系统能力：新增 `mac-seatbelt` 模式并设为默认；共享配置下 Hook 与 Tool 都走同一执行边界。
+  - 工具提示词补齐可理解性：新增工具 description、`argsSchema`、`exampleArgs`，随后又把工具入参整体重构为 typed record，统一从 DTO 生成 schema、示例、执行绑定与参数校验。
+  - Prompt 约束继续强化：显式禁止模型依赖服务端默认值偷省范围参数，并对 `cat/grep/gitDiff/gitBlame/ls/lint/compile` 给出逐项用参规则。
+  - 调试与体验修复：`agent-console.html` 修正 token 渲染逻辑，不再把每个 chunk 按逐词换行显示；同时把“当前仍非真正 token 级流式输出”记入 TODO。
+  - AI 客户端治理补齐：显式配置聊天模型 `connect/read timeout`，并将 Spring AI 默认重试次数收敛为 1，避免第二轮决策反复 10 秒超时。
+- 关键修复：
+  - 同会话追问再次开执行链、交互语义不清 -> 重构为 session mailbox 调度模型，消息接收与 Agent 执行彻底解耦。
+  - Hook 仍可能绕过工具沙箱 -> 抽出共享命令执行内核，并让 Hook 与 Tool 共用同一 sandbox policy。
+  - Seatbelt 默认只放行系统目录，`nvm`/用户目录 runtime 启动被拒绝 -> 动态解析实际运行时路径并加入可执行白名单。
+  - 工具参数弱类型导致 prompt/schema/执行三处漂移 -> 收敛到 typed record + 统一绑定校验链路。
+  - 调试页输出被拆成逐词换行 -> 改为 `TOKEN` 直接拼接，`FINAL/ASK_USER/ERROR` 才按段落换行。
+  - 第二轮决策频繁 10 秒超时 -> 显式配置模型 HTTP 连接/读取超时，并关闭多次自动重试带来的额外拖延。
+- 验证：
+  - `git log --since="2026-06-02 00:00:00" --until="2026-06-02 23:59:59"`：识别 23 条提交（`ce616ad` 至 `8b3c84e`，后续文档同步另计）。
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：通过，覆盖 `common/tools/mcp/hooks/skills/core/memory/api` 全链路。
+  - `agent-console.html` 本地调试：token 文本连续渲染正常；同一 `sessionId` 下可继续验证 `FOLLOW/COLLECT/STEER` 串行调度。
+- TODO（今日新增确认）：
+  - 当前返回的是“事件流 + 最终文本聚合”，不是真正的模型 token 级流式生成；后续需要把 LLM 决策/回答阶段改造成真实 streaming。

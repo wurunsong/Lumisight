@@ -34,19 +34,22 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 
 - 核心编排已与传输协议解耦：统一通过 `AgentExecutionEngine` 执行主流程。
 - API 侧通过 `AgentTransportAdapter` + `AgentStreamGateway` 适配不同协议（当前内置 SSE 与 WebSocket）。
+- 同一 `sessionId` 的消息现在先进入本地 dispatcher/mailbox，再由单 worker 串行消费；`FOLLOW/COLLECT/STEER` 在消息投递层决策，而不是入口直接并发执行。
 - 协议契约文档见：`AGENT_PROTOCOL.md`（中文）。
 
-## Sandbox 执行与回滚（2026-06-01）
+## Sandbox 执行与回滚
 
 - 新增统一命令执行治理配置（`lumisight-core.yml`）：
   - `lumisight.sandbox.enabled`
-  - `lumisight.sandbox.mode=local|docker`
+  - `lumisight.sandbox.mode=local|docker|mac-seatbelt`
   - `lumisight.sandbox.network-enabled`
   - `lumisight.sandbox.timeout-seconds`
   - `lumisight.sandbox.max-output-bytes`
   - `lumisight.sandbox.memory-mb` / `cpu-limit`
   - `lumisight.sandbox.snapshot-dir`
+- 当前默认模式为 `mac-seatbelt`，优先复用 macOS 自带的进程隔离能力；Docker 仍可选但不再是默认。
 - Git 工具（`gitStatus/gitDiff/gitBlame`）已统一走 sandbox 执行器。
+- Hook 与 Tool 已统一到同一命令执行内核与同一份 sandbox 配置，不再存在 Hook 绕开 Tool 沙箱的独立路径。
 - `writeRepoFile` 现在会返回 `snapshotId`（写前快照），可通过 `rollbackRepoFile` 回滚。
 
 ## 第 1 步：本地启动外挂知识库（Podman）
@@ -167,6 +170,7 @@ mvn -pl lumisight-api -am spring-boot:run
 ### Agent 接口（SSE 流式）
 
 - `POST /api/lumisight/agent/stream`：以 `text/event-stream` 持续返回 Agent 事件流。
+- 说明：当前是“事件流 + 最终文本聚合”，不是模型 token 级真流式输出；工具调用和多轮思考完成前，最终回答仍可能后置出现。
 - 请求字段：
   - `taskType`：`CODE_EXPLAIN` / `BUG_FIX` / `CHAT`（可为空，空时按服务默认策略处理）
   - `repoRoot`：仓库根路径
@@ -233,6 +237,10 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 - `symbol_doc` 生成能力通过 `SymbolDocGenerator` 接口预留，可替换为真实模型实现。
 - AI 与向量相关配置已收敛到 `lumisight-core`，`lumisight-api` 显式导入 core 配置。
 - 启动时建议继续使用环境变量提供密钥，避免明文写入仓库。
+- 聊天模型 HTTP 超时已可单独配置：
+  - `lumisight.ai.chat-connect-timeout-seconds`
+  - `lumisight.ai.chat-read-timeout-seconds`
+- Spring AI 默认重试次数已显式收敛为 `1`，避免上游超时把一次决策拖成多轮等待。
 
 ## 会话与连接治理配置（2026-06-01）
 
@@ -252,6 +260,22 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 - BUILD：`compileJava`
 - GIT：`gitStatus/gitDiff/gitBlame`
 - LSP：`javaGoToDefinition/javaFindReferences/lintJavaByJdtls`
+- RAG：`searchHybridVector`
+- GRAPH：`fetchOneHopByKgNodeId`
+- SOURCE：`fetchMethodSourceByLocation`
+- MCP：`callMcpCapability`
+
+## 工具参数与执行模型
+
+- 工具现在统一使用 typed record 入参，不再在工具内部手拆 `Map<String,Object>`。
+- 同一份参数定义会同时用于：
+  - prompt 中的 `argsSchema`
+  - `exampleArgs`
+  - 运行时 JSON -> typed args 绑定
+  - 参数校验与工具执行
+- 多工具调用支持“连续并发安全批次”：
+  - 读工具可按连续块并发执行
+  - 写工具、编译、回滚与有顺序依赖的调用仍保持串行
 
 ## 文档同步约定
 
