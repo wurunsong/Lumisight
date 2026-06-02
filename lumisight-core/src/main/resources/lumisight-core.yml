@@ -34,7 +34,7 @@ spring:
 lumisight:
   sandbox:
     enabled: ${LUMISIGHT_SANDBOX_ENABLED:true}
-    mode: ${LUMISIGHT_SANDBOX_MODE:local}
+    mode: ${LUMISIGHT_SANDBOX_MODE:mac-seatbelt}
     network-enabled: ${LUMISIGHT_SANDBOX_NETWORK_ENABLED:false}
     timeout-seconds: ${LUMISIGHT_SANDBOX_TIMEOUT_SECONDS:20}
     max-output-bytes: ${LUMISIGHT_SANDBOX_MAX_OUTPUT_BYTES:200000}
