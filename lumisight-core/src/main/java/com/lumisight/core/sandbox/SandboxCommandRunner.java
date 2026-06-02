@@ -4,6 +4,7 @@ import com.lumisight.common.exec.CommandExecutionPolicy;
 import com.lumisight.common.exec.CommandExecutionRequest;
 import com.lumisight.common.exec.CommandExecutionResult;
 import com.lumisight.common.exec.SandboxCommandExecutor;
+import com.lumisight.common.exec.SandboxProperties;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;

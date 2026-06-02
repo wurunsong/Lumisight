@@ -1,5 +1,6 @@
 package com.lumisight.core.sandbox;
 
+import com.lumisight.common.exec.SandboxProperties;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;

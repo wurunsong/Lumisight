@@ -6,6 +6,7 @@ import com.lumisight.common.exec.CommandExecutionPolicy;
 import com.lumisight.common.exec.CommandExecutionRequest;
 import com.lumisight.common.exec.CommandExecutionResult;
 import com.lumisight.common.exec.SandboxCommandExecutor;
+import com.lumisight.common.exec.SandboxProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -43,9 +44,11 @@ public class ConfigurableAgentHook implements AgentHook {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SandboxCommandExecutor commandExecutor = new SandboxCommandExecutor();
+    private final SandboxProperties sandboxProperties;
     private final Map<AgentHookPoint, List<HookRule>> rulesByPoint;
 
-    public ConfigurableAgentHook() {
+    public ConfigurableAgentHook(SandboxProperties sandboxProperties) {
+        this.sandboxProperties = sandboxProperties;
         this.rulesByPoint = loadRulesByPoint();
         log.info("configurable_hook loaded, activePoints={}", rulesByPoint.keySet());
     }
@@ -181,7 +184,7 @@ public class ConfigurableAgentHook implements AgentHook {
                     Path.of("").toAbsolutePath().normalize(),
                     command,
                     payloadJson,
-                    new CommandExecutionPolicy(false, hook.timeoutMs(), hook.maxOutputBytes())
+                    new CommandExecutionPolicy(sandboxProperties.isNetworkEnabled(), hook.timeoutMs(), hook.maxOutputBytes())
             ));
             if (result.timedOut()) {
                 throw new IllegalStateException("Hook command timeout (" + hook.timeoutMs() + "ms): " + hook.command());
