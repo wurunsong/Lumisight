@@ -8,8 +8,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 public class SandboxCommandExecutor {
@@ -43,7 +43,7 @@ public class SandboxCommandExecutor {
             builder.redirectErrorStream(true);
             Process process = builder.start();
             OutputCollector collector = new OutputCollector(process.getInputStream(), policy.maxOutputBytes());
-            Future<?> outputFuture = OUTPUT_COLLECTOR_POOL.submit(collector);
+            CompletableFuture<Void> outputFuture = CompletableFuture.runAsync(collector, OUTPUT_COLLECTOR_POOL);
             if (request.stdin() != null) {
                 try (OutputStream os = process.getOutputStream()) {
                     os.write(request.stdin().getBytes(StandardCharsets.UTF_8));
@@ -66,9 +66,9 @@ public class SandboxCommandExecutor {
         }
     }
 
-    private void waitForCollector(Future<?> outputFuture, long timeoutMs) {
+    private void waitForCollector(CompletableFuture<Void> outputFuture, long timeoutMs) {
         try {
-            outputFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+            outputFuture.orTimeout(timeoutMs, TimeUnit.MILLISECONDS).join();
         } catch (Exception ignored) {
             // output collection timeout should not override process result.
         }
