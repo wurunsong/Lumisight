@@ -1,14 +1,23 @@
 package com.lumisight.common.exec;
 
+import com.lumisight.common.concurrent.NamedExecutors;
+
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 public class SandboxCommandExecutor {
+
+    private static final ExecutorService OUTPUT_COLLECTOR_POOL = NamedExecutors.newFixedPool(
+            "sandbox-output-collector",
+            Math.max(2, Runtime.getRuntime().availableProcessors())
+    );
 
     public CommandExecutionResult run(CommandExecutionRequest request) {
         if (request == null || request.command() == null || request.command().isEmpty()) {
@@ -34,9 +43,7 @@ public class SandboxCommandExecutor {
             builder.redirectErrorStream(true);
             Process process = builder.start();
             OutputCollector collector = new OutputCollector(process.getInputStream(), policy.maxOutputBytes());
-            Thread outputThread = new Thread(collector, "sandbox-output-collector");
-            outputThread.setDaemon(true);
-            outputThread.start();
+            Future<?> outputFuture = OUTPUT_COLLECTOR_POOL.submit(collector);
             if (request.stdin() != null) {
                 try (OutputStream os = process.getOutputStream()) {
                     os.write(request.stdin().getBytes(StandardCharsets.UTF_8));
@@ -48,14 +55,22 @@ public class SandboxCommandExecutor {
             if (!finished) {
                 process.destroyForcibly();
                 process.waitFor(2, TimeUnit.SECONDS);
-                outputThread.join(500);
+                waitForCollector(outputFuture, 500L);
                 return new CommandExecutionResult(false, -1, true, collector.output());
             }
-            outputThread.join(500);
+            waitForCollector(outputFuture, 500L);
             int exitCode = process.exitValue();
             return new CommandExecutionResult(exitCode == 0, exitCode, false, collector.output());
         } catch (Exception e) {
             return new CommandExecutionResult(false, -1, false, "命令执行异常: " + e.getMessage());
+        }
+    }
+
+    private void waitForCollector(Future<?> outputFuture, long timeoutMs) {
+        try {
+            outputFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (Exception ignored) {
+            // output collection timeout should not override process result.
         }
     }
 

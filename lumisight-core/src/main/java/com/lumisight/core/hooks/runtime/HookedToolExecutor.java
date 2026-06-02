@@ -1,5 +1,6 @@
 package com.lumisight.core.hooks.runtime;
 
+import com.lumisight.common.concurrent.NamedExecutors;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -11,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Component
 public class HookedToolExecutor {
@@ -19,7 +19,7 @@ public class HookedToolExecutor {
     private static final int MAX_PARALLEL_TOOLS = 4;
 
     private final AgentToolExecutionService agentToolExecutionService;
-    private final ExecutorService parallelToolExecutor = Executors.newFixedThreadPool(MAX_PARALLEL_TOOLS);
+    private final ExecutorService parallelToolExecutor = NamedExecutors.newFixedPool("tool-parallel", MAX_PARALLEL_TOOLS);
 
     public HookedToolExecutor(AgentToolExecutionService agentToolExecutionService) {
         this.agentToolExecutionService = agentToolExecutionService;
