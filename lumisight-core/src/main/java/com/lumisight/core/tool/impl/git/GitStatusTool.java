@@ -50,6 +50,11 @@ public class GitStatusTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of("short", true);
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
         Path root = GitRepoPathSupport.requireRepoRoot(context.repoRoot());

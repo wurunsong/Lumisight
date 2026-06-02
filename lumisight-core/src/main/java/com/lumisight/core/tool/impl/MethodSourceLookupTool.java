@@ -74,6 +74,15 @@ public class MethodSourceLookupTool implements PermissionedAgentTool {
         return errors;
     }
 
+    @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "sourceFile", "src/main/java/com/example/Foo.java",
+                "startLine", 42,
+                "endLine", 88
+        );
+    }
+
     @Tool(description = "根据方法节点信息读取源码片段。输入 sourceFile/startLine/endLine，返回对应源码行内容。适用于图谱节点定位后回查真实实现。")
     public List<AgentContextItem> fetchMethodSourceByLocation(
             @ToolParam(description = "源码相对路径，例如 src/main/java/com/x/Foo.java") String sourceFile,

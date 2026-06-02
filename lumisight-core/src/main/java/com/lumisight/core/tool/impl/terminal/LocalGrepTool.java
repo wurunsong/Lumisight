@@ -55,6 +55,15 @@ public class LocalGrepTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "pattern", "AgentSessionDispatcher",
+                "filePattern", ".java",
+                "limit", 20
+        );
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();

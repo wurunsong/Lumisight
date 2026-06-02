@@ -55,6 +55,13 @@ public class LocalCompileJavaTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "sourceFile", "lumisight-core/src/main/java/com/lumisight/core/agent/CodeAssistantAgentService.java"
+        );
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         try {
             AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();

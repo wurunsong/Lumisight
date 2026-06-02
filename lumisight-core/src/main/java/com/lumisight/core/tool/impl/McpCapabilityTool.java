@@ -60,6 +60,18 @@ public class McpCapabilityTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "capability", "readRepoFileSnippet",
+                "args", Map.of(
+                        "sourceFile", "README.md",
+                        "startLine", 1,
+                        "endLine", 20
+                )
+        );
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         String capabilityName = args.get("capability") == null ? "" : String.valueOf(args.get("capability"));
         McpCapability capability = capabilityRegistry.get(capabilityName);

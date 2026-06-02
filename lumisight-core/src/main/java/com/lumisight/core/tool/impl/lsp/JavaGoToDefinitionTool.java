@@ -53,6 +53,14 @@ public class JavaGoToDefinitionTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "symbol", "CodeAssistantAgentService",
+                "limit", 10
+        );
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         String symbol = String.valueOf(args.get("symbol"));
         int limit = intValue(args.get("limit"), defaultLimit <= 0 ? 20 : defaultLimit);

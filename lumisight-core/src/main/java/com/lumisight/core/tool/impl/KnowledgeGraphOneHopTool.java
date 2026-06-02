@@ -64,6 +64,14 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool {
         return ToolArgumentValidators.requireText(args, "kgNodeId", "kgNodeId");
     }
 
+    @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "kgNodeId", "method:com.lumisight.core.agent.CodeAssistantAgentService#execute",
+                "limit", 50
+        );
+    }
+
     @Tool(description = "根据知识图谱节点ID查询一跳邻接信息。输入来自注释文档向量召回的kgNodeId，返回中心节点及其一跳相邻边，用于补充结构化依赖关系。")
     public List<AgentContextItem> fetchOneHopByKgNodeId(
             @ToolParam(description = "知识图谱节点ID（通常来自注释文档向量的kg_node_id）") String kgNodeId,

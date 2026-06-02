@@ -79,6 +79,14 @@ public class LocalLsTool implements PermissionedAgentTool {
         }
     }
 
+    @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "path", "lumisight-core/src/main/java/com/lumisight/core",
+                "limit", 50
+        );
+    }
+
     private int intValue(Object value, int defaultValue) {
         if (value == null) {
             return defaultValue;

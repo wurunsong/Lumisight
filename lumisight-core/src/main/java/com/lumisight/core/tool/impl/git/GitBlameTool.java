@@ -59,6 +59,15 @@ public class GitBlameTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "sourceFile", "README.md",
+                "startLine", 1,
+                "endLine", 20
+        );
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
         Path root = GitRepoPathSupport.requireRepoRoot(context.repoRoot());

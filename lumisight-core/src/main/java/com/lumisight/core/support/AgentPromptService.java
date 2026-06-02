@@ -149,19 +149,58 @@ public class AgentPromptService {
                     }
                     builder.append(" [category=").append(category).append(", permission=").append(tool.permission()).append("]");
                     if (!tool.argumentSpecs().isEmpty()) {
-                        builder.append("，参数: ");
+                        builder.append("\\n  argsSchema: {");
                         builder.append(tool.argumentSpecs().stream()
-                                .map(spec -> spec.name() + ":" + spec.type()
-                                        + (spec.required() ? "(必填)" : "")
-                                        + (spec.description() != null && !spec.description().isBlank() ? "[" + spec.description() + "]" : ""))
+                                .map(spec -> "\"" + spec.name() + "\":{"
+                                        + "\"type\":\"" + spec.type() + "\""
+                                        + ",\"required\":" + spec.required()
+                                        + (spec.description() != null && !spec.description().isBlank()
+                                        ? ",\"description\":\"" + escapeJson(spec.description()) + "\""
+                                        : "")
+                                        + "}")
                                 .reduce((a, b) -> a + ", " + b)
                                 .orElse(""));
+                        builder.append("}");
+                    }
+                    if (!tool.exampleArgs().isEmpty()) {
+                        builder.append("\\n  exampleArgs: ").append(toJson(tool.exampleArgs()));
                     }
                     builder.append("\\n");
                 }
             }
         }
         return builder.toString();
+    }
+
+    private String toJson(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String text) {
+            return "\"" + escapeJson(text) + "\"";
+        }
+        if (value instanceof Number || value instanceof Boolean) {
+            return String.valueOf(value);
+        }
+        if (value instanceof java.util.Map<?, ?> map) {
+            return map.entrySet().stream()
+                    .map(entry -> "\"" + escapeJson(String.valueOf(entry.getKey())) + "\":" + toJson(entry.getValue()))
+                    .reduce((a, b) -> a + ", " + b)
+                    .map(body -> "{" + body + "}")
+                    .orElse("{}");
+        }
+        if (value instanceof java.util.List<?> list) {
+            return list.stream()
+                    .map(this::toJson)
+                    .reduce((a, b) -> a + ", " + b)
+                    .map(body -> "[" + body + "]")
+                    .orElse("[]");
+        }
+        return "\"" + escapeJson(String.valueOf(value)) + "\"";
+    }
+
+    private String escapeJson(String text) {
+        return text.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private String dialogueModeGuidance(AgentDialogueMode dialogueMode) {

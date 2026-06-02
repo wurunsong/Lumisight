@@ -79,6 +79,15 @@ public class HybridVectorSearchTool implements PermissionedAgentTool {
         return errors;
     }
 
+    @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "codeQuery", "AgentSessionDispatcher submit follow collect steer",
+                "naturalLanguageQuery", "会话调度与消息投递机制",
+                "limit", 5
+        );
+    }
+
     @Tool(description = "并发执行双向量库检索：codeQuery 用于代码向量库，naturalLanguageQuery 用于注释文档向量库。适合需要同时拿实现细节和语义说明的场景。")
     public List<AgentContextItem> searchHybridVector(
             @ToolParam(description = "代码导向查询（如代码片段、符号名、报错栈）") String codeQuery,

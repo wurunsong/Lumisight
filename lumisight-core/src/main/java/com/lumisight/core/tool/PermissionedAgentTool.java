@@ -24,6 +24,10 @@ public interface PermissionedAgentTool {
         return List.of();
     }
 
+    default Map<String, Object> exampleArgs() {
+        return Map.of();
+    }
+
     default List<String> validateArgs(Map<String, Object> args) {
         return List.of();
     }

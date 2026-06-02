@@ -58,6 +58,14 @@ public class JdtlsLintJavaTool implements PermissionedAgentTool {
     }
 
     @Override
+    public Map<String, Object> exampleArgs() {
+        return Map.of(
+                "filePattern", "agent",
+                "maxFiles", 10
+        );
+    }
+
+    @Override
     public List<AgentContextItem> invoke(Map<String, Object> args, int defaultLimit) {
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
         Path repoRoot = JavaLspPathSupport.requireRepoRoot(context.repoRoot());
