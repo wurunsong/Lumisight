@@ -114,6 +114,7 @@
 - TODO（讨论结论，待实现）：
   - Hook 执行模型升级为“三段式”：`hook_suggest`（模型建议） -> `hook_policy`（系统裁决） -> `hook_execute`（受限执行）。
   - 保持“模型可建议、系统强约束执行”原则，避免模型直接决定高风险脚本执行；后续补齐审计日志与回放能力。
+  - Agent 目前是“事件流 + 最终文本聚合”，还不是真正的模型 token 级流式输出；后续需要把 LLM 决策/回答阶段改为真实 streaming，避免必须等待整轮工具调用与思考完成后才开始回复。
 
 - 今日提交补充摘要（再次新增 15 commits，总计 21 commits）：
   - `672f3bb`：Agent 主流程职责拆分，工具执行下沉到 `core/tool/runtime`，Hook AOP 与上下文下沉到 `core/hooks/runtime`，`agent` 目录仅保留核心编排类。
