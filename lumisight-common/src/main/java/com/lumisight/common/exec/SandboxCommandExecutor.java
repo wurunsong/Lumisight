@@ -53,31 +53,27 @@ public class SandboxCommandExecutor {
     }
 
     private CommandExecutionResult runDocker(Path workingDir, CommandExecutionRequest request, CommandExecutionPolicy policy) {
-        try {
-            List<String> dockerCmd = new ArrayList<>();
-            dockerCmd.add("docker");
-            dockerCmd.add("run");
-            dockerCmd.add("--rm");
-            dockerCmd.add("--workdir");
-            dockerCmd.add("/workspace");
-            dockerCmd.add("-v");
-            dockerCmd.add(workingDir + ":/workspace");
-            dockerCmd.add("--cpus");
-            dockerCmd.add(String.valueOf(policy.cpuLimit()));
-            dockerCmd.add("--memory");
-            dockerCmd.add(policy.memoryMb() + "m");
-            dockerCmd.add("--pids-limit");
-            dockerCmd.add("128");
-            dockerCmd.add("--security-opt");
-            dockerCmd.add("no-new-privileges:true");
-            dockerCmd.add("--network");
-            dockerCmd.add(policy.networkEnabled() ? "bridge" : "none");
-            dockerCmd.add(policy.containerImage());
-            dockerCmd.addAll(request.command());
-            return runProcess(workingDir, dockerCmd, request.stdin(), policy);
-        } catch (Exception e) {
-            return new CommandExecutionResult(false, -1, false, "命令执行异常: " + e.getMessage());
-        }
+        List<String> dockerCmd = new ArrayList<>();
+        dockerCmd.add("docker");
+        dockerCmd.add("run");
+        dockerCmd.add("--rm");
+        dockerCmd.add("--workdir");
+        dockerCmd.add("/workspace");
+        dockerCmd.add("-v");
+        dockerCmd.add(workingDir + ":/workspace");
+        dockerCmd.add("--cpus");
+        dockerCmd.add(String.valueOf(policy.cpuLimit()));
+        dockerCmd.add("--memory");
+        dockerCmd.add(policy.memoryMb() + "m");
+        dockerCmd.add("--pids-limit");
+        dockerCmd.add("128");
+        dockerCmd.add("--security-opt");
+        dockerCmd.add("no-new-privileges:true");
+        dockerCmd.add("--network");
+        dockerCmd.add(policy.networkEnabled() ? "bridge" : "none");
+        dockerCmd.add(policy.containerImage());
+        dockerCmd.addAll(request.command());
+        return runProcess(workingDir, dockerCmd, request.stdin(), policy);
     }
 
     private CommandExecutionResult runMacSeatbelt(Path workingDir, CommandExecutionRequest request, CommandExecutionPolicy policy) {
@@ -92,7 +88,7 @@ public class SandboxCommandExecutor {
             wrapped.addAll(request.command());
             return runProcess(workingDir, wrapped, request.stdin(), policy);
         } catch (Exception e) {
-            return new CommandExecutionResult(false, -1, false, "seatbelt 沙箱执行失败: " + e.getMessage());
+            throw new IllegalStateException("seatbelt 沙箱执行失败: " + e.getMessage(), e);
         } finally {
             if (profileFile != null) {
                 try {
@@ -130,7 +126,7 @@ public class SandboxCommandExecutor {
             int exitCode = process.exitValue();
             return new CommandExecutionResult(exitCode == 0, exitCode, false, collector.output());
         } catch (Exception e) {
-            return new CommandExecutionResult(false, -1, false, "命令执行异常: " + e.getMessage());
+            throw new IllegalStateException("命令执行异常: " + String.join(" ", command) + " | " + e.getMessage(), e);
         }
     }
 
