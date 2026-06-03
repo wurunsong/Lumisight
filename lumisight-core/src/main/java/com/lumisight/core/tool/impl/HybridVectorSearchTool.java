@@ -1,5 +1,6 @@
 package com.lumisight.core.tool.impl;
 
+import com.lumisight.common.concurrent.NamedExecutors;
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.CodeVectorContextProvider;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
 
 @Component
@@ -28,6 +30,7 @@ public class HybridVectorSearchTool implements PermissionedAgentTool<HybridVecto
 
     private final CodeVectorContextProvider codeVectorContextProvider;
     private final CommentVectorContextProvider commentVectorContextProvider;
+    private final ExecutorService vectorSearchExecutor = NamedExecutors.newFixedPool("hybrid-vector-search", 2);
 
     public HybridVectorSearchTool(
             CodeVectorContextProvider codeVectorContextProvider,
@@ -91,10 +94,12 @@ public class HybridVectorSearchTool implements PermissionedAgentTool<HybridVecto
         int finalLimit = limit == null ? context.defaultLimit() : limit;
 
         CompletableFuture<List<AgentContextItem>> codeFuture = CompletableFuture.supplyAsync(
-                () -> codeVectorContextProvider.retrieveByCode(context.repoRoot(), codeQuery, finalLimit)
+                () -> codeVectorContextProvider.retrieveByCode(context.repoRoot(), codeQuery, finalLimit),
+                vectorSearchExecutor
         );
         CompletableFuture<List<AgentContextItem>> commentFuture = CompletableFuture.supplyAsync(
-                () -> commentVectorContextProvider.retrieveByComment(context.repoRoot(), naturalLanguageQuery, finalLimit)
+                () -> commentVectorContextProvider.retrieveByComment(context.repoRoot(), naturalLanguageQuery, finalLimit),
+                vectorSearchExecutor
         );
 
         List<AgentContextItem> merged = new ArrayList<>();

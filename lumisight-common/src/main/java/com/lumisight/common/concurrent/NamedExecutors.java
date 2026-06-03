@@ -11,11 +11,11 @@ public final class NamedExecutors {
     }
 
     public static ExecutorService newFixedPool(String prefix, int size) {
-        return Executors.newFixedThreadPool(Math.max(1, size), daemonFactory(prefix));
+        return new ContextAwareExecutorService(Executors.newFixedThreadPool(Math.max(1, size), daemonFactory(prefix)));
     }
 
     public static ExecutorService newCachedPool(String prefix) {
-        return Executors.newCachedThreadPool(daemonFactory(prefix));
+        return new ContextAwareExecutorService(Executors.newCachedThreadPool(daemonFactory(prefix)));
     }
 
     public static ThreadFactory daemonFactory(String prefix) {

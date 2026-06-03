@@ -24,6 +24,18 @@ public final class AgentToolRuntimeContext {
         return HOLDER.get();
     }
 
+    public static void restore(Context context) {
+        if (context == null) {
+            HOLDER.remove();
+            return;
+        }
+        HOLDER.set(context);
+    }
+
+    public static void clear() {
+        HOLDER.remove();
+    }
+
     public record Context(String repoRoot, Integer defaultLimit) {
     }
 

@@ -1,5 +1,6 @@
 package com.lumisight.core.tool.impl.lsp;
 
+import com.lumisight.common.concurrent.NamedExecutors;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class JdtlsSessionManager {
 
     private static final Duration INIT_TIMEOUT = Duration.ofSeconds(20);
+    private static final ExecutorService STDERR_DRAIN_POOL = NamedExecutors.newFixedPool("jdtls-stderr-drain", 1);
 
     private final Map<String, JdtlsSession> sessions = new ConcurrentHashMap<>();
 
@@ -38,6 +41,7 @@ public class JdtlsSessionManager {
     public void shutdownAll() {
         sessions.values().forEach(JdtlsSession::closeQuietly);
         sessions.clear();
+        STDERR_DRAIN_POOL.shutdownNow();
     }
 
     public Map<String, List<org.eclipse.lsp4j.Diagnostic>> collectDiagnostics(Path repoRoot, List<Path> files, Duration waitTimeout) {
@@ -118,7 +122,7 @@ public class JdtlsSessionManager {
     }
 
     private void drainErrorStream(Process process) {
-        Thread thread = new Thread(() -> {
+        STDERR_DRAIN_POOL.submit(() -> {
             try (var in = process.getErrorStream()) {
                 byte[] buf = new byte[1024];
                 while (in.read(buf) >= 0) {
@@ -127,9 +131,6 @@ public class JdtlsSessionManager {
             } catch (Exception ignored) {
             }
         });
-        thread.setName("jdtls-stderr-drain");
-        thread.setDaemon(true);
-        thread.start();
     }
 
     private static final class JdtlsSession {

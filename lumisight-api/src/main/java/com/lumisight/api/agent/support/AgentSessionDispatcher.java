@@ -1,5 +1,6 @@
 package com.lumisight.api.agent.support;
 
+import com.lumisight.common.concurrent.NamedExecutors;
 import com.lumisight.api.agent.dto.request.AgentRunRequest;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentEvent;
@@ -19,7 +20,6 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutorService;
@@ -29,7 +29,7 @@ public class AgentSessionDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(AgentSessionDispatcher.class);
     private final Map<String, SessionMailbox> mailboxes = new ConcurrentHashMap<>();
-    private final ExecutorService workerPool = Executors.newCachedThreadPool();
+    private final ExecutorService workerPool = NamedExecutors.newCachedPool("agent-session-worker");
     private final AgentInteractionOrchestrator interactionOrchestrator;
     private final AgentConversationManager conversationManager;
 
