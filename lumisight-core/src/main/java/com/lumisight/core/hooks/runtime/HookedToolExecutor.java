@@ -1,6 +1,7 @@
 package com.lumisight.core.hooks.runtime;
 
 import com.lumisight.common.concurrent.NamedExecutors;
+import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -76,12 +77,30 @@ public class HookedToolExecutor {
         if (decisions.size() <= 1) {
             return List.of(execute(decisions.get(0), enabledPermissions, limit, sessionId, round, question));
         }
+        AgentToolRuntimeContext.Context runtimeContext = AgentToolRuntimeContext.current();
         List<CompletableFuture<AgentToolExecutionResult>> futures = decisions.stream()
                 .map(decision -> CompletableFuture.supplyAsync(
-                        () -> execute(decision, enabledPermissions, limit, sessionId, round, question),
+                        () -> executeWithRuntimeContext(decision, enabledPermissions, limit, sessionId, round, question, runtimeContext),
                         parallelToolExecutor
                 ))
                 .toList();
         return futures.stream().map(CompletableFuture::join).toList();
+    }
+
+    private AgentToolExecutionResult executeWithRuntimeContext(
+            ToolDecision decision,
+            Set<AgentToolPermission> enabledPermissions,
+            int limit,
+            String sessionId,
+            int round,
+            String question,
+            AgentToolRuntimeContext.Context runtimeContext
+    ) {
+        if (runtimeContext == null) {
+            return execute(decision, enabledPermissions, limit, sessionId, round, question);
+        }
+        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(runtimeContext.repoRoot(), runtimeContext.defaultLimit())) {
+            return execute(decision, enabledPermissions, limit, sessionId, round, question);
+        }
     }
 }

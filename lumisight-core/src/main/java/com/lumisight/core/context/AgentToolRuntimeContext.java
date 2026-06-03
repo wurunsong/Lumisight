@@ -20,6 +20,10 @@ public final class AgentToolRuntimeContext {
         return context;
     }
 
+    public static Context current() {
+        return HOLDER.get();
+    }
+
     public record Context(String repoRoot, Integer defaultLimit) {
     }
 
