@@ -248,6 +248,7 @@
           <li>决策触发工具调用。</li>
           <li>权限、typed args 绑定与策略先行校验。</li>
           <li>Hook 与 Tool 共用同一命令执行内核与同一 sandbox 配置。</li>
+          <li>执行前先由 planner 按本次 tool/hook + args 推导最小读写路径、网络和可执行边界，再编译成实际 sandbox policy。</li>
           <li>默认走 macOS Seatbelt 执行边界；写入前快照、失败可回滚。</li>
           <li>运行时路径动态放行，避免用户目录下的 `node/python` 被误拦。</li>
           <li>形成“统一执行内核 + 操作系统强约束”的可控闭环。</li>

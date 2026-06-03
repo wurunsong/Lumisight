@@ -1,6 +1,7 @@
 package com.lumisight.core.tool.impl.git;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.common.exec.SandboxAccessSpec;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.sandbox.SandboxCommandRunner;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -70,7 +71,22 @@ public class GitDiffTool implements PermissionedAgentTool<GitDiffTool.Args> {
             cmd.add("--");
             cmd.add(sourceFile);
         }
-        Map<String, Object> result = commandRunner.run(root, cmd);
+        List<String> readablePaths = sourceFile.isBlank()
+                ? List.of(root.toString(), root.resolve(".git").toString())
+                : List.of(
+                        root.resolve(".git").toString(),
+                        GitRepoPathSupport.resolveInRepo(root, sourceFile).toString()
+                );
+        Map<String, Object> result = commandRunner.run(root, cmd, new SandboxAccessSpec(
+                "gitDiff",
+                false,
+                readablePaths,
+                List.of(),
+                List.of(),
+                List.of(sourceFile.isBlank()
+                        ? "git diff without file scope falls back to repository read access"
+                        : "git diff is limited to the requested file plus .git metadata")
+        ));
         return List.of(new AgentContextItem(
                 "git",
                 "diff",

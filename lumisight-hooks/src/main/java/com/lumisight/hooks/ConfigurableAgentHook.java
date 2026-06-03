@@ -2,10 +2,12 @@ package com.lumisight.hooks;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.common.exec.CommandExecutionPolicy;
 import com.lumisight.common.exec.CommandExecutionRequest;
 import com.lumisight.common.exec.CommandExecutionResult;
+import com.lumisight.common.exec.SandboxAccessSpec;
 import com.lumisight.common.exec.SandboxCommandExecutor;
+import com.lumisight.common.exec.SandboxExecutionPlan;
+import com.lumisight.common.exec.SandboxPolicyPlanner;
 import com.lumisight.common.exec.SandboxProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +46,7 @@ public class ConfigurableAgentHook implements AgentHook {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SandboxCommandExecutor commandExecutor = new SandboxCommandExecutor();
+    private final SandboxPolicyPlanner policyPlanner = new SandboxPolicyPlanner();
     private final SandboxProperties sandboxProperties;
     private final Map<AgentHookPoint, List<HookRule>> rulesByPoint;
 
@@ -180,21 +183,31 @@ public class ConfigurableAgentHook implements AgentHook {
 
         try {
             List<String> command = resolveHookCommand(hook);
+            Path workingDir = Path.of("").toAbsolutePath().normalize();
+            Path scriptPath = Path.of(command.get(command.size() > 1 ? 1 : 0)).toAbsolutePath().normalize();
+            SandboxExecutionPlan plan = policyPlanner.plan(
+                    workingDir,
+                    sandboxProperties,
+                    new SandboxAccessSpec(
+                            "hook:" + hook.command(),
+                            false,
+                            List.of(
+                                    workingDir.toString(),
+                                    HOOKS_ROOT.toString(),
+                                    scriptPath.toString()
+                            ),
+                            List.of(),
+                            List.of(),
+                            List.of("hook execution is limited to registered hook scripts plus workspace read access")
+                    ),
+                    hook.timeoutMs(),
+                    hook.maxOutputBytes()
+            );
             CommandExecutionResult result = commandExecutor.run(new CommandExecutionRequest(
-                    Path.of("").toAbsolutePath().normalize(),
+                    workingDir,
                     command,
                     payloadJson,
-                    new CommandExecutionPolicy(
-                            sandboxProperties.isEnabled() ? sandboxProperties.getMode() : "local",
-                            sandboxProperties.isNetworkEnabled(),
-                            hook.timeoutMs(),
-                            hook.maxOutputBytes(),
-                            sandboxProperties.getMemoryMb(),
-                            sandboxProperties.getCpuLimit(),
-                            sandboxProperties.getContainerImage(),
-                            List.of(Path.of("").toAbsolutePath().normalize().toString(), HOOKS_ROOT.toString()),
-                            List.of(Path.of("").toAbsolutePath().normalize().toString())
-                    )
+                    plan.policy()
             ));
             if (result.timedOut()) {
                 throw new IllegalStateException("Hook command timeout (" + hook.timeoutMs() + "ms): " + hook.command());

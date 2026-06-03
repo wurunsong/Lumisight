@@ -11,7 +11,8 @@ public record CommandExecutionPolicy(
         double cpuLimit,
         String containerImage,
         List<String> readablePaths,
-        List<String> writablePaths
+        List<String> writablePaths,
+        List<String> executablePaths
 ) {
     public CommandExecutionPolicy {
         mode = (mode == null || mode.isBlank()) ? "local" : mode.trim();
@@ -24,5 +25,6 @@ public record CommandExecutionPolicy(
                 : containerImage.trim();
         readablePaths = readablePaths == null ? List.of() : List.copyOf(readablePaths);
         writablePaths = writablePaths == null ? List.of() : List.copyOf(writablePaths);
+        executablePaths = executablePaths == null ? List.of() : List.copyOf(executablePaths);
     }
 }

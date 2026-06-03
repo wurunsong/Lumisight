@@ -1,6 +1,7 @@
 package com.lumisight.core.tool.impl.git;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.common.exec.SandboxAccessSpec;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.sandbox.SandboxCommandRunner;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -76,7 +77,15 @@ public class GitBlameTool implements PermissionedAgentTool<GitBlameTool.Args> {
         cmd.add("--");
         cmd.add(sourceFile);
 
-        Map<String, Object> result = commandRunner.run(root, cmd);
+        Path targetFile = GitRepoPathSupport.resolveInRepo(root, sourceFile);
+        Map<String, Object> result = commandRunner.run(root, cmd, new SandboxAccessSpec(
+                "gitBlame",
+                false,
+                List.of(root.resolve(".git").toString(), targetFile.toString()),
+                List.of(),
+                List.of(),
+                List.of("git blame is scoped to the requested file and repository metadata")
+        ));
         return List.of(new AgentContextItem(
                 "git",
                 "blame",

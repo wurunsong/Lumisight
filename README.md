@@ -50,6 +50,10 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 - 当前默认模式为 `mac-seatbelt`，优先复用 macOS 自带的进程隔离能力；Docker 仍可选但不再是默认。
 - Git 工具（`gitStatus/gitDiff/gitBlame`）已统一走 sandbox 执行器。
 - Hook 与 Tool 已统一到同一命令执行内核与同一份 sandbox 配置，不再存在 Hook 绕开 Tool 沙箱的独立路径。
+- 命令执行不再只是“先拼命令、再套通用模板”：
+  - 现在会先生成 `SandboxAccessSpec`，按本次 `tool/hook + args` 规划读路径、写路径、网络和可执行边界。
+  - 再由 `SandboxPolicyPlanner` 编译成最终 `CommandExecutionPolicy`，最后才进入 `SandboxCommandExecutor` 执行。
+  - 当前已接入 Git 工具与 Hook 命令；执行结果里会附带 `sandboxPlan`，方便调试本次实际放开的权限范围。
 - `writeRepoFile` 现在会返回 `snapshotId`（写前快照），可通过 `rollbackRepoFile` 回滚。
 
 ## 第 1 步：本地启动外挂知识库（Podman）

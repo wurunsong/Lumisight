@@ -29,7 +29,7 @@ public class SandboxCommandExecutor {
             return new CommandExecutionResult(false, -1, false, "empty command");
         }
         CommandExecutionPolicy policy = request.policy() == null
-                ? new CommandExecutionPolicy("local", false, 20_000L, 200_000, 512L, 1.0d, "docker.io/library/openjdk:21-jdk", List.of(), List.of())
+                ? new CommandExecutionPolicy("local", false, 20_000L, 200_000, 512L, 1.0d, "docker.io/library/openjdk:21-jdk", List.of(), List.of(), List.of())
                 : request.policy();
         if (!policy.networkEnabled() && looksLikeNetworkCommand(request.command())) {
             return new CommandExecutionResult(
@@ -152,6 +152,7 @@ public class SandboxCommandExecutor {
                 readPaths.add(executableParent.toString());
             }
         }
+        readPaths.addAll(policy.executablePaths());
         StringBuilder builder = new StringBuilder();
         builder.append("(version 1)\n");
         builder.append("(deny default)\n");
@@ -160,10 +161,10 @@ public class SandboxCommandExecutor {
         builder.append("(allow process-fork)\n");
         builder.append("(allow file-read-metadata)\n");
         builder.append("(allow file-map-executable\n");
-        appendSubpaths(builder, executablePaths(executablePath));
+        appendSubpaths(builder, executablePaths(executablePath, policy));
         builder.append(")\n");
         builder.append("(allow process-exec\n");
-        appendSubpaths(builder, executablePaths(executablePath));
+        appendSubpaths(builder, executablePaths(executablePath, policy));
         builder.append(")\n");
         builder.append("(allow file-read*\n");
         appendSubpaths(builder, readPaths);
@@ -208,8 +209,11 @@ public class SandboxCommandExecutor {
         );
     }
 
-    private List<String> executablePaths(Path executablePath) {
+    private List<String> executablePaths(Path executablePath, CommandExecutionPolicy policy) {
         Set<String> paths = new LinkedHashSet<>(baseExecutablePaths());
+        if (policy != null && policy.executablePaths() != null) {
+            paths.addAll(policy.executablePaths());
+        }
         if (executablePath != null && executablePath.getParent() != null) {
             paths.add(executablePath.getParent().toString());
         }

@@ -20,4 +20,15 @@ final class GitRepoPathSupport {
         }
         return root;
     }
+
+    static Path resolveInRepo(Path repoRoot, String relativePath) {
+        if (!StringUtils.hasText(relativePath)) {
+            return repoRoot;
+        }
+        Path resolved = repoRoot.resolve(relativePath).normalize();
+        if (!resolved.startsWith(repoRoot)) {
+            throw new IllegalArgumentException("路径越界，不允许访问仓库外部");
+        }
+        return resolved;
+    }
 }

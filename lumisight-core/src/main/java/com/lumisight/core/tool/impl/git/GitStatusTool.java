@@ -1,6 +1,7 @@
 package com.lumisight.core.tool.impl.git;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.common.exec.SandboxAccessSpec;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.sandbox.SandboxCommandRunner;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -60,7 +61,14 @@ public class GitStatusTool implements PermissionedAgentTool<GitStatusTool.Args> 
         List<String> cmd = shortFormat
                 ? List.of("git", "status", "--short", "--branch")
                 : List.of("git", "status");
-        Map<String, Object> result = commandRunner.run(root, cmd);
+        Map<String, Object> result = commandRunner.run(root, cmd, new SandboxAccessSpec(
+                "gitStatus",
+                false,
+                List.of(root.toString(), root.resolve(".git").toString()),
+                List.of(),
+                List.of(),
+                List.of("git status only needs repository metadata and worktree read access")
+        ));
         return List.of(new AgentContextItem(
                 "git",
                 "status",
