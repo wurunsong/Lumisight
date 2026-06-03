@@ -79,6 +79,10 @@ public class AgentSessionDispatcher {
         }
 
         private synchronized void submit(QueuedEnvelope envelope) {
+            if (envelope.request.interrupt()) {
+                handleInterrupt(envelope);
+                return;
+            }
             AgentDialogueMode mode = parseMode(envelope.request.dialogueMode());
             if (current == null && !queue.isEmpty()) {
                 switch (mode) {
@@ -132,6 +136,19 @@ public class AgentSessionDispatcher {
 
             queue.offer(envelope);
             ensureWorker();
+        }
+
+        private void handleInterrupt(QueuedEnvelope envelope) {
+            clearPending("会话已被用户手动停止。");
+            RunningExecution running = current;
+            if (running != null) {
+                running.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。");
+            } else {
+                conversationManager.nextEpoch(sessionId);
+                conversationManager.interrupt(sessionId);
+            }
+            envelope.emit(AgentEvent.interrupted("", sessionId, 0));
+            envelope.complete();
         }
 
         private synchronized void ensureWorker() {
@@ -302,9 +319,14 @@ public class AgentSessionDispatcher {
         }
 
         private void interruptForSteer() {
+            interrupt("STEER", "interrupting", "STEER: 当前执行即将让出给最新问题。");
+        }
+
+        private void interrupt(String stage, String status, String reason) {
             conversationManager.nextEpoch(sessionId);
             conversationManager.interrupt(sessionId);
-            envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "interrupting", "STEER: 当前执行即将让出给最新问题。"));
+            envelope.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
+            envelope.emit(AgentEvent.interrupted("", sessionId, 0));
             if (disposable != null && !disposable.isDisposed()) {
                 disposable.dispose();
             }
