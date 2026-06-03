@@ -25,12 +25,14 @@ public class AgentContextEnrichmentService {
     private final KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider;
     private final SourceCodeLookupProvider sourceCodeLookupProvider;
     private final AgentPromptService agentPromptService;
+    private final StreamingChatClientSupport streamingChatClientSupport;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentContextEnrichmentService(
             @Autowired(required = false) KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider,
             @Autowired(required = false) SourceCodeLookupProvider sourceCodeLookupProvider,
-            AgentPromptService agentPromptService
+            AgentPromptService agentPromptService,
+            StreamingChatClientSupport streamingChatClientSupport
     ) {
         this.knowledgeGraphOneHopProvider = knowledgeGraphOneHopProvider == null
                 ? new NoopKnowledgeGraphOneHopProvider()
@@ -39,6 +41,7 @@ public class AgentContextEnrichmentService {
                 ? new SourceCodeLookupProviderImpl()
                 : sourceCodeLookupProvider;
         this.agentPromptService = agentPromptService;
+        this.streamingChatClientSupport = streamingChatClientSupport;
     }
 
     public List<AgentContextItem> enrichAndFilter(
@@ -100,11 +103,11 @@ public class AgentContextEnrichmentService {
             return contexts;
         }
         String prompt = agentPromptService.relevanceFilterPrompt(userQuestion, contexts, limit, toolName);
-        String raw = llmChatClient.prompt()
-                .system(agentPromptService.relevanceFilterSystemPrompt())
-                .user(prompt)
-                .call()
-                .content();
+        String raw = streamingChatClientSupport.collect(
+                llmChatClient,
+                agentPromptService.relevanceFilterSystemPrompt(),
+                prompt
+        );
         try {
             List<Map<String, Object>> scoredItems = objectMapper.readValue(
                     extractJsonArray(raw),

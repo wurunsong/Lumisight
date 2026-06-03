@@ -18,6 +18,7 @@ import com.lumisight.core.support.AgentFlowSupport;
 import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentRequestValidators;
 import com.lumisight.core.support.SkillAutoRouter;
+import com.lumisight.core.support.StreamingChatClientSupport;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.hooks.AgentHookContext;
@@ -58,6 +59,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     private final AgentDecisionParser decisionParser;
     private final AgentFinalAnswerVerifier finalAnswerVerifier;
     private final SkillAutoRouter skillAutoRouter;
+    private final StreamingChatClientSupport streamingChatClientSupport;
 
     @Autowired
     public CodeAssistantAgentService(
@@ -71,7 +73,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             AgentFlowSupport agentFlowSupport,
             AgentDecisionParser decisionParser,
             AgentFinalAnswerVerifier finalAnswerVerifier,
-            SkillAutoRouter skillAutoRouter
+            SkillAutoRouter skillAutoRouter,
+            StreamingChatClientSupport streamingChatClientSupport
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
@@ -84,6 +87,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         this.decisionParser = decisionParser;
         this.finalAnswerVerifier = finalAnswerVerifier;
         this.skillAutoRouter = skillAutoRouter;
+        this.streamingChatClientSupport = streamingChatClientSupport;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -215,11 +219,13 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 }
                 events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
                 fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
-                String plan = llmChatClient.prompt()
-                        .system(agentPromptService.systemPrompt(request.taskType()))
-                        .user(agentPromptService.planPrompt(request, skillPlan))
-                        .call()
-                        .content();
+                String plan = streamingChatClientSupport.collect(
+                        llmChatClient,
+                        agentPromptService.systemPrompt(request.taskType()),
+                        agentPromptService.planPrompt(request, skillPlan),
+                        () -> !shouldInterruptExecution(sessionId, runEpoch),
+                        null
+                );
                 events.add(AgentEvent.plan(traceId, sessionId, plan));
                 fireHook(AgentHookPoint.AFTER_PLAN, sessionId, 0, effectiveQuestion, null, Map.of("plan", plan));
             }
@@ -336,24 +342,26 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             log.info("agent_loop decide, sessionId={}, round={}, question={}, contextSummary={}, errorContexts={}",
                     sessionId, round, effectiveQuestion, summarizeContextRefs(contexts), summarizeErrorContexts(contexts));
             fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
-            String decisionRaw = llmChatClient.prompt()
-                    .system(agentPromptService.orchestratorSystemPrompt(
+            String decisionRaw = streamingChatClientSupport.collect(
+                    llmChatClient,
+                    agentPromptService.orchestratorSystemPrompt(
                             request.taskType(),
                             request.dialogueMode(),
                             enabledPermissions,
                             agentToolRegistry,
                             skillPlan
-                    ))
-                    .user(agentPromptService.orchestratorUserPrompt(
+                    ),
+                    agentPromptService.orchestratorUserPrompt(
                             agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId),
                             contexts,
                             limit,
                             round,
                             MAX_TOOL_ROUNDS,
                             skillPlan
-                    ))
-                    .call()
-                    .content();
+                    ),
+                    () -> !shouldInterruptExecution(sessionId, runEpoch),
+                    null
+            );
             interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;

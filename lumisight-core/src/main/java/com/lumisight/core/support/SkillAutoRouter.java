@@ -18,18 +18,21 @@ public class SkillAutoRouter {
     private final SkillCatalog skillCatalog;
     private final SkillRoutingProperties skillRoutingProperties;
     private final AgentPromptService agentPromptService;
+    private final StreamingChatClientSupport streamingChatClientSupport;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SkillAutoRouter(
             ChatClient.Builder chatClientBuilder,
             SkillCatalog skillCatalog,
             SkillRoutingProperties skillRoutingProperties,
-            AgentPromptService agentPromptService
+            AgentPromptService agentPromptService,
+            StreamingChatClientSupport streamingChatClientSupport
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.skillCatalog = skillCatalog;
         this.skillRoutingProperties = skillRoutingProperties;
         this.agentPromptService = agentPromptService;
+        this.streamingChatClientSupport = streamingChatClientSupport;
     }
 
     public RouteResult route(String question) {
@@ -49,11 +52,11 @@ public class SkillAutoRouter {
         }
         String response;
         try {
-            response = llmChatClient.prompt()
-                    .system(agentPromptService.skillRouterSystemPrompt())
-                    .user(agentPromptService.skillRouterUserPrompt(question, list.toString()))
-                    .call()
-                    .content();
+            response = streamingChatClientSupport.collect(
+                    llmChatClient,
+                    agentPromptService.skillRouterSystemPrompt(),
+                    agentPromptService.skillRouterUserPrompt(question, list.toString())
+            );
         } catch (Exception e) {
             return RouteResult.noMatch("router_call_failed: " + e.getMessage());
         }

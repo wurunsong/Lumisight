@@ -15,25 +15,28 @@ public class AgentFinalAnswerVerifier {
     private final ChatClient llmChatClient;
     private final AgentPromptService agentPromptService;
     private final AgentDecisionParser decisionParser;
+    private final StreamingChatClientSupport streamingChatClientSupport;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentFinalAnswerVerifier(
             ChatClient.Builder chatClientBuilder,
             AgentPromptService agentPromptService,
-            AgentDecisionParser decisionParser
+            AgentDecisionParser decisionParser,
+            StreamingChatClientSupport streamingChatClientSupport
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentPromptService = agentPromptService;
         this.decisionParser = decisionParser;
+        this.streamingChatClientSupport = streamingChatClientSupport;
     }
 
     public VerifyResult verifyFinalAnswer(AgentRequest request, String candidateAnswer, List<AgentContextItem> contexts) {
         try {
-            String raw = llmChatClient.prompt()
-                    .system(agentPromptService.verifySystemPrompt())
-                    .user(agentPromptService.verifyPrompt(request, candidateAnswer, contexts))
-                    .call()
-                    .content();
+            String raw = streamingChatClientSupport.collect(
+                    llmChatClient,
+                    agentPromptService.verifySystemPrompt(),
+                    agentPromptService.verifyPrompt(request, candidateAnswer, contexts)
+            );
             String json = decisionParser.extractJsonObject(raw);
             Map<?, ?> parsed = objectMapper.readValue(json, Map.class);
             Object passRaw = parsed.get("pass");
