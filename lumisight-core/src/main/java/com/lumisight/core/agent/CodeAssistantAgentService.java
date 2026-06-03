@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -96,13 +97,20 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
     @Override
     public Flux<AgentEvent> execute(AgentRequest request) {
+        return Flux.create(sink -> executeStreaming(request, sink), FluxSink.OverflowStrategy.BUFFER);
+    }
+
+    private void executeStreaming(AgentRequest request, FluxSink<AgentEvent> sink) {
         AgentRequestValidators.validate(request);
 
         String traceId = UUID.randomUUID().toString();
         String sessionId = StringUtils.hasText(request.sessionId()) ? request.sessionId() : UUID.randomUUID().toString();
+        AgentEventPublisher publisher = new AgentEventPublisher(sink);
         if (request.interrupt()) {
             conversationManager.interrupt(sessionId);
-            return Flux.just(AgentEvent.interrupted(traceId, sessionId, 0));
+            publisher.emit(AgentEvent.interrupted(traceId, sessionId, 0));
+            sink.complete();
+            return;
         }
 
         try {
@@ -112,7 +120,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
             int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
             List<AgentContextItem> contexts = new ArrayList<>();
-            List<AgentEvent> events = new ArrayList<>();
             String directAnswerDraft = null;
             boolean askUser = false;
             boolean interrupted = false;
@@ -141,18 +148,18 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
                     effectiveQuestion = resumeState.baseQuestion();
                 }
-                events.add(AgentEvent.resumed(traceId, sessionId));
+                publisher.emit(AgentEvent.resumed(traceId, sessionId));
             }
 
             try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
-            events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
-            events.add(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
+            publisher.emit(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
+            publisher.emit(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
 
             String skillRef = request.skillPath();
             boolean shouldResolveSkill = StringUtils.hasText(skillRef);
             if (!shouldResolveSkill) {
                 SkillAutoRouter.RouteResult routeResult = skillAutoRouter.route(effectiveQuestion);
-                events.add(AgentEvent.skillRouted(
+                publisher.emit(AgentEvent.skillRouted(
                         traceId,
                         sessionId,
                         routeResult.candidateSkillId(),
@@ -176,27 +183,28 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 );
                 SkillRegistry.ResolvedSkill resolvedSkill = skillRegistry.resolve(skillContext);
                 skillPlan = resolvedSkill.plan();
-                events.add(AgentEvent.skillSelected(traceId, sessionId, resolvedSkill.skillName(), skillPlan.summary()));
+                publisher.emit(AgentEvent.skillSelected(traceId, sessionId, resolvedSkill.skillName(), skillPlan.summary()));
             }
 
             Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
 
             if (!skillPlan.executionSteps().isEmpty()) {
-                events.add(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
+                publisher.emit(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
             }
 
             // 会话恢复到 HUMAN_GATE 场景：这里执行“上次被挂起的高风险工具决策（pendingDecision）”。
             // 只有调用方显式传入 approveRiskyToolCall=true 才会继续执行该工具。
                 if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
                     if (!request.approveRiskyToolCall()) {
-                        events.add(AgentEvent.humanGate(
+                        publisher.emit(AgentEvent.humanGate(
                             traceId,
                             sessionId,
                             startRound,
                             resumeState.pendingDecision().toolName(),
                                 "检测到待确认写操作，请设置 approveRiskyToolCall=true 后继续。"
                         ));
-                        return Flux.fromIterable(events);
+                        sink.complete();
+                        return;
                     }
                 AgentToolExecutionResult gatedResult = executeToolWithHookContext(
                         resumeState.pendingDecision(),
@@ -206,7 +214,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         startRound,
                         effectiveQuestion
                 );
-                events.add(AgentEvent.toolResult(traceId, sessionId, startRound, gatedResult));
+                publisher.emit(AgentEvent.toolResult(traceId, sessionId, startRound, gatedResult));
                 contexts.addAll(gatedResult.items());
                 conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, startRound + 1);
                 startRound = startRound + 1;
@@ -214,10 +222,11 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
             if (request.runMode() == AgentRunMode.PLAN) {
                 if (shouldInterruptExecution(sessionId, runEpoch)) {
-                    appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, events);
-                    return Flux.fromIterable(events);
+                    appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, publisher);
+                    sink.complete();
+                    return;
                 }
-                events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
+                publisher.emit(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
                 fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
                 String plan = streamingChatClientSupport.collect(
                         llmChatClient,
@@ -226,7 +235,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         () -> !shouldInterruptExecution(sessionId, runEpoch),
                         null
                 );
-                events.add(AgentEvent.plan(traceId, sessionId, plan));
+                publisher.emit(AgentEvent.plan(traceId, sessionId, plan));
                 fireHook(AgentHookPoint.AFTER_PLAN, sessionId, 0, effectiveQuestion, null, Map.of("plan", plan));
             }
 
@@ -237,7 +246,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     contexts,
                     limit,
                     startRound,
-                    events,
+                    publisher,
                     sessionId,
                     traceId,
                     enabledPermissions,
@@ -249,13 +258,17 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
 
         if (askUser) {
-                return Flux.fromIterable(events);
+                sink.complete();
+                return;
         }
         if (interrupted) {
-                return Flux.fromIterable(events);
+                sink.complete();
+                return;
         }
         if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
-                return Flux.just(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
+                publisher.emit(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
+                sink.complete();
+                return;
         }
 
         if (StringUtils.hasText(directAnswerDraft)) {
@@ -271,34 +284,32 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit, skillPlan);
         fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", StringUtils.hasText(directAnswerDraft)));
         if (shouldInterruptExecution(sessionId, runEpoch)) {
-            appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, events);
-            return Flux.fromIterable(events);
+            appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, publisher);
+            sink.complete();
+            return;
         }
-        events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
+        publisher.emit(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
         StringBuilder finalAnswerBuffer = new StringBuilder();
-        Flux<AgentEvent> stream = llmChatClient.prompt()
+        llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
                 .user(finalPrompt)
                 .stream()
                 .content()
                 .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
-                .handle((content, sink) -> {
+                .doOnNext(content -> {
                     finalAnswerBuffer.append(content);
-                    sink.next(AgentEvent.token(traceId, sessionId, content));
-                });
-        Flux<AgentEvent> finalEvent = Flux.defer(() -> {
-            if (shouldInterruptExecution(sessionId, runEpoch)) {
-                return Flux.empty();
-            }
+                    publisher.emit(AgentEvent.token(traceId, sessionId, content));
+                })
+                .blockLast();
+        if (!shouldInterruptExecution(sessionId, runEpoch)) {
             String finalAnswer = finalAnswerBuffer.toString();
-            if (finalAnswer.isBlank()) {
-                return Flux.empty();
+            if (!finalAnswer.isBlank()) {
+                publisher.emit(AgentEvent.finalText(traceId, sessionId, finalAnswer));
             }
-            return Flux.just(AgentEvent.finalText(traceId, sessionId, finalAnswer));
-        });
-            return Flux.concat(Flux.fromIterable(events), stream, finalEvent);
+        }
+        sink.complete();
         } catch (Throwable t) {
-            throw t;
+            sink.error(t);
         }
     }
 
@@ -320,19 +331,19 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             List<AgentContextItem> contexts,
             int limit,
             int startRound,
-            List<AgentEvent> events,
+            AgentEventPublisher publisher,
             String sessionId,
             String traceId,
             Set<AgentToolPermission> enabledPermissions,
             long runEpoch
     ) {
         for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
-            OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
+            OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;
             }
 
-            events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
+            publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
             contexts.add(new AgentContextItem(
                     "conversation",
                     "user_prompt_round_" + round,
@@ -362,7 +373,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     () -> !shouldInterruptExecution(sessionId, runEpoch),
                     null
             );
-            interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
+            interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;
             }
@@ -379,8 +390,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             if ("ask_user".equalsIgnoreCase(decision.action())) {
                 String question = StringUtils.hasText(decision.askUserQuestion()) ? decision.askUserQuestion() : "我还需要你补充一些信息，才能继续。";
                 conversationManager.saveWaiting(sessionId, effectiveQuestion, contexts, round);
-                events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待用户补充信息"));
-                events.add(AgentEvent.askUser(traceId, sessionId, round, question));
+                publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待用户补充信息"));
+                publisher.emit(AgentEvent.askUser(traceId, sessionId, round, question));
                 fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
                 return new OrchestrationResult(null, true, false);
             }
@@ -392,10 +403,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                             ? finalAnswerVerifier.verifyFinalAnswer(agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts)
                             : new AgentFinalAnswerVerifier.VerifyResult(true, "问题不要求精确事实，跳过复核");
                     if (shouldVerify) {
-                        events.add(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
+                        publisher.emit(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
                     }
                     if (verifyResult.pass()) {
-                        events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
+                        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
                         return new OrchestrationResult(decision.finalAnswer(), false, false);
                     }
                     contexts.add(new AgentContextItem(
@@ -423,8 +434,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 ToolDecision gatedDecision = findHumanGatedDecision(batch);
                 if (gatedDecision != null && !request.approveRiskyToolCall()) {
                     conversationManager.saveWaitingForGate(sessionId, effectiveQuestion, contexts, round, gatedDecision);
-                    events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
-                    events.add(AgentEvent.humanGate(
+                    publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
+                    publisher.emit(AgentEvent.humanGate(
                             traceId,
                             sessionId,
                             round,
@@ -434,7 +445,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     return new OrchestrationResult(null, true, false);
                 }
 
-                events.add(AgentEvent.state(
+                publisher.emit(AgentEvent.state(
                         traceId,
                         sessionId,
                         round,
@@ -443,7 +454,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         batch.size() > 1 ? "开始并发工具调用" : "开始工具调用"
                 ));
                 for (ToolDecision toolCall : batch) {
-                    events.add(AgentEvent.toolCall(traceId, sessionId, round, toolCall.toolName(), toolCall.args()));
+                    publisher.emit(AgentEvent.toolCall(traceId, sessionId, round, toolCall.toolName(), toolCall.args()));
                 }
                 List<AgentToolExecutionResult> batchResults = hookedToolExecutor.executeBatch(
                         batch,
@@ -453,12 +464,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         round,
                         effectiveQuestion
                 );
-                interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
+                interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
                 if (interruptedResult != null) {
                     return interruptedResult;
                 }
                 for (AgentToolExecutionResult batchResult : batchResults) {
-                    events.add(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
+                    publisher.emit(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
                     contexts.add(new AgentContextItem(
                             "conversation",
                             "tool_result_round_" + round + "_" + batchResult.toolName(),
@@ -494,13 +505,13 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             int round,
             String effectiveQuestion,
             List<AgentContextItem> contexts,
-            List<AgentEvent> events,
+            AgentEventPublisher publisher,
             long runEpoch
     ) {
         if (!shouldInterruptExecution(sessionId, runEpoch)) {
             return null;
         }
-        appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contexts, events);
+        appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contexts, publisher);
         return new OrchestrationResult(null, false, true);
     }
 
@@ -510,10 +521,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             int round,
             String effectiveQuestion,
             List<AgentContextItem> contexts,
-            List<AgentEvent> events
+            AgentEventPublisher publisher
     ) {
-        events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
-        events.add(AgentEvent.interrupted(traceId, sessionId, round));
+        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
+        publisher.emit(AgentEvent.interrupted(traceId, sessionId, round));
         conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round);
     }
 
