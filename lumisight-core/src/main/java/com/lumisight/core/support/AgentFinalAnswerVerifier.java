@@ -30,7 +30,7 @@ public class AgentFinalAnswerVerifier {
     public VerifyResult verifyFinalAnswer(AgentRequest request, String candidateAnswer, List<AgentContextItem> contexts) {
         try {
             String raw = llmChatClient.prompt()
-                    .system("你是严谨的答案复核器。")
+                    .system(agentPromptService.verifySystemPrompt())
                     .user(agentPromptService.verifyPrompt(request, candidateAnswer, contexts))
                     .call()
                     .content();
@@ -49,4 +49,3 @@ public class AgentFinalAnswerVerifier {
     public record VerifyResult(boolean pass, String reason) {
     }
 }
-

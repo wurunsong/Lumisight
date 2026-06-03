@@ -17,16 +17,19 @@ public class SkillAutoRouter {
     private final ChatClient llmChatClient;
     private final SkillCatalog skillCatalog;
     private final SkillRoutingProperties skillRoutingProperties;
+    private final AgentPromptService agentPromptService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SkillAutoRouter(
             ChatClient.Builder chatClientBuilder,
             SkillCatalog skillCatalog,
-            SkillRoutingProperties skillRoutingProperties
+            SkillRoutingProperties skillRoutingProperties,
+            AgentPromptService agentPromptService
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.skillCatalog = skillCatalog;
         this.skillRoutingProperties = skillRoutingProperties;
+        this.agentPromptService = agentPromptService;
     }
 
     public RouteResult route(String question) {
@@ -47,8 +50,8 @@ public class SkillAutoRouter {
         String response;
         try {
             response = llmChatClient.prompt()
-                    .system("你是技能路由器。输出严格 JSON: {\"skillId\":\"...|NONE\",\"confidence\":0~1,\"reason\":\"...\"}，禁止输出其他文本。")
-                    .user("用户问题:\n" + question + "\n\n可用技能:\n" + list + "\n返回最匹配技能。若不匹配返回 skillId=NONE，confidence 必须给出。")
+                    .system(agentPromptService.skillRouterSystemPrompt())
+                    .user(agentPromptService.skillRouterUserPrompt(question, list.toString()))
                     .call()
                     .content();
         } catch (Exception e) {

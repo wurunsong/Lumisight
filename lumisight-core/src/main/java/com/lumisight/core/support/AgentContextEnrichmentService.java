@@ -24,11 +24,13 @@ public class AgentContextEnrichmentService {
 
     private final KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider;
     private final SourceCodeLookupProvider sourceCodeLookupProvider;
+    private final AgentPromptService agentPromptService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentContextEnrichmentService(
             @Autowired(required = false) KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider,
-            @Autowired(required = false) SourceCodeLookupProvider sourceCodeLookupProvider
+            @Autowired(required = false) SourceCodeLookupProvider sourceCodeLookupProvider,
+            AgentPromptService agentPromptService
     ) {
         this.knowledgeGraphOneHopProvider = knowledgeGraphOneHopProvider == null
                 ? new NoopKnowledgeGraphOneHopProvider()
@@ -36,6 +38,7 @@ public class AgentContextEnrichmentService {
         this.sourceCodeLookupProvider = sourceCodeLookupProvider == null
                 ? new SourceCodeLookupProviderImpl()
                 : sourceCodeLookupProvider;
+        this.agentPromptService = agentPromptService;
     }
 
     public List<AgentContextItem> enrichAndFilter(
@@ -96,9 +99,9 @@ public class AgentContextEnrichmentService {
         if (!StringUtils.hasText(userQuestion) || contexts.isEmpty()) {
             return contexts;
         }
-        String prompt = buildRelevanceFilterPrompt(userQuestion, contexts, limit, toolName);
+        String prompt = agentPromptService.relevanceFilterPrompt(userQuestion, contexts, limit, toolName);
         String raw = llmChatClient.prompt()
-                .system("你是检索重排序器。只输出JSON，不输出其他文本。")
+                .system(agentPromptService.relevanceFilterSystemPrompt())
                 .user(prompt)
                 .call()
                 .content();
@@ -133,24 +136,6 @@ public class AgentContextEnrichmentService {
         } catch (Exception ignored) {
             return contexts;
         }
-    }
-
-    private String buildRelevanceFilterPrompt(String userQuestion, List<AgentContextItem> contexts, int limit, String toolName) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("用户问题: ").append(userQuestion).append("\\n");
-        builder.append("来源工具: ").append(toolName).append("\\n");
-        builder.append("最多保留条数: ").append(Math.max(1, limit * 2)).append("\\n\\n");
-        builder.append("候选上下文(按数组下标):\\n");
-        for (int i = 0; i < contexts.size(); i++) {
-            AgentContextItem item = contexts.get(i);
-            builder.append("[").append(i).append("] ")
-                    .append(item.sourceType()).append(" / ").append(item.sourceId()).append("\\n")
-                    .append(item.content()).append("\\n");
-        }
-        builder.append("\\n请返回 JSON 数组，每项包含 index 和 score，例如：");
-        builder.append("[{\\\"index\\\":0,\\\"score\\\":0.95},{\\\"index\\\":3,\\\"score\\\":0.80}]。");
-        builder.append("按相关性从高到低返回，score 范围 0-1。");
-        return builder.toString();
     }
 
     private String extractJsonArray(String raw) {
