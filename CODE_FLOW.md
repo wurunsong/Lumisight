@@ -191,3 +191,20 @@
   - `git log --since="2026-06-03 00:00:00" --until="2026-06-03 23:59:59"`：未识别到代码提交。
   - `git log -5 --date=iso`：最近提交停留在 `2026-06-02 17:56:46 +0800`（`6218cc2 docs: 同步当日提交到 CODE_FLOW 与架构文档`）。
   - `rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html README.md`：用于检查本次同步后是否残留占位标记。
+
+- 今日提交补记（更新事实，最终识别 24 commits）：
+  - SSE 与会话中断链路连续收敛：先后修复 `Broken pipe`、`AsyncRequestNotUsableException`、前端 stop 只断流不发 interrupt、SSE 关闭后未真正 cancel session、阻塞执行不响应中断等问题；当前 stop 已形成“前端 interrupt -> dispatcher cancel -> worker thread interrupt -> 安静收流”的完整链路。
+  - Agent 输出从“末尾集中返回”升级为“边执行边推送”：最终回答改为真实 `TOKEN` 流，内部 LLM 调用统一改成基于 streaming collector 采集，事件列表也改为 progressive emit，HTML 调试页可实时看到 `PLAN/DECIDE/TOOL_CALL/TOKEN/FINAL` 逐步到达。
+  - Agent loop 上下文增强：每轮都会把用户提示词、模型原始响应、工具结果摘要写回上下文；工具失败日志也在执行层与编排层双处打点，定位不再只剩 `[tool_error]` 标签。
+  - Hook、Git 与工具治理继续补齐：Hook 在 throw 前补全阻断日志，`.lumisight/` 被纳入 hook 运行期写权限；Git 工具补放行 `~/.gitconfig` / `~/.config/git`；最终阶段 `round` 不再错误回落到 `0`。
+  - Prompt 主骨架迁移到 `core/resources/prompt/*.st` 模板目录，`AgentPromptService` 从手拼字符串收敛为模板填充；同时把工具参数默认改为必填，统一提示词、schema 与运行时校验契约。
+  - 新增 `todo_write` 规划能力：会话内维护任务清单，支持 `pending/in_progress/completed` 状态更新；若连续 3 轮未刷新 todo，会在下一轮决策前自动注入 `<reminder>Update your todos.</reminder>`。
+  - 多线程基础设施统一收口：所有并发执行入口改走 `NamedExecutors`，新增 `ThreadContextRegistry + ContextAwareExecutorService`，让 `AgentToolRuntimeContext`、`AgentToolInvocationContext` 与 `MDC` 能随任务跨线程传播并在执行后恢复，避免线程池复用导致 `ThreadLocal` 丢失或串线。
+- 关键修复（补记）：
+  - “点了 Stop 但后端继续跑很久” -> 由单纯关闭 SSE 改为显式 `interrupt` 请求 + session cancel + worker thread interrupt，并对客户端断流按预期异常记 `warn` 收口。
+  - “并发工具执行读不到 runtime context” -> 为工具线程补齐运行时上下文传播，后续再统一到命名线程池上下文传播机制。
+  - “模型看不到上一轮发生了什么” -> 把循环内用户 prompt、模型响应和工具结果统一写回上下文，供下一轮决策消费。
+  - “复杂任务缺少显式计划维护” -> 新增 `todo_write` 会话级任务清单与 3 轮未更新提醒机制，把规划能力内建到 Agent 工具集。
+- 验证（补记）：
+  - `git log --since="2026-06-03 00:00:00" --until="2026-06-03 23:59:59"`：最终识别 24 条提交，覆盖 `core/api/common/hooks/docs` 全链路。
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：多次通过，覆盖文档同步前后的 Agent、线程池上下文传播、SSE 与工具治理改动。

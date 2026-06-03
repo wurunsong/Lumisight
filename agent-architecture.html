@@ -146,9 +146,18 @@
         <h3>2.4 决策循环链路</h3>
         <ul>
           <li>触发：编排引擎启动轮次循环。</li>
-          <li>处理：模型在每轮输出 tool / toolCalls / ask_user / final 决策，并显式给出工具参数 JSON。</li>
+          <li>处理：模型在每轮输出 tool / toolCalls / ask_user / final 决策，并显式给出工具参数 JSON；同时把本轮用户提示词、模型原始响应和工具结果摘要持续写回上下文。</li>
           <li>保护：轮次上限、决策解析容错、防止无限循环；提示词显式约束模型不要依赖服务端默认值偷省范围参数。</li>
-          <li>输出：把复杂问题拆成可执行的多轮动作，并为后续工具调度提供结构化参数。</li>
+          <li>输出：把复杂问题拆成可执行的多轮动作，并让下一轮决策真正看到上一轮发生了什么。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.4b 任务规划链路</h3>
+        <ul>
+          <li>触发：问题是明显多步骤任务，或连续多轮执行后仍需维护节奏。</li>
+          <li>处理：模型调用 `todo_write` 维护会话内任务清单，把步骤状态从 `pending` 更新到 `in_progress` / `completed`。</li>
+          <li>保护：若连续 3 轮没有刷新任务清单，系统会在下一轮决策前自动注入 reminder，提醒先更新 todo 再继续。</li>
+          <li>输出：给 Agent 增加规划能力和可追踪执行节奏，而不是额外外部执行能力。</li>
         </ul>
       </article>
       <article class="card">
@@ -173,9 +182,9 @@
         <h3>2.7 最终答案链路</h3>
         <ul>
           <li>触发：决策收敛到 final 或达到可回答状态。</li>
-          <li>处理：必要时进行答案复核，再生成最终输出事件流。</li>
+          <li>处理：必要时进行答案复核，再生成最终输出事件流；最终答案阶段按真实 `TOKEN` 流持续回传，主循环阶段事件也会渐进发出。</li>
           <li>保护：复核失败回退继续推理，防止低质量直接出结果；模型 HTTP 超时与重试次数单独治理，避免决策阶段长时间悬停。</li>
-          <li>输出：返回 FINAL/TOKEN 事件与可追踪证据；当前仍是“事件流 + 最终文本聚合”，并非真正 token 级流式生成。</li>
+          <li>输出：返回渐进式 `PLAN/TOOL/TOKEN/FINAL` 事件与可追踪证据；当前最终回答已是真流式，但中间推理 token 仍以内采集为主。</li>
         </ul>
       </article>
       <article class="card">
@@ -238,7 +247,7 @@
           <li>运行中收到新问题触发会话调度。</li>
           <li>FOLLOW/COLLECT/STEER 在 mailbox 投递层分流。</li>
           <li>状态机约束迁移合法性，单 worker 串行消费确保不会重复开执行链。</li>
-          <li>等待态超时自动清理，运行态通过租约与中断标记控制。</li>
+          <li>等待态超时自动清理，运行态通过租约与中断标记控制；Stop 会走“前端 interrupt -> dispatcher cancel -> worker interrupt -> 静默收流”的完整闭环。</li>
           <li>保证会话行为可预测，也更接近真实续聊产品语义。</li>
         </ul>
       </article>
@@ -262,6 +271,15 @@
           <li>低置信回退默认路径，未注册路径不会直接参与执行。</li>
           <li>执行计划与 skill 原文共同影响 prompt、权限与策略。</li>
           <li>兼顾自动化与可控性，也让测试型 skill 能直接观察到模型行为变化。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>亮点 E：线程上下文传播</h3>
+        <ul>
+          <li>并发任务提交到统一的命名线程池。</li>
+          <li>线程池在提交时捕获父线程里的 runtime context、invocation context 和日志 MDC。</li>
+          <li>子线程执行前恢复这些上下文，执行后再恢复线程原有状态，避免线程池复用造成 `ThreadLocal` 丢失或串线。</li>
+          <li>这样并发工具、混合检索、会话 worker 与后台 drain 线程都能共享同一套上下文传播语义。</li>
         </ul>
       </article>
     </section>

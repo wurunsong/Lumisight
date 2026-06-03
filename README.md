@@ -35,6 +35,8 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 - 核心编排已与传输协议解耦：统一通过 `AgentExecutionEngine` 执行主流程。
 - API 侧通过 `AgentTransportAdapter` + `AgentStreamGateway` 适配不同协议（当前内置 SSE 与 WebSocket）。
 - 同一 `sessionId` 的消息现在先进入本地 dispatcher/mailbox，再由单 worker 串行消费；`FOLLOW/COLLECT/STEER` 在消息投递层决策，而不是入口直接并发执行。
+- SSE 主链路已经改为 progressive emit：`INIT/PLAN/DECIDE/TOOL_CALL/TOOL_RESULT/TOKEN/FINAL` 会边执行边推送，不再等整轮编排结束后集中返回。
+- 前端调试页的 `Stop` 已改为“先发送 `interrupt=true` 请求，再关闭本地 SSE”；后端会同步执行 session cancel、订阅释放与 worker thread interrupt。
 - 协议契约文档见：`AGENT_PROTOCOL.md`（中文）。
 
 ## Sandbox 执行与回滚
@@ -174,7 +176,7 @@ mvn -pl lumisight-api -am spring-boot:run
 ### Agent 接口（SSE 流式）
 
 - `POST /api/lumisight/agent/stream`：以 `text/event-stream` 持续返回 Agent 事件流。
-- 说明：当前是“事件流 + 最终文本聚合”，不是模型 token 级真流式输出；工具调用和多轮思考完成前，最终回答仍可能后置出现。
+- 说明：最终回答阶段已经支持真实 `TOKEN` 流式输出，同时主循环事件也会渐进推送；但 `PLAN/DECIDE/VERIFY` 等中间模型推理目前仍以内部流式采集为主，前端看到的重点仍是阶段事件与最终回答 token。
 - 请求字段：
   - `taskType`：`CODE_EXPLAIN` / `BUG_FIX` / `CHAT`（可为空，空时按服务默认策略处理）
   - `repoRoot`：仓库根路径
@@ -200,6 +202,7 @@ mvn -pl lumisight-api -am spring-boot:run
   - `TOKEN`：流式文本片段
   - `FINAL`：直接最终回答
   - `ERROR`：错误事件
+  - `INTERRUPTED` / `RESUMED`：会话被中断或恢复执行
 
 ### Agent 接口（WebSocket）
 
@@ -268,6 +271,7 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 - GRAPH：`fetchOneHopByKgNodeId`
 - SOURCE：`fetchMethodSourceByLocation`
 - MCP：`callMcpCapability`
+- PLANNING：`todo_write`
 
 ## 工具参数与执行模型
 
@@ -280,6 +284,23 @@ curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
 - 多工具调用支持“连续并发安全批次”：
   - 读工具可按连续块并发执行
   - 写工具、编译、回滚与有顺序依赖的调用仍保持串行
+- 新增 `todo_write` 任务清单工具：
+  - 作用是给 Agent 增加规划能力，而不是新增外部执行能力。
+  - 参数为 `todos[{content,status}]`，状态支持 `pending / in_progress / completed`。
+  - 若复杂任务连续 3 轮没有刷新 todo，系统会在下一次决策前自动注入 `<reminder>Update your todos.</reminder>`。
+
+## 线程池与上下文传播
+
+- 所有多线程执行统一来自 `NamedExecutors`，不允许业务代码直接裸用 `Executors.*` 或 `new Thread(...)`。
+- `NamedExecutors` 返回的是带上下文传播能力的 `ContextAwareExecutorService`：
+  - 提交任务时捕获父线程上下文
+  - 子线程执行前恢复
+  - 执行后恢复原线程上下文，避免线程池复用造成串线
+- 当前已注册并自动传播的上下文包括：
+  - `AgentToolRuntimeContext`
+  - `AgentToolInvocationContext`
+  - `SLF4J MDC`
+- 这套机制已覆盖会话 worker、并发工具执行、混合向量并行检索和 JDTLS 后台 drain 线程。
 
 ## 文档同步约定
 
