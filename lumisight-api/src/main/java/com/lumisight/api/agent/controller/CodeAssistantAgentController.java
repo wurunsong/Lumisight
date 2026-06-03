@@ -73,6 +73,11 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
             }
             throw new IllegalStateException("failed to send sse event", e);
         } catch (Exception e) {
+            if (isClientAbort(e) || isEmitterCompleted(e) || isAsyncResponseClosed(e)) {
+                log.info("sse emitter already closed, skip event send, eventType={}, message={}", event.type(), e.getMessage());
+                streamGateway.cancel(sessionId, "SSE emitter already closed.");
+                return;
+            }
             throw new IllegalStateException("failed to send sse event", e);
         }
     }
@@ -154,6 +159,18 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
                 return true;
             }
             if (message != null && message.toLowerCase().contains("response not usable")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isEmitterCompleted(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase().contains("responsebodyemitter has already completed")) {
                 return true;
             }
             current = current.getCause();

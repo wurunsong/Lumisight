@@ -11,6 +11,7 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.time.Instant;
 
 @RestControllerAdvice
@@ -23,6 +24,18 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         log.debug("Async response already closed, path={}, message={}", request.getRequestURI(), ex.getMessage());
+    }
+
+    @ExceptionHandler(IOException.class)
+    public void handleIoException(
+            IOException ex,
+            HttpServletRequest request
+    ) throws IOException {
+        if (isClientDisconnect(ex)) {
+            log.info("Client disconnected, path={}, message={}", request.getRequestURI(), ex.getMessage());
+            return;
+        }
+        throw ex;
     }
 
     @ExceptionHandler(NonTransientAiException.class)
@@ -116,5 +129,24 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(),
                 Instant.now().toString()
         ));
+    }
+
+    private boolean isClientDisconnect(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String name = current.getClass().getName();
+            String message = current.getMessage();
+            if (name.contains("ClientAbortException")) {
+                return true;
+            }
+            if (message != null) {
+                String lower = message.toLowerCase();
+                if (lower.contains("broken pipe") || lower.contains("connection reset by peer")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }
