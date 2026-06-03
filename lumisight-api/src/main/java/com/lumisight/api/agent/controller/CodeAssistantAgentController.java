@@ -64,7 +64,7 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         } catch (IOException e) {
             if (isClientAbort(e)) {
                 log.info("sse client disconnected, skip event send, eventType={}, message={}", event.type(), e.getMessage());
-                emitter.complete();
+                safeComplete(emitter, "client_abort_send");
                 return;
             }
             throw new IllegalStateException("failed to send sse event", e);
@@ -92,6 +92,46 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         return false;
     }
 
+    private void safeComplete(SseEmitter emitter, String reason) {
+        try {
+            emitter.complete();
+        } catch (Exception completeError) {
+            if (isAsyncResponseClosed(completeError) || isClientAbort(completeError)) {
+                log.debug("sse emitter complete ignored, reason={}, message={}", reason, completeError.getMessage());
+                return;
+            }
+            throw completeError;
+        }
+    }
+
+    private void safeCompleteWithError(SseEmitter emitter, Throwable error) {
+        try {
+            emitter.completeWithError(error);
+        } catch (Exception completeError) {
+            if (isAsyncResponseClosed(completeError) || isClientAbort(completeError)) {
+                log.debug("sse emitter completeWithError ignored, message={}", completeError.getMessage());
+                return;
+            }
+            throw completeError;
+        }
+    }
+
+    private boolean isAsyncResponseClosed(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String name = current.getClass().getName();
+            String message = current.getMessage();
+            if (name.contains("AsyncRequestNotUsableException")) {
+                return true;
+            }
+            if (message != null && message.toLowerCase().contains("response not usable")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private final class SseEventChannel implements AgentEventChannel {
         private final SseEmitter emitter;
 
@@ -108,15 +148,15 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         public void onError(Throwable error) {
             if (isClientAbort(error)) {
                 log.info("sse channel closed by client, suppress completeWithError, message={}", error == null ? "" : error.getMessage());
-                emitter.complete();
+                safeComplete(emitter, "client_abort_channel");
                 return;
             }
-            emitter.completeWithError(error);
+            safeCompleteWithError(emitter, error);
         }
 
         @Override
         public void onComplete() {
-            emitter.complete();
+            safeComplete(emitter, "channel_complete");
         }
     }
 }
