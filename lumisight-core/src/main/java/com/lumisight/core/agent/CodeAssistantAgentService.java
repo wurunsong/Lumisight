@@ -123,6 +123,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             String directAnswerDraft = null;
             boolean askUser = false;
             boolean interrupted = false;
+            int finalRound = 0;
             int startRound = 1;
             SkillPlan skillPlan = new SkillPlan(
                     "未指定技能，走默认编排",
@@ -255,6 +256,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             directAnswerDraft = result.directAnswer();
             askUser = result.askUser();
             interrupted = result.interrupted();
+            finalRound = result.finalRound();
         }
 
         if (askUser) {
@@ -282,13 +284,13 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
         AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit, skillPlan);
-        fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", StringUtils.hasText(directAnswerDraft)));
+        fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, finalRound, effectiveQuestion, null, Map.of("directAnswer", StringUtils.hasText(directAnswerDraft)));
         if (shouldInterruptExecution(sessionId, runEpoch)) {
-            appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, publisher);
+            appendInterruptedEvents(traceId, sessionId, finalRound, effectiveQuestion, contexts, publisher);
             sink.complete();
             return;
         }
-        publisher.emit(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
+        publisher.emit(AgentEvent.state(traceId, sessionId, finalRound, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
         StringBuilder finalAnswerBuffer = new StringBuilder();
         llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
@@ -298,13 +300,13 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
                 .doOnNext(content -> {
                     finalAnswerBuffer.append(content);
-                    publisher.emit(AgentEvent.token(traceId, sessionId, content));
+                    publisher.emit(AgentEvent.token(traceId, sessionId, finalRound, content));
                 })
                 .blockLast();
         if (!shouldInterruptExecution(sessionId, runEpoch)) {
             String finalAnswer = finalAnswerBuffer.toString();
             if (!finalAnswer.isBlank()) {
-                publisher.emit(AgentEvent.finalText(traceId, sessionId, finalAnswer));
+                publisher.emit(AgentEvent.finalText(traceId, sessionId, finalRound, finalAnswer));
             }
         }
         sink.complete();
@@ -337,7 +339,9 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             Set<AgentToolPermission> enabledPermissions,
             long runEpoch
     ) {
+        int lastRound = Math.max(0, startRound - 1);
         for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
+            lastRound = round;
             OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;
@@ -393,7 +397,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待用户补充信息"));
                 publisher.emit(AgentEvent.askUser(traceId, sessionId, round, question));
                 fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
-                return new OrchestrationResult(null, true, false);
+                return new OrchestrationResult(null, true, false, round);
             }
 
             if ("final".equalsIgnoreCase(decision.action())) {
@@ -407,7 +411,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     }
                     if (verifyResult.pass()) {
                         publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
-                        return new OrchestrationResult(decision.finalAnswer(), false, false);
+                        return new OrchestrationResult(decision.finalAnswer(), false, false, round);
                     }
                     contexts.add(new AgentContextItem(
                             "verifier",
@@ -442,7 +446,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                             gatedDecision.toolName(),
                             "即将执行写操作工具 `" + gatedDecision.toolName() + "`，请确认后继续（approveRiskyToolCall=true）。"
                     ));
-                    return new OrchestrationResult(null, true, false);
+                    return new OrchestrationResult(null, true, false, round);
                 }
 
                 publisher.emit(AgentEvent.state(
@@ -496,7 +500,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 break;
             }
         }
-        return new OrchestrationResult(null, false, false);
+        return new OrchestrationResult(null, false, false, Math.max(0, lastRound));
     }
 
     private OrchestrationResult checkInterrupted(
@@ -512,7 +516,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             return null;
         }
         appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contexts, publisher);
-        return new OrchestrationResult(null, false, true);
+        return new OrchestrationResult(null, false, true, round);
     }
 
     private void appendInterruptedEvents(
@@ -676,6 +680,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         return builder.toString().trim();
     }
 
-    private record OrchestrationResult(String directAnswer, boolean askUser, boolean interrupted) {
+    private record OrchestrationResult(String directAnswer, boolean askUser, boolean interrupted, int finalRound) {
     }
 }

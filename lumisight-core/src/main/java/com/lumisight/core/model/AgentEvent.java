@@ -136,12 +136,20 @@ public record AgentEvent(
         return base("TOKEN", content, null, Map.of(), traceId, sessionId, 0, "FINAL_STREAM", "streaming");
     }
 
+    public static AgentEvent token(String traceId, String sessionId, Integer round, String content) {
+        return base("TOKEN", content, null, Map.of(), traceId, sessionId, round, "FINAL_STREAM", "streaming");
+    }
+
     public static AgentEvent finalText(String content) {
         return base("FINAL", content, null, Map.of(), "", "", 0, "FINAL", "ok");
     }
 
     public static AgentEvent finalText(String traceId, String sessionId, String content) {
         return base("FINAL", content, null, Map.of(), traceId, sessionId, 0, "FINAL", "ok");
+    }
+
+    public static AgentEvent finalText(String traceId, String sessionId, Integer round, String content) {
+        return base("FINAL", content, null, Map.of(), traceId, sessionId, round, "FINAL", "ok");
     }
 
     public static AgentEvent error(String message) {
