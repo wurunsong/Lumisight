@@ -178,7 +178,9 @@ public class ConfigurableAgentHook implements AgentHook {
         try {
             payloadJson = objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
-            throw new IllegalStateException("serialize hook payload failed: " + e.getMessage());
+            log.error("configurable_hook payload serialization failed, point={}, toolName={}, sessionId={}, round={}, error={}",
+                    point, context.toolName(), context.sessionId(), context.round(), e.getMessage(), e);
+            throw new IllegalStateException("serialize hook payload failed: " + e.getMessage(), e);
         }
 
         try {
@@ -210,24 +212,38 @@ public class ConfigurableAgentHook implements AgentHook {
                     plan.policy()
             ));
             if (result.timedOut()) {
-                throw new IllegalStateException("Hook command timeout (" + hook.timeoutMs() + "ms): " + hook.command());
+                String message = "Hook command timeout (" + hook.timeoutMs() + "ms): " + hook.command();
+                log.warn("configurable_hook timeout, point={}, toolName={}, sessionId={}, round={}, command={}, sandboxPlan={}, output={}",
+                        point, context.toolName(), context.sessionId(), context.round(), command, summarizePlan(plan), trimForLog(result.output()));
+                throw new IllegalStateException(message);
             }
             String output = result.output() == null ? "" : result.output().trim();
             if (result.exitCode() != 0) {
-                throw new IllegalStateException("Hook command blocked request: " + hook.command() + " | " + output);
+                String message = "Hook command blocked request: " + hook.command() + " | " + output;
+                log.warn("configurable_hook blocked, point={}, toolName={}, sessionId={}, round={}, command={}, exitCode={}, sandboxPlan={}, output={}",
+                        point, context.toolName(), context.sessionId(), context.round(), command, result.exitCode(),
+                        summarizePlan(plan), trimForLog(output));
+                throw new IllegalStateException(message);
             }
             if (!output.isBlank() && output.startsWith("{")) {
                 Map<String, Object> hookResult = objectMapper.readValue(output, new TypeReference<>() {});
                 Object cont = hookResult.get("continue");
                 if (cont instanceof Boolean bool && !bool) {
                     String reason = asString(hookResult.get("reason"), "blocked by hook");
+                    log.warn("configurable_hook denied by payload, point={}, toolName={}, sessionId={}, round={}, command={}, sandboxPlan={}, output={}",
+                            point, context.toolName(), context.sessionId(), context.round(), command,
+                            summarizePlan(plan), trimForLog(output));
                     throw new IllegalStateException(reason);
                 }
             }
         } catch (IllegalStateException e) {
+            log.warn("configurable_hook failed, point={}, toolName={}, sessionId={}, round={}, command={}, error={}",
+                    point, context.toolName(), context.sessionId(), context.round(), hook.command(), e.getMessage(), e);
             throw e;
         } catch (Exception e) {
-            throw new IllegalStateException("Hook command execution failed: " + hook.command() + " | " + e.getMessage());
+            log.error("configurable_hook execution exception, point={}, toolName={}, sessionId={}, round={}, command={}, error={}",
+                    point, context.toolName(), context.sessionId(), context.round(), hook.command(), e.getMessage(), e);
+            throw new IllegalStateException("Hook command execution failed: " + hook.command() + " | " + e.getMessage(), e);
         }
     }
 
@@ -291,6 +307,31 @@ public class ConfigurableAgentHook implements AgentHook {
         command.add(scriptPath.toString());
         command.addAll(hook.args());
         return List.copyOf(command);
+    }
+
+    private String summarizePlan(SandboxExecutionPlan plan) {
+        if (plan == null || plan.policy() == null) {
+            return "{}";
+        }
+        return "{subject=" + plan.subject()
+                + ", mode=" + plan.policy().mode()
+                + ", networkEnabled=" + plan.policy().networkEnabled()
+                + ", readablePaths=" + plan.policy().readablePaths()
+                + ", writablePaths=" + plan.policy().writablePaths()
+                + ", executablePaths=" + plan.policy().executablePaths()
+                + "}";
+    }
+
+    private String trimForLog(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String normalized = text.trim();
+        int maxChars = 1000;
+        if (normalized.length() <= maxChars) {
+            return normalized;
+        }
+        return normalized.substring(0, maxChars) + "...(truncated)";
     }
 
     private Path resolveConfigPath(String configuredPath) {
