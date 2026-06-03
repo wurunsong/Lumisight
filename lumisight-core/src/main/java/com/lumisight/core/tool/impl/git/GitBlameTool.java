@@ -78,13 +78,17 @@ public class GitBlameTool implements PermissionedAgentTool<GitBlameTool.Args> {
         cmd.add(sourceFile);
 
         Path targetFile = GitRepoPathSupport.resolveInRepo(root, sourceFile);
+        List<String> readablePaths = new ArrayList<>();
+        readablePaths.add(root.resolve(".git").toString());
+        readablePaths.add(targetFile.toString());
+        readablePaths.addAll(GitRepoPathSupport.readableGitConfigPaths());
         Map<String, Object> result = commandRunner.run(root, cmd, new SandboxAccessSpec(
                 "gitBlame",
                 false,
-                List.of(root.resolve(".git").toString(), targetFile.toString()),
+                readablePaths,
                 List.of(),
                 List.of(),
-                List.of("git blame is scoped to the requested file and repository metadata")
+                List.of("git blame is scoped to the requested file, repository metadata, and global git config")
         ));
         return List.of(new AgentContextItem(
                 "git",

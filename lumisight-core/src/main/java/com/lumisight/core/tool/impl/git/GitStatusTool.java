@@ -11,6 +11,7 @@ import com.lumisight.core.tool.ToolArg;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -61,13 +62,17 @@ public class GitStatusTool implements PermissionedAgentTool<GitStatusTool.Args> 
         List<String> cmd = shortFormat
                 ? List.of("git", "status", "--short", "--branch")
                 : List.of("git", "status");
+        List<String> readablePaths = new ArrayList<>();
+        readablePaths.add(root.toString());
+        readablePaths.add(root.resolve(".git").toString());
+        readablePaths.addAll(GitRepoPathSupport.readableGitConfigPaths());
         Map<String, Object> result = commandRunner.run(root, cmd, new SandboxAccessSpec(
                 "gitStatus",
                 false,
-                List.of(root.toString(), root.resolve(".git").toString()),
+                readablePaths,
                 List.of(),
                 List.of(),
-                List.of("git status only needs repository metadata and worktree read access")
+                List.of("git status needs repository metadata, worktree read access, and global git config read access")
         ));
         return List.of(new AgentContextItem(
                 "git",

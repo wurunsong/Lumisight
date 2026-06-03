@@ -71,12 +71,15 @@ public class GitDiffTool implements PermissionedAgentTool<GitDiffTool.Args> {
             cmd.add("--");
             cmd.add(sourceFile);
         }
-        List<String> readablePaths = sourceFile.isBlank()
-                ? List.of(root.toString(), root.resolve(".git").toString())
-                : List.of(
-                        root.resolve(".git").toString(),
-                        GitRepoPathSupport.resolveInRepo(root, sourceFile).toString()
-                );
+        List<String> readablePaths = new ArrayList<>();
+        if (sourceFile.isBlank()) {
+            readablePaths.add(root.toString());
+            readablePaths.add(root.resolve(".git").toString());
+        } else {
+            readablePaths.add(root.resolve(".git").toString());
+            readablePaths.add(GitRepoPathSupport.resolveInRepo(root, sourceFile).toString());
+        }
+        readablePaths.addAll(GitRepoPathSupport.readableGitConfigPaths());
         Map<String, Object> result = commandRunner.run(root, cmd, new SandboxAccessSpec(
                 "gitDiff",
                 false,
@@ -84,8 +87,8 @@ public class GitDiffTool implements PermissionedAgentTool<GitDiffTool.Args> {
                 List.of(),
                 List.of(),
                 List.of(sourceFile.isBlank()
-                        ? "git diff without file scope falls back to repository read access"
-                        : "git diff is limited to the requested file plus .git metadata")
+                        ? "git diff without file scope falls back to repository read access plus global git config"
+                        : "git diff is limited to the requested file, .git metadata, and global git config")
         ));
         return List.of(new AgentContextItem(
                 "git",
