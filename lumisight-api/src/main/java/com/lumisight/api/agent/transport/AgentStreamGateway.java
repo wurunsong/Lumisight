@@ -19,6 +19,10 @@ public class AgentStreamGateway {
                 .doOnNext(channel::onEvent)
                 .doOnError(channel::onError)
                 .doOnComplete(channel::onComplete)
-                .subscribe();
+                .subscribe(
+                        event -> { },
+                        error -> { },
+                        channel::onComplete
+                );
     }
 }
