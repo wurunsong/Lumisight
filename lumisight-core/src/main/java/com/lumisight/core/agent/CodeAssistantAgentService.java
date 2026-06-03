@@ -26,6 +26,8 @@ import com.lumisight.hooks.AgentHookPoint;
 import com.lumisight.skills.runtime.SkillContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import com.lumisight.skills.runtime.SkillRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -43,6 +45,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
+    private static final Logger log = LoggerFactory.getLogger(CodeAssistantAgentService.class);
 
     private final ChatClient llmChatClient;
     private final AgentToolRegistry agentToolRegistry;
@@ -305,6 +308,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             }
 
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
+            log.info("agent_loop decide, sessionId={}, round={}, question={}, contextSummary={}, errorContexts={}",
+                    sessionId, round, effectiveQuestion, summarizeContextRefs(contexts), summarizeErrorContexts(contexts));
             fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
             String decisionRaw = llmChatClient.prompt()
                     .system(agentPromptService.orchestratorSystemPrompt(
@@ -325,6 +330,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     .call()
                     .content();
             fireHook(AgentHookPoint.AFTER_DECISION, sessionId, round, effectiveQuestion, null, Map.of("decisionRaw", decisionRaw));
+            log.info("agent_loop decision_raw, sessionId={}, round={}, decisionRaw={}", sessionId, round, trimForLog(decisionRaw));
             ToolDecision decision = parseDecision(decisionRaw);
 
             if ("ask_user".equalsIgnoreCase(decision.action())) {
@@ -406,6 +412,11 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 );
                 for (AgentToolExecutionResult batchResult : batchResults) {
                     events.add(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
+                    if (!"ok".equals(batchResult.status()) || containsToolError(batchResult.items())) {
+                        log.warn("agent_loop tool_result_error, sessionId={}, round={}, toolName={}, status={}, message={}, items={}",
+                                sessionId, round, batchResult.toolName(), batchResult.status(), batchResult.message(),
+                                summarizeContextItems(batchResult.items()));
+                    }
                     if (!batchResult.items().isEmpty()) {
                         producedContext = true;
                         contexts.addAll(batchResult.items());
@@ -485,6 +496,56 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 toolName,
                 metadata == null ? Map.of() : metadata
         ));
+    }
+
+    private boolean containsToolError(List<AgentContextItem> items) {
+        return items != null && items.stream().anyMatch(item -> "tool_error".equals(item.sourceType()));
+    }
+
+    private String summarizeContextRefs(List<AgentContextItem> contexts) {
+        if (contexts == null || contexts.isEmpty()) {
+            return "[]";
+        }
+        return contexts.stream()
+                .map(item -> "[" + item.sourceType() + "]" + item.sourceId())
+                .reduce((a, b) -> a + ", " + b)
+                .map(text -> "[" + text + "]")
+                .orElse("[]");
+    }
+
+    private String summarizeErrorContexts(List<AgentContextItem> contexts) {
+        if (contexts == null || contexts.isEmpty()) {
+            return "[]";
+        }
+        return contexts.stream()
+                .filter(item -> "tool_error".equals(item.sourceType()) || "verifier".equals(item.sourceType()))
+                .map(item -> "{sourceId=" + item.sourceId() + ", content=" + trimForLog(item.content()) + ", metadata=" + item.metadata() + "}")
+                .reduce((a, b) -> a + ", " + b)
+                .map(text -> "[" + text + "]")
+                .orElse("[]");
+    }
+
+    private String summarizeContextItems(List<AgentContextItem> items) {
+        if (items == null || items.isEmpty()) {
+            return "[]";
+        }
+        return items.stream()
+                .map(item -> "{sourceType=" + item.sourceType() + ", sourceId=" + item.sourceId() + ", content=" + trimForLog(item.content()) + ", metadata=" + item.metadata() + "}")
+                .reduce((a, b) -> a + ", " + b)
+                .map(text -> "[" + text + "]")
+                .orElse("[]");
+    }
+
+    private String trimForLog(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String normalized = text.trim();
+        int maxChars = 1000;
+        if (normalized.length() <= maxChars) {
+            return normalized;
+        }
+        return normalized.substring(0, maxChars) + "...(truncated)";
     }
 
     private record OrchestrationResult(String directAnswer, boolean askUser, boolean interrupted) {

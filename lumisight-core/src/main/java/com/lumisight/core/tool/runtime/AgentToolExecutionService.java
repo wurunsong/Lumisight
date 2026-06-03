@@ -9,6 +9,8 @@ import com.lumisight.core.support.ToolSchemaValidator;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -21,6 +23,7 @@ import java.util.Set;
 public class AgentToolExecutionService {
 
     private static final int TOOL_MAX_RETRY = 2;
+    private static final Logger log = LoggerFactory.getLogger(AgentToolExecutionService.class);
 
     private final AgentToolRegistry agentToolRegistry;
     private final ObjectMapper objectMapper;
@@ -50,26 +53,26 @@ public class AgentToolExecutionService {
         Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
         PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
         if (tool == null) {
-            return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName));
+            return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName), hookContext, args);
         }
         if (!enabledPermissions.contains(tool.permission())) {
-            return errorToolResult(toolName, "permission_denied", "工具未启用: " + toolName, Map.of("toolName", toolName));
+            return errorToolResult(toolName, "permission_denied", "工具未启用: " + toolName, Map.of("toolName", toolName), hookContext, args);
         }
         List<String> schemaErrors = ToolSchemaValidator.validate(args, tool.argumentSpecs());
         if (!schemaErrors.isEmpty()) {
-            return errorToolResult(toolName, "schema_invalid", "工具参数结构校验失败", Map.of("errors", schemaErrors));
+            return errorToolResult(toolName, "schema_invalid", "工具参数结构校验失败", Map.of("errors", schemaErrors), hookContext, args);
         }
         Object typedArgs;
         try {
             typedArgs = bindArgs(tool, args);
         } catch (IllegalArgumentException e) {
-            return errorToolResult(toolName, "schema_invalid", "工具参数转换失败", Map.of("errors", List.of(e.getMessage())));
+            return errorToolResult(toolName, "schema_invalid", "工具参数转换失败", Map.of("errors", List.of(e.getMessage())), hookContext, args);
         }
         List<String> validationErrors = validateArgs(tool, typedArgs);
         if (!validationErrors.isEmpty()) {
-            return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors));
+            return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors), hookContext, args);
         }
-        AgentToolExecutionResult primary = invokeWithRetry(tool, typedArgs, limit, TOOL_MAX_RETRY);
+        AgentToolExecutionResult primary = invokeWithRetry(tool, typedArgs, limit, TOOL_MAX_RETRY, hookContext, args);
         if ("ok".equals(primary.status())) {
             return primary;
         }
@@ -151,7 +154,14 @@ public class AgentToolExecutionService {
         return tool.validateArgs(tool.argsType().cast(typedArgs));
     }
 
-    private <T> AgentToolExecutionResult invokeWithRetry(PermissionedAgentTool<T> tool, Object typedArgs, int limit, int maxRetry) {
+    private <T> AgentToolExecutionResult invokeWithRetry(
+            PermissionedAgentTool<T> tool,
+            Object typedArgs,
+            int limit,
+            int maxRetry,
+            ToolHookContext hookContext,
+            Map<String, Object> rawArgs
+    ) {
         String toolName = tool.toolName();
         Exception lastError = null;
         for (int attempt = 1; attempt <= maxRetry; attempt++) {
@@ -160,9 +170,18 @@ public class AgentToolExecutionService {
                 return new AgentToolExecutionResult(toolName, "ok", "工具执行成功", items, Map.of("count", items.size(), "attempt", attempt));
             } catch (Exception e) {
                 lastError = e;
+                log.warn("agent_tool invoke failed, sessionId={}, round={}, toolName={}, attempt={}, args={}, error={}",
+                        hookContext.sessionId(), hookContext.round(), toolName, attempt, rawArgs, e.getMessage(), e);
             }
         }
-        return errorToolResult(toolName, "tool_invoke_failed", "工具调用失败: " + (lastError == null ? "unknown" : lastError.getMessage()), Map.of());
+        return errorToolResult(
+                toolName,
+                "tool_invoke_failed",
+                "工具调用失败: " + (lastError == null ? "unknown" : lastError.getMessage()),
+                Map.of(),
+                hookContext,
+                rawArgs
+        );
     }
 
     private AgentToolExecutionResult tryFallback(String toolName, Map<String, Object> args, int limit, Set<AgentToolPermission> enabledPermissions) {
@@ -189,7 +208,7 @@ public class AgentToolExecutionService {
         if (!errors.isEmpty()) {
             return null;
         }
-        AgentToolExecutionResult result = invokeWithRetry(fallback, typedArgs, limit, 1);
+        AgentToolExecutionResult result = invokeWithRetry(fallback, typedArgs, limit, 1, ToolHookContext.empty(), fallbackArgs);
         if ("ok".equals(result.status())) {
             return new AgentToolExecutionResult(
                     result.toolName(),
@@ -243,7 +262,16 @@ public class AgentToolExecutionService {
         return args;
     }
 
-    private AgentToolExecutionResult errorToolResult(String toolName, String errorCode, String message, Map<String, Object> meta) {
+    private AgentToolExecutionResult errorToolResult(
+            String toolName,
+            String errorCode,
+            String message,
+            Map<String, Object> meta,
+            ToolHookContext hookContext,
+            Map<String, Object> args
+    ) {
+        log.warn("agent_tool error, sessionId={}, round={}, toolName={}, errorCode={}, message={}, args={}, meta={}",
+                hookContext.sessionId(), hookContext.round(), toolName, errorCode, message, args, meta);
         List<AgentContextItem> items = List.of(new AgentContextItem("tool_error", errorCode, message, meta));
         return new AgentToolExecutionResult(toolName, "error", message, items, Map.of("errorCode", errorCode));
     }
