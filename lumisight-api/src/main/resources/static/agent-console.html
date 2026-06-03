@@ -194,7 +194,7 @@
     const statusBox = $("status");
     const SESSION_KEY = "lumisight.agent.sessionId";
     const USER_KEY = "lumisight.agent.userId";
-    const activeAborters = new Set();
+    const activeRuns = new Set();
 
     function randomId(prefix) {
       return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -294,8 +294,9 @@
       const requestBody = payload();
       const runView = createRunView(requestBody);
       const aborter = new AbortController();
-      activeAborters.add(aborter);
-      statusBox.textContent = activeAborters.size > 1 ? "streaming multiple requests..." : "connecting...";
+      const activeRun = { aborter, sessionId: requestBody.sessionId, taskType: requestBody.taskType };
+      activeRuns.add(activeRun);
+      statusBox.textContent = activeRuns.size > 1 ? "streaming multiple requests..." : "connecting...";
 
       const response = await fetch("/api/lumisight/agent/stream", {
         method: "POST",
@@ -304,7 +305,7 @@
         signal: aborter.signal
       });
       if (!response.ok || !response.body) {
-        activeAborters.delete(aborter);
+        activeRuns.delete(activeRun);
         statusBox.textContent = "failed: HTTP " + response.status;
         runView.appendStream("HTTP error: " + response.status);
         return;
@@ -317,8 +318,8 @@
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          activeAborters.delete(aborter);
-          statusBox.textContent = activeAborters.size === 0 ? "completed" : "streaming...";
+          activeRuns.delete(activeRun);
+          statusBox.textContent = activeRuns.size === 0 ? "completed" : "streaming...";
           break;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -345,17 +346,51 @@
       }
     }
 
+    function interruptPayload(sessionId, taskType) {
+      return {
+        taskType: taskType || "CHAT",
+        repoRoot: null,
+        question: null,
+        skillPath: null,
+        userId: null,
+        sessionId: sessionId,
+        approveRiskyToolCall: false,
+        interrupt: true,
+        resume: false,
+        includeRagContext: null,
+        includeKnowledgeGraphContext: null,
+        contextLimit: null,
+        runMode: $("runMode").value || "NORMAL",
+        dialogueMode: $("dialogueMode").value || "FOLLOW"
+      };
+    }
+
+    async function stopRun(activeRun) {
+      try {
+        await fetch("/api/lumisight/agent/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(interruptPayload(activeRun.sessionId, activeRun.taskType)),
+          keepalive: true
+        });
+      } catch (_) {
+      } finally {
+        activeRun.aborter.abort();
+        activeRuns.delete(activeRun);
+      }
+    }
+
     $("sendBtn").addEventListener("click", () => {
       localStorage.setItem(USER_KEY, $("userId").value);
       localStorage.setItem(SESSION_KEY, $("sessionId").value);
       start().catch((e) => {
-        activeAborters.forEach((controller) => {
-          if (controller.signal.aborted) {
-            activeAborters.delete(controller);
+        activeRuns.forEach((run) => {
+          if (run.aborter.signal.aborted) {
+            activeRuns.delete(run);
           }
         });
         if (e.name === "AbortError") {
-          statusBox.textContent = activeAborters.size === 0 ? "stopped" : "streaming...";
+          statusBox.textContent = activeRuns.size === 0 ? "stopped" : "streaming...";
           return;
         }
         statusBox.textContent = "failed";
@@ -369,9 +404,10 @@
       statusBox.textContent = "idle";
     });
     $("stopBtn").addEventListener("click", () => {
-      activeAborters.forEach((controller) => controller.abort());
-      activeAborters.clear();
-      statusBox.textContent = "stopped";
+      const runs = Array.from(activeRuns);
+      Promise.allSettled(runs.map(stopRun)).finally(() => {
+        statusBox.textContent = "stopped";
+      });
     });
     ensureIdentity();
   </script>

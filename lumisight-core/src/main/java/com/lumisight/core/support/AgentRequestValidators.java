@@ -12,6 +12,18 @@ public final class AgentRequestValidators {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
+        if (request.interrupt()) {
+            if (request.taskType() == null) {
+                throw new IllegalArgumentException("taskType must not be null");
+            }
+            if (request.runMode() == null) {
+                throw new IllegalArgumentException("runMode must not be null");
+            }
+            if (request.dialogueMode() == null) {
+                throw new IllegalArgumentException("dialogueMode must not be null");
+            }
+            return;
+        }
         boolean hasQuestionInput = StringUtils.hasText(request.question());
         boolean resumeWithoutText = request.resume() && StringUtils.hasText(request.sessionId());
         if (!hasQuestionInput && !resumeWithoutText) {
