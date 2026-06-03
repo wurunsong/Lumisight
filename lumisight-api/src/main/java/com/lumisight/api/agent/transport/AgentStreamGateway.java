@@ -25,4 +25,8 @@ public class AgentStreamGateway {
                         channel::onComplete
                 );
     }
+
+    public void cancel(String sessionId, String reason) {
+        sessionDispatcher.cancel(sessionId, reason);
+    }
 }

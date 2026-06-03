@@ -50,6 +50,17 @@ public class AgentSessionDispatcher {
         return sink.asFlux();
     }
 
+    public void cancel(String sessionId, String reason) {
+        if (!StringUtils.hasText(sessionId)) {
+            return;
+        }
+        SessionMailbox mailbox = mailboxes.get(sessionId.trim());
+        if (mailbox == null) {
+            return;
+        }
+        mailbox.cancel(reason);
+    }
+
     private AgentRunRequest ensureIds(AgentRunRequest request) {
         String sessionId = StringUtils.hasText(request.sessionId()) ? request.sessionId().trim() : UUID.randomUUID().toString();
         String userId = StringUtils.hasText(request.userId()) ? request.userId().trim() : "debug-user";
@@ -99,7 +110,7 @@ public class AgentSessionDispatcher {
                         }
                     }
                     case STEER -> {
-                        clearPending("被新的 STEER 请求替换。");
+                        clearPending("被新的 STEER 请求替换。", true);
                         queue.offer(envelope);
                         envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已替换尚未启动的待处理问题。"));
                         ensureWorker();
@@ -127,7 +138,7 @@ public class AgentSessionDispatcher {
                         }
                     }
                     case STEER -> {
-                        clearPending("被新的 STEER 请求替换。");
+                        clearPending("被新的 STEER 请求替换。", true);
                         queue.offer(envelope);
                         envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
                         current.interruptForSteer();
@@ -141,12 +152,27 @@ public class AgentSessionDispatcher {
             ensureWorker();
         }
 
+        private synchronized void cancel(String reason) {
+            if (current == null && queue.isEmpty()) {
+                return;
+            }
+            log.info("agent_session cancel, sessionId={}, reason={}", sessionId, reason);
+            clearPending(reason, false);
+            RunningExecution running = current;
+            if (running != null) {
+                running.interrupt("INTERRUPT", "interrupting", reason, false);
+            } else {
+                conversationManager.nextEpoch(sessionId);
+                conversationManager.interrupt(sessionId);
+            }
+        }
+
         private void handleInterrupt(QueuedEnvelope envelope) {
-            clearPending("会话已被用户手动停止。");
+            clearPending("会话已被用户手动停止。", true);
             RunningExecution running = current;
             if (running != null) {
                 log.info("agent_session interrupt requested, sessionId={}, hasRunning=true", sessionId);
-                running.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。");
+                running.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。", true);
             } else {
                 log.info("agent_session interrupt requested, sessionId={}, hasRunning=false", sessionId);
                 conversationManager.nextEpoch(sessionId);
@@ -232,11 +258,13 @@ public class AgentSessionDispatcher {
             return null;
         }
 
-        private void clearPending(String reason) {
+        private void clearPending(String reason, boolean emitEvents) {
             List<QueuedEnvelope> dropped = new ArrayList<>();
             queue.drainTo(dropped);
             for (QueuedEnvelope envelope : dropped) {
-                envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "interrupted", reason));
+                if (emitEvents) {
+                    envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "interrupted", reason));
+                }
                 envelope.complete();
             }
         }
@@ -326,14 +354,16 @@ public class AgentSessionDispatcher {
         }
 
         private void interruptForSteer() {
-            interrupt("STEER", "interrupting", "STEER: 当前执行即将让出给最新问题。");
+            interrupt("STEER", "interrupting", "STEER: 当前执行即将让出给最新问题。", true);
         }
 
-        private void interrupt(String stage, String status, String reason) {
+        private void interrupt(String stage, String status, String reason, boolean emitEvents) {
             conversationManager.nextEpoch(sessionId);
             conversationManager.interrupt(sessionId);
-            envelope.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
-            envelope.emit(AgentEvent.interrupted("", sessionId, 0));
+            if (emitEvents) {
+                envelope.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
+                envelope.emit(AgentEvent.interrupted("", sessionId, 0));
+            }
             Thread executingThread = workerThread;
             if (executingThread != null) {
                 log.info("agent_session interrupting worker thread, sessionId={}, thread={}", sessionId, executingThread.getName());

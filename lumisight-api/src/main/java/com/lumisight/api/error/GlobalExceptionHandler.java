@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -15,6 +16,14 @@ import java.time.Instant;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsableException(
+            AsyncRequestNotUsableException ex,
+            HttpServletRequest request
+    ) {
+        log.debug("Async response already closed, path={}, message={}", request.getRequestURI(), ex.getMessage());
+    }
 
     @ExceptionHandler(NonTransientAiException.class)
     public ResponseEntity<ApiErrorResponse> handleNonTransientAiException(
