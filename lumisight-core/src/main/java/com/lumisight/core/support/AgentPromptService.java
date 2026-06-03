@@ -61,6 +61,7 @@ public class AgentPromptService {
                 "systemPrompt", systemPrompt(taskType),
                 "skillGuidance", skillGuidanceBlock(skillPlan, false),
                 "dialogueModeGuidance", dialogueModeGuidance(dialogueMode),
+                "todoGuidance", todoGuidanceBlock(),
                 "enabledToolHints", enabledToolHints(enabledPermissions, registry)
         ));
         return prompt;
@@ -132,6 +133,7 @@ public class AgentPromptService {
                 AgentToolCategory.SOURCE,
                 AgentToolCategory.MCP,
                 AgentToolCategory.LOCAL,
+                AgentToolCategory.PLANNING,
                 AgentToolCategory.LSP,
                 AgentToolCategory.BUILD,
                 AgentToolCategory.GIT
@@ -253,6 +255,11 @@ public class AgentPromptService {
             return "- STEER: 主动引导用户收敛问题；当范围过大时先提出拆解路径，再执行关键工具。";
         }
         return "- FOLLOW: 严格跟随用户当前问题，最短路径完成回答。";
+    }
+
+    private String todoGuidanceBlock() {
+        return "- TODO: 如果任务是多步骤的，请优先使用 todo_write 维护任务清单；先列出所有步骤，再把状态从 pending 逐步更新为 in_progress 和 completed。\n"
+                + "- TODO: 系统可能会注入 <reminder>Update your todos.</reminder>，收到后请先刷新清单，再继续执行。";
     }
 
     private String trimSkillContent(String rawSkillContent) {

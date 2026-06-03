@@ -6,6 +6,7 @@ public enum AgentToolCategory {
     SOURCE,
     MCP,
     LOCAL,
+    PLANNING,
     LSP,
     BUILD,
     GIT

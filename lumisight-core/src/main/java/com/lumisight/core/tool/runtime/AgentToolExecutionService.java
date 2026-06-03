@@ -1,6 +1,7 @@
 package com.lumisight.core.tool.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumisight.core.context.AgentToolInvocationContext;
 import com.lumisight.core.hooks.runtime.ToolHookContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentToolExecutionResult;
@@ -48,39 +49,41 @@ public class AgentToolExecutionService {
     }
 
     public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit, ToolHookContext hookContext) {
-        String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
-        String toolName = normalizeToolName(requestedToolName);
-        Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
-        PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
-        if (tool == null) {
-            return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName), hookContext, args);
-        }
-        if (!enabledPermissions.contains(tool.permission())) {
-            return errorToolResult(toolName, "permission_denied", "工具未启用: " + toolName, Map.of("toolName", toolName), hookContext, args);
-        }
-        List<String> schemaErrors = ToolSchemaValidator.validate(args, tool.argumentSpecs());
-        if (!schemaErrors.isEmpty()) {
-            return errorToolResult(toolName, "schema_invalid", "工具参数结构校验失败", Map.of("errors", schemaErrors), hookContext, args);
-        }
-        Object typedArgs;
-        try {
-            typedArgs = bindArgs(tool, args);
-        } catch (IllegalArgumentException e) {
-            return errorToolResult(toolName, "schema_invalid", "工具参数转换失败", Map.of("errors", List.of(e.getMessage())), hookContext, args);
-        }
-        List<String> validationErrors = validateArgs(tool, typedArgs);
-        if (!validationErrors.isEmpty()) {
-            return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors), hookContext, args);
-        }
-        AgentToolExecutionResult primary = invokeWithRetry(tool, typedArgs, limit, TOOL_MAX_RETRY, hookContext, args);
-        if ("ok".equals(primary.status())) {
+        try (AgentToolInvocationContext.Scope ignored = AgentToolInvocationContext.open(hookContext.sessionId(), hookContext.round(), hookContext.question())) {
+            String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
+            String toolName = normalizeToolName(requestedToolName);
+            Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
+            PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
+            if (tool == null) {
+                return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName), hookContext, args);
+            }
+            if (!enabledPermissions.contains(tool.permission())) {
+                return errorToolResult(toolName, "permission_denied", "工具未启用: " + toolName, Map.of("toolName", toolName), hookContext, args);
+            }
+            List<String> schemaErrors = ToolSchemaValidator.validate(args, tool.argumentSpecs());
+            if (!schemaErrors.isEmpty()) {
+                return errorToolResult(toolName, "schema_invalid", "工具参数结构校验失败", Map.of("errors", schemaErrors), hookContext, args);
+            }
+            Object typedArgs;
+            try {
+                typedArgs = bindArgs(tool, args);
+            } catch (IllegalArgumentException e) {
+                return errorToolResult(toolName, "schema_invalid", "工具参数转换失败", Map.of("errors", List.of(e.getMessage())), hookContext, args);
+            }
+            List<String> validationErrors = validateArgs(tool, typedArgs);
+            if (!validationErrors.isEmpty()) {
+                return errorToolResult(toolName, "invalid_args", "工具参数校验失败", Map.of("errors", validationErrors), hookContext, args);
+            }
+            AgentToolExecutionResult primary = invokeWithRetry(tool, typedArgs, limit, TOOL_MAX_RETRY, hookContext, args);
+            if ("ok".equals(primary.status())) {
+                return primary;
+            }
+            AgentToolExecutionResult fallback = tryFallback(toolName, args, limit, enabledPermissions);
+            if (fallback != null) {
+                return fallback;
+            }
             return primary;
         }
-        AgentToolExecutionResult fallback = tryFallback(toolName, args, limit, enabledPermissions);
-        if (fallback != null) {
-            return fallback;
-        }
-        return primary;
     }
 
     private String normalizeToolName(String requestedToolName) {

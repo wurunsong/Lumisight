@@ -28,5 +28,8 @@ JSON 结构:
 当前对话管理策略:
 <dialogueModeGuidance>
 
+任务清单提醒:
+<todoGuidance>
+
 已启用工具:
 <enabledToolHints>

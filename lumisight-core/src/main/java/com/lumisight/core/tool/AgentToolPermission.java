@@ -9,5 +9,6 @@ public enum AgentToolPermission {
     LOCAL_FS_WRITE,
     LSP_JAVA_READ,
     BUILD_COMPILE,
-    GIT_READ
+    GIT_READ,
+    TODO_WRITE
 }

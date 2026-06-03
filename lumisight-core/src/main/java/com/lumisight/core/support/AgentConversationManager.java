@@ -2,6 +2,7 @@ package com.lumisight.core.support;
 
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.ToolDecision;
+import com.lumisight.core.model.TodoTask;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -9,6 +10,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -25,6 +27,7 @@ public class AgentConversationManager {
 
     private final Map<String, ConversationState> states = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> epochs = new ConcurrentHashMap<>();
+    private final Map<String, TodoState> todoStates = new ConcurrentHashMap<>();
     private final AgentConversationProperties conversationProperties;
 
     public AgentConversationManager(AgentConversationProperties conversationProperties) {
@@ -88,6 +91,48 @@ public class AgentConversationManager {
         }
         states.remove(sessionId);
         epochs.remove(sessionId);
+        todoStates.remove(sessionId);
+    }
+
+    public void updateTodos(String sessionId, List<TodoTask> todos, int round) {
+        if (!StringUtils.hasText(sessionId)) {
+            return;
+        }
+        List<TodoTask> normalized = todos == null ? List.of() : todos.stream().map(todo -> new TodoTask(todo.content(), todo.status())).toList();
+        todoStates.put(sessionId, new TodoState(new ArrayList<>(normalized), round, round, System.currentTimeMillis()));
+    }
+
+    public Optional<AgentContextItem> todoReminderContext(String sessionId, int round) {
+        if (!StringUtils.hasText(sessionId)) {
+            return Optional.empty();
+        }
+        TodoState state = todoStates.compute(sessionId, (key, old) -> {
+            if (old == null) {
+                return new TodoState(new ArrayList<>(), 0, 0, System.currentTimeMillis());
+            }
+            return old;
+        });
+        if (state == null) {
+            return Optional.empty();
+        }
+        int lastActivityRound = Math.max(state.lastTodoRound, state.lastReminderRound);
+        if (round - lastActivityRound < 3) {
+            return Optional.empty();
+        }
+        TodoState updated = new TodoState(state.todos, state.lastTodoRound, round, System.currentTimeMillis());
+        todoStates.put(sessionId, updated);
+        return Optional.of(new AgentContextItem(
+                "todo_reminder",
+                "todo_write",
+                "<reminder>Update your todos.</reminder>",
+                Map.of(
+                        "sessionId", sessionId,
+                        "round", round,
+                        "todoCount", updated.todos.size(),
+                        "lastTodoRound", updated.lastTodoRound,
+                        "lastReminderRound", updated.lastReminderRound
+                )
+        ));
     }
 
     private void putState(String sessionId, ConversationState next) {
@@ -199,5 +244,8 @@ public class AgentConversationManager {
         WAITING_GATE,
         INTERRUPTED,
         COMPLETED
+    }
+
+    private record TodoState(List<TodoTask> todos, int lastTodoRound, int lastReminderRound, long lastUpdatedAt) {
     }
 }

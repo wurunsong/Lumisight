@@ -292,6 +292,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
         publisher.emit(AgentEvent.state(traceId, sessionId, finalRound, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
         StringBuilder finalAnswerBuffer = new StringBuilder();
+        int currentFinalRound = finalRound;
         llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
                 .user(finalPrompt)
@@ -300,13 +301,13 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
                 .doOnNext(content -> {
                     finalAnswerBuffer.append(content);
-                    publisher.emit(AgentEvent.token(traceId, sessionId, finalRound, content));
+                    publisher.emit(AgentEvent.token(traceId, sessionId, currentFinalRound, content));
                 })
                 .blockLast();
         if (!shouldInterruptExecution(sessionId, runEpoch)) {
             String finalAnswer = finalAnswerBuffer.toString();
             if (!finalAnswer.isBlank()) {
-                publisher.emit(AgentEvent.finalText(traceId, sessionId, finalRound, finalAnswer));
+                publisher.emit(AgentEvent.finalText(traceId, sessionId, currentFinalRound, finalAnswer));
             }
         }
         sink.complete();
@@ -354,6 +355,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     effectiveQuestion,
                     Map.of("round", round, "role", "user")
             ));
+            List<AgentContextItem> decisionContexts = new ArrayList<>(contexts);
+            int currentRound = round;
+            conversationManager.todoReminderContext(sessionId, currentRound).ifPresent(reminder -> {
+                decisionContexts.add(reminder);
+                publisher.emit(AgentEvent.state(traceId, sessionId, currentRound, "TODO_REMINDER", "reminded", "已注入 todo_write 提醒"));
+            });
             log.info("agent_loop decide, sessionId={}, round={}, question={}, contextSummary={}, errorContexts={}",
                     sessionId, round, effectiveQuestion, summarizeContextRefs(contexts), summarizeErrorContexts(contexts));
             fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
@@ -368,7 +375,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     ),
                     agentPromptService.orchestratorUserPrompt(
                             agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId),
-                            contexts,
+                            decisionContexts,
                             limit,
                             round,
                             MAX_TOOL_ROUNDS,
