@@ -186,6 +186,7 @@ public class ConfigurableAgentHook implements AgentHook {
         try {
             List<String> command = resolveHookCommand(hook);
             Path workingDir = Path.of("").toAbsolutePath().normalize();
+            Path hooksWorkspaceRoot = workingDir.resolve(".lumisight").normalize();
             Path scriptPath = Path.of(command.get(command.size() > 1 ? 1 : 0)).toAbsolutePath().normalize();
             SandboxExecutionPlan plan = policyPlanner.plan(
                     workingDir,
@@ -198,9 +199,9 @@ public class ConfigurableAgentHook implements AgentHook {
                                     HOOKS_ROOT.toString(),
                                     scriptPath.toString()
                             ),
+                            List.of(hooksWorkspaceRoot.toString()),
                             List.of(),
-                            List.of(),
-                            List.of("hook execution is limited to registered hook scripts plus workspace read access")
+                            List.of("hook execution is limited to registered hook scripts plus .lumisight runtime writes")
                     ),
                     hook.timeoutMs(),
                     hook.maxOutputBytes()
