@@ -57,12 +57,13 @@ public class AgentPromptService {
             AgentToolRegistry registry,
             SkillPlan skillPlan
     ) {
-        return promptTemplateService.render("orchestrator_system", Map.of(
+        String prompt = promptTemplateService.render("orchestrator_system", Map.of(
                 "systemPrompt", systemPrompt(taskType),
                 "skillGuidance", skillGuidanceBlock(skillPlan, false),
                 "dialogueModeGuidance", dialogueModeGuidance(dialogueMode),
                 "enabledToolHints", enabledToolHints(enabledPermissions, registry)
         ));
+        return prompt;
     }
 
     public String orchestratorUserPrompt(
@@ -73,14 +74,15 @@ public class AgentPromptService {
             int maxRounds,
             SkillPlan skillPlan
     ) {
-        return promptTemplateService.render("orchestrator_user", Map.of(
+        String prompt = promptTemplateService.render("orchestrator_user", Map.of(
                 "round", round,
                 "maxRounds", maxRounds,
                 "question", safeText(request.question()),
                 "contextLimit", limit,
                 "skillStepsBlock", skillStepsBlock(skillPlan),
-                "contextSummary", contextSummary(contexts)
+                "contextBlock", detailedContextBlock(contexts)
         ));
+        return prompt;
     }
 
     public String planPrompt(AgentRequest request, SkillPlan skillPlan) {

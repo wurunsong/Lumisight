@@ -308,6 +308,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             }
 
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
+            contexts.add(new AgentContextItem(
+                    "conversation",
+                    "user_prompt_round_" + round,
+                    effectiveQuestion,
+                    Map.of("round", round, "role", "user")
+            ));
             log.info("agent_loop decide, sessionId={}, round={}, question={}, contextSummary={}, errorContexts={}",
                     sessionId, round, effectiveQuestion, summarizeContextRefs(contexts), summarizeErrorContexts(contexts));
             fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
@@ -329,6 +335,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     ))
                     .call()
                     .content();
+            contexts.add(new AgentContextItem(
+                    "conversation",
+                    "model_response_round_" + round,
+                    decisionRaw,
+                    Map.of("round", round, "role", "assistant")
+            ));
             fireHook(AgentHookPoint.AFTER_DECISION, sessionId, round, effectiveQuestion, null, Map.of("decisionRaw", decisionRaw));
             log.info("agent_loop decision_raw, sessionId={}, round={}, decisionRaw={}", sessionId, round, trimForLog(decisionRaw));
             ToolDecision decision = parseDecision(decisionRaw);
@@ -412,6 +424,16 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 );
                 for (AgentToolExecutionResult batchResult : batchResults) {
                     events.add(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
+                    contexts.add(new AgentContextItem(
+                            "conversation",
+                            "tool_result_round_" + round + "_" + batchResult.toolName(),
+                            renderToolResultContext(batchResult),
+                            Map.of(
+                                    "round", round,
+                                    "toolName", batchResult.toolName(),
+                                    "status", batchResult.status()
+                            )
+                    ));
                     if (!"ok".equals(batchResult.status()) || containsToolError(batchResult.items())) {
                         log.warn("agent_loop tool_result_error, sessionId={}, round={}, toolName={}, status={}, message={}, items={}",
                                 sessionId, round, batchResult.toolName(), batchResult.status(), batchResult.message(),
@@ -546,6 +568,26 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             return normalized;
         }
         return normalized.substring(0, maxChars) + "...(truncated)";
+    }
+
+    private String renderToolResultContext(AgentToolExecutionResult result) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("toolName: ").append(result.toolName()).append("\n");
+        builder.append("status: ").append(result.status()).append("\n");
+        builder.append("message: ").append(result.message()).append("\n");
+        builder.append("metrics: ").append(result.metrics() == null ? Map.of() : result.metrics()).append("\n");
+        builder.append("items:\n");
+        if (result.items() == null || result.items().isEmpty()) {
+            builder.append("- 无\n");
+        } else {
+            for (AgentContextItem item : result.items()) {
+                builder.append("- [").append(item.sourceType()).append("] ")
+                        .append(item.sourceId()).append("\n")
+                        .append(item.content()).append("\n")
+                        .append("  metadata: ").append(item.metadata() == null ? Map.of() : item.metadata()).append("\n");
+            }
+        }
+        return builder.toString().trim();
     }
 
     private record OrchestrationResult(String directAnswer, boolean askUser, boolean interrupted) {
