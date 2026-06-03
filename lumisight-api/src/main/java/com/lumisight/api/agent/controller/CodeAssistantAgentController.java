@@ -41,12 +41,12 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         Disposable disposable = streamGateway.stream(normalized, new SseEventChannel(emitter, normalized.sessionId()));
         emitter.onCompletion(disposable::dispose);
         emitter.onTimeout(() -> {
-            log.info("sse emitter timeout, disposing stream");
+            log.warn("sse emitter timeout, disposing stream");
             streamGateway.cancel(normalized.sessionId(), "SSE connection timed out.");
             disposable.dispose();
         });
         emitter.onError(error -> {
-            log.info("sse emitter callback error, disposing stream, message={}", error == null ? "" : error.getMessage());
+            log.warn("sse emitter callback error, disposing stream, message={}", error == null ? "" : error.getMessage());
             streamGateway.cancel(normalized.sessionId(), "SSE connection errored.");
             disposable.dispose();
         });
@@ -67,14 +67,14 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
                     .data(data));
         } catch (IOException e) {
             if (isClientAbort(e)) {
-                log.info("sse client disconnected, skip event send, eventType={}, message={}", event.type(), e.getMessage());
+                log.warn("sse client disconnected, skip event send, eventType={}, message={}", event.type(), e.getMessage());
                 streamGateway.cancel(sessionId, "SSE client disconnected while sending event.");
                 return;
             }
             throw new IllegalStateException("failed to send sse event", e);
         } catch (Exception e) {
             if (isClientAbort(e) || isEmitterCompleted(e) || isAsyncResponseClosed(e)) {
-                log.info("sse emitter already closed, skip event send, eventType={}, message={}", event.type(), e.getMessage());
+                log.warn("sse emitter already closed, skip event send, eventType={}, message={}", event.type(), e.getMessage());
                 streamGateway.cancel(sessionId, "SSE emitter already closed.");
                 return;
             }
@@ -195,7 +195,7 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         @Override
         public void onError(Throwable error) {
             if (isClientAbort(error)) {
-                log.info("sse channel closed by client, suppress completeWithError, message={}", error == null ? "" : error.getMessage());
+                log.warn("sse channel closed by client, suppress completeWithError, message={}", error == null ? "" : error.getMessage());
                 streamGateway.cancel(sessionId, "SSE client disconnected.");
                 return;
             }

@@ -32,7 +32,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) throws IOException {
         if (isClientDisconnect(ex)) {
-            log.info("Client disconnected, path={}, message={}", request.getRequestURI(), ex.getMessage());
+            log.warn("Client disconnected, path={}, message={}", request.getRequestURI(), ex.getMessage());
             return;
         }
         throw ex;
