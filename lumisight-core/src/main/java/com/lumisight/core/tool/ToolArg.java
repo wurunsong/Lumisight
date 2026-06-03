@@ -11,7 +11,7 @@ public @interface ToolArg {
 
     String description();
 
-    boolean required() default false;
+    boolean required() default true;
 
     String example() default "";
 
