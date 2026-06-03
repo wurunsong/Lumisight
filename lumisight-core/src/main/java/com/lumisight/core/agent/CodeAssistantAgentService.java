@@ -109,7 +109,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
             List<AgentContextItem> contexts = new ArrayList<>();
             List<AgentEvent> events = new ArrayList<>();
-            String directAnswer = null;
+            String directAnswerDraft = null;
             boolean askUser = false;
             boolean interrupted = false;
             int startRound = 1;
@@ -237,7 +237,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     enabledPermissions,
                     runEpoch
             );
-            directAnswer = result.directAnswer();
+            directAnswerDraft = result.directAnswer();
             askUser = result.askUser();
             interrupted = result.interrupted();
         }
@@ -252,28 +252,45 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 return Flux.just(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
         }
 
-        if (StringUtils.hasText(directAnswer)) {
-            fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", true));
-            events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.FINAL.name(), "ok", "直接输出最终结果"));
-            events.add(AgentEvent.finalText(traceId, sessionId, directAnswer));
-                return Flux.fromIterable(events);
+        if (StringUtils.hasText(directAnswerDraft)) {
+            contexts.add(new AgentContextItem(
+                    "assistant_draft",
+                    "final_answer_draft",
+                    directAnswerDraft,
+                    Map.of("source", "orchestrator_final_decision")
+            ));
         }
 
         AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit, skillPlan);
-        fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", false));
+        fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", StringUtils.hasText(directAnswerDraft)));
         if (shouldInterruptExecution(sessionId, runEpoch)) {
             appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, events);
             return Flux.fromIterable(events);
         }
+        events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
+        StringBuilder finalAnswerBuffer = new StringBuilder();
         Flux<AgentEvent> stream = llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
                 .user(finalPrompt)
                 .stream()
                 .content()
                 .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
-                .map(content -> AgentEvent.token(traceId, sessionId, content));
-            return Flux.concat(Flux.fromIterable(events), stream);
+                .handle((content, sink) -> {
+                    finalAnswerBuffer.append(content);
+                    sink.next(AgentEvent.token(traceId, sessionId, content));
+                });
+        Flux<AgentEvent> finalEvent = Flux.defer(() -> {
+            if (shouldInterruptExecution(sessionId, runEpoch)) {
+                return Flux.empty();
+            }
+            String finalAnswer = finalAnswerBuffer.toString();
+            if (finalAnswer.isBlank()) {
+                return Flux.empty();
+            }
+            return Flux.just(AgentEvent.finalText(traceId, sessionId, finalAnswer));
+        });
+            return Flux.concat(Flux.fromIterable(events), stream, finalEvent);
         } catch (Throwable t) {
             throw t;
         }
