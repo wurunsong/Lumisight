@@ -4,6 +4,8 @@ import com.lumisight.api.agent.dto.request.AgentRunRequest;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.support.AgentConversationManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import reactor.core.Disposable;
@@ -25,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 @Component
 public class AgentSessionDispatcher {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentSessionDispatcher.class);
     private final Map<String, SessionMailbox> mailboxes = new ConcurrentHashMap<>();
     private final ExecutorService workerPool = Executors.newCachedThreadPool();
     private final AgentInteractionOrchestrator interactionOrchestrator;
@@ -142,8 +145,10 @@ public class AgentSessionDispatcher {
             clearPending("会话已被用户手动停止。");
             RunningExecution running = current;
             if (running != null) {
+                log.info("agent_session interrupt requested, sessionId={}, hasRunning=true", sessionId);
                 running.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。");
             } else {
+                log.info("agent_session interrupt requested, sessionId={}, hasRunning=false", sessionId);
                 conversationManager.nextEpoch(sessionId);
                 conversationManager.interrupt(sessionId);
             }
@@ -190,6 +195,7 @@ public class AgentSessionDispatcher {
         private void runEnvelope(QueuedEnvelope envelope) {
             CountDownLatch latch = new CountDownLatch(1);
             RunningExecution running = new RunningExecution(sessionId, envelope, latch);
+            running.workerThread = Thread.currentThread();
             synchronized (this) {
                 current = running;
             }
@@ -311,6 +317,7 @@ public class AgentSessionDispatcher {
         private final QueuedEnvelope envelope;
         private final CountDownLatch latch;
         private volatile Disposable disposable;
+        private volatile Thread workerThread;
 
         private RunningExecution(String sessionId, QueuedEnvelope envelope, CountDownLatch latch) {
             this.sessionId = sessionId;
@@ -327,6 +334,11 @@ public class AgentSessionDispatcher {
             conversationManager.interrupt(sessionId);
             envelope.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
             envelope.emit(AgentEvent.interrupted("", sessionId, 0));
+            Thread executingThread = workerThread;
+            if (executingThread != null) {
+                log.info("agent_session interrupting worker thread, sessionId={}, thread={}", sessionId, executingThread.getName());
+                executingThread.interrupt();
+            }
             if (disposable != null && !disposable.isDisposed()) {
                 disposable.dispose();
             }

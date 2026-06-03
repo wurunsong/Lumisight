@@ -209,6 +209,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             }
 
             if (request.runMode() == AgentRunMode.PLAN) {
+                if (shouldInterruptExecution(sessionId, runEpoch)) {
+                    appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, events);
+                    return Flux.fromIterable(events);
+                }
                 events.add(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
                 fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
                 String plan = llmChatClient.prompt()
@@ -258,6 +262,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit, skillPlan);
         fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, 0, effectiveQuestion, null, Map.of("directAnswer", false));
+        if (shouldInterruptExecution(sessionId, runEpoch)) {
+            appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, events);
+            return Flux.fromIterable(events);
+        }
         Flux<AgentEvent> stream = llmChatClient.prompt()
                 .system(agentPromptService.systemPrompt(request.taskType()))
                 .user(finalPrompt)
@@ -296,15 +304,9 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             long runEpoch
     ) {
         for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
-            if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
-                return new OrchestrationResult(null, false, false);
-            }
-            AgentConversationManager.ConversationState state = conversationManager.get(sessionId);
-            if (state != null && state.interrupted()) {
-                events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
-                events.add(AgentEvent.interrupted(traceId, sessionId, round));
-                conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round);
-                return new OrchestrationResult(null, false, true);
+            OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
+            if (interruptedResult != null) {
+                return interruptedResult;
             }
 
             events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
@@ -335,6 +337,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     ))
                     .call()
                     .content();
+            interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
+            if (interruptedResult != null) {
+                return interruptedResult;
+            }
             contexts.add(new AgentContextItem(
                     "conversation",
                     "model_response_round_" + round,
@@ -422,6 +428,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         round,
                         effectiveQuestion
                 );
+                interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, events, runEpoch);
+                if (interruptedResult != null) {
+                    return interruptedResult;
+                }
                 for (AgentToolExecutionResult batchResult : batchResults) {
                     events.add(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
                     contexts.add(new AgentContextItem(
@@ -451,6 +461,46 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             }
         }
         return new OrchestrationResult(null, false, false);
+    }
+
+    private OrchestrationResult checkInterrupted(
+            String traceId,
+            String sessionId,
+            int round,
+            String effectiveQuestion,
+            List<AgentContextItem> contexts,
+            List<AgentEvent> events,
+            long runEpoch
+    ) {
+        if (!shouldInterruptExecution(sessionId, runEpoch)) {
+            return null;
+        }
+        appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contexts, events);
+        return new OrchestrationResult(null, false, true);
+    }
+
+    private void appendInterruptedEvents(
+            String traceId,
+            String sessionId,
+            int round,
+            String effectiveQuestion,
+            List<AgentContextItem> contexts,
+            List<AgentEvent> events
+    ) {
+        events.add(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
+        events.add(AgentEvent.interrupted(traceId, sessionId, round));
+        conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round);
+    }
+
+    private boolean shouldInterruptExecution(String sessionId, long runEpoch) {
+        if (Thread.currentThread().isInterrupted()) {
+            return true;
+        }
+        if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
+            return true;
+        }
+        AgentConversationManager.ConversationState state = conversationManager.get(sessionId);
+        return state != null && state.interrupted();
     }
 
     private ToolDecision parseDecision(String raw) {
