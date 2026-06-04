@@ -27,7 +27,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
     private final ObjectMapper objectMapper;
     private final AgentStreamGateway streamGateway;
     private final AgentWebSocketProperties webSocketProperties;
-    private final Map<String, Disposable> subscriptions = new ConcurrentHashMap<>();
+    private final Map<String, SessionSubscription> subscriptions = new ConcurrentHashMap<>();
     private final Map<String, ConcurrentLinkedDeque<Long>> messageTimestamps = new ConcurrentHashMap<>();
     private final AtomicInteger activeConnections = new AtomicInteger(0);
 
@@ -67,24 +67,23 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
             return;
         }
         AgentRunRequest req = normalizeRunRequest(commandType, command.request());
-
-        Disposable old = subscriptions.remove(session.getId());
-        if (old != null && !old.isDisposed()) {
-            old.dispose();
+        if (!StringUtils.hasText(req.sessionId())) {
+            sendProtocol(session, new WsAgentMessage("ERROR", requestId, null, "sessionId is required", System.currentTimeMillis()));
+            return;
         }
-        sendProtocol(session, new WsAgentMessage("ACK", requestId, null, "accepted", System.currentTimeMillis()));
 
-        Disposable disposable = streamGateway.stream(req, new WsEventChannel(session, requestId));
-        subscriptions.put(session.getId(), disposable);
+        ensureSubscription(session, requestId, req.sessionId());
+        sendProtocol(session, new WsAgentMessage("ACK", requestId, null, "accepted", System.currentTimeMillis()));
+        streamGateway.submit(req);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         activeConnections.updateAndGet(v -> Math.max(0, v - 1));
-        Disposable disposable = subscriptions.remove(session.getId());
+        SessionSubscription subscription = subscriptions.remove(session.getId());
         messageTimestamps.remove(session.getId());
-        if (disposable != null && !disposable.isDisposed()) {
-            disposable.dispose();
+        if (subscription != null && !subscription.disposable().isDisposed()) {
+            subscription.disposable().dispose();
         }
     }
 
@@ -139,6 +138,20 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
         sendProtocol(session, new WsAgentMessage("EVENT", requestId, event, null, System.currentTimeMillis()));
     }
 
+    private void ensureSubscription(WebSocketSession session, String requestId, String sessionId) {
+        SessionSubscription current = subscriptions.get(session.getId());
+        if (current != null && current.sessionId().equals(sessionId) && !current.disposable().isDisposed()) {
+            current.channel().setRequestId(requestId);
+            return;
+        }
+        if (current != null && !current.disposable().isDisposed()) {
+            current.disposable().dispose();
+        }
+        WsEventChannel channel = new WsEventChannel(session, requestId);
+        Disposable disposable = streamGateway.subscribe(sessionId, channel);
+        subscriptions.put(session.getId(), new SessionSubscription(sessionId, channel, disposable));
+    }
+
     private void sendProtocol(WebSocketSession session, WsAgentMessage message) {
         if (!session.isOpen()) {
             return;
@@ -162,10 +175,14 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
 
     private final class WsEventChannel implements AgentEventChannel {
         private final WebSocketSession session;
-        private final String requestId;
+        private volatile String requestId;
 
         private WsEventChannel(WebSocketSession session, String requestId) {
             this.session = session;
+            this.requestId = requestId;
+        }
+
+        private void setRequestId(String requestId) {
             this.requestId = requestId;
         }
 
@@ -184,5 +201,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
         public void onComplete() {
             subscriptions.remove(session.getId());
         }
+    }
+
+    private record SessionSubscription(String sessionId, WsEventChannel channel, Disposable disposable) {
     }
 }

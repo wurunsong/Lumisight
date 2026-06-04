@@ -7,15 +7,23 @@ import com.lumisight.api.agent.transport.AgentStreamGateway;
 import com.lumisight.api.agent.transport.AgentTransportAdapter;
 import com.lumisight.core.model.AgentEvent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
 
 @RestController
@@ -25,6 +33,7 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
 
     private final AgentStreamGateway streamGateway;
     private final ObjectMapper objectMapper;
+    private final Map<String, ActiveSseConnection> activeConnections = new ConcurrentHashMap<>();
 
     public CodeAssistantAgentController(
             AgentStreamGateway streamGateway,
@@ -34,24 +43,40 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         this.objectMapper = objectMapper;
     }
 
-    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@RequestBody AgentRunRequest request) {
-        AgentRunRequest normalized = normalizeIds(request);
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestParam("sessionId") String sessionId) {
+        String normalizedSessionId = requireSessionId(sessionId);
         SseEmitter emitter = new SseEmitter(0L);
-        Disposable disposable = streamGateway.stream(normalized, new SseEventChannel(emitter, normalized.sessionId()));
-        emitter.onCompletion(disposable::dispose);
+        Disposable disposable = streamGateway.subscribe(normalizedSessionId, new SseEventChannel(emitter, normalizedSessionId));
+        ActiveSseConnection connection = new ActiveSseConnection(normalizedSessionId, emitter, disposable);
+        replaceConnection(connection);
+        emitter.onCompletion(() -> {
+            unregisterConnection(connection);
+            disposable.dispose();
+        });
         emitter.onTimeout(() -> {
-            log.warn("sse emitter timeout, disposing stream");
-            streamGateway.cancel(normalized.sessionId(), "SSE connection timed out.");
+            log.warn("sse emitter timeout, closing session stream, sessionId={}", normalizedSessionId);
+            unregisterConnection(connection);
             disposable.dispose();
         });
         emitter.onError(error -> {
-            log.warn("sse emitter callback error, disposing stream, message={}", error == null ? "" : error.getMessage());
-            streamGateway.cancel(normalized.sessionId(), "SSE connection errored.");
+            log.warn("sse emitter callback error, closing session stream, sessionId={}, message={}", normalizedSessionId, error == null ? "" : error.getMessage());
+            unregisterConnection(connection);
             disposable.dispose();
         });
-
+        sendEvent(emitter, AgentEvent.state("", normalizedSessionId, 0, "STREAM", "connected", "SSE session stream connected."), normalizedSessionId);
         return emitter;
+    }
+
+    @PostMapping(value = "/run", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> run(@RequestBody AgentRunRequest request) {
+        AgentRunRequest normalized = normalizeCommandRequest(request);
+        streamGateway.submit(normalized);
+        return ResponseEntity.accepted().body(Map.of(
+                "accepted", true,
+                "sessionId", normalized.sessionId(),
+                "userId", normalized.userId()
+        ));
     }
 
     @Override
@@ -68,24 +93,22 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         } catch (IOException e) {
             if (isClientAbort(e)) {
                 log.warn("sse client disconnected, skip event send, eventType={}, message={}", event.type(), e.getMessage());
-                streamGateway.cancel(sessionId, "SSE client disconnected while sending event.");
                 return;
             }
+            log.error("failed to send sse event, encounter IO exception, message={}", e.getMessage());
             throw new IllegalStateException("failed to send sse event", e);
         } catch (Exception e) {
             if (isClientAbort(e) || isEmitterCompleted(e) || isAsyncResponseClosed(e)) {
                 log.warn("sse emitter already closed, skip event send, eventType={}, message={}", event.type(), e.getMessage());
-                streamGateway.cancel(sessionId, "SSE emitter already closed.");
                 return;
             }
+            log.error("failed to send sse event, message={}", e.getMessage());
             throw new IllegalStateException("failed to send sse event", e);
         }
     }
 
-    private AgentRunRequest normalizeIds(AgentRunRequest request) {
-        String sessionId = request != null && request.sessionId() != null && !request.sessionId().isBlank()
-                ? request.sessionId().trim()
-                : UUID.randomUUID().toString();
+    private AgentRunRequest normalizeCommandRequest(AgentRunRequest request) {
+        String sessionId = request != null ? requireSessionId(request.sessionId()) : requireSessionId(null);
         String userId = request != null && request.userId() != null && !request.userId().isBlank()
                 ? request.userId().trim()
                 : "debug-user";
@@ -105,6 +128,26 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
                 request == null ? null : request.runMode(),
                 request == null ? null : request.dialogueMode()
         );
+    }
+
+    private String requireSessionId(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId is required");
+        }
+        return sessionId.trim();
+    }
+
+    private void replaceConnection(ActiveSseConnection next) {
+        ActiveSseConnection previous = activeConnections.put(next.sessionId(), next);
+        if (previous == null) {
+            return;
+        }
+        previous.disposable().dispose();
+        safeComplete(previous.emitter(), "replaced_by_new_connection");
+    }
+
+    private void unregisterConnection(ActiveSseConnection connection) {
+        activeConnections.remove(connection.sessionId(), connection);
     }
 
     private boolean isClientAbort(Throwable error) {
@@ -131,9 +174,10 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
             emitter.complete();
         } catch (Exception completeError) {
             if (isAsyncResponseClosed(completeError) || isClientAbort(completeError)) {
-                log.debug("sse emitter complete ignored, reason={}, message={}", reason, completeError.getMessage());
+                log.warn("sse emitter complete ignored, reason={}, message={}", reason, completeError.getMessage());
                 return;
             }
+            log.error("failed to complete sse emitter, message={}", completeError.getMessage());
             throw completeError;
         }
     }
@@ -143,9 +187,10 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
             emitter.completeWithError(error);
         } catch (Exception completeError) {
             if (isAsyncResponseClosed(completeError) || isClientAbort(completeError)) {
-                log.debug("sse emitter completeWithError ignored, message={}", completeError.getMessage());
+                log.warn("sse emitter completeWithError ignored, message={}", completeError.getMessage());
                 return;
             }
+            log.error("failed to complete sse emitter with error, message={}", completeError.getMessage());
             throw completeError;
         }
     }
@@ -178,6 +223,9 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         return false;
     }
 
+    private record ActiveSseConnection(String sessionId, SseEmitter emitter, Disposable disposable) {
+    }
+
     private final class SseEventChannel implements AgentEventChannel {
         private final SseEmitter emitter;
         private final String sessionId;
@@ -196,7 +244,6 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         public void onError(Throwable error) {
             if (isClientAbort(error)) {
                 log.warn("sse channel closed by client, suppress completeWithError, message={}", error == null ? "" : error.getMessage());
-                streamGateway.cancel(sessionId, "SSE client disconnected.");
                 return;
             }
             safeCompleteWithError(emitter, error);

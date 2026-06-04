@@ -14,16 +14,19 @@ public class AgentStreamGateway {
         this.sessionDispatcher = sessionDispatcher;
     }
 
-    public Disposable stream(AgentRunRequest request, AgentEventChannel channel) {
-        return sessionDispatcher.stream(request)
+    public Disposable subscribe(String sessionId, AgentEventChannel channel) {
+        return sessionDispatcher.subscribe(sessionId)
                 .doOnNext(channel::onEvent)
                 .doOnError(channel::onError)
                 .doOnComplete(channel::onComplete)
                 .subscribe(
                         event -> { },
-                        error -> { },
-                        channel::onComplete
+                        error -> { }
                 );
+    }
+
+    public void submit(AgentRunRequest request) {
+        sessionDispatcher.submit(request);
     }
 
     public void cancel(String sessionId, String reason) {

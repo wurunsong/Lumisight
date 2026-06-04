@@ -23,7 +23,7 @@ public class GlobalExceptionHandler {
             AsyncRequestNotUsableException ex,
             HttpServletRequest request
     ) {
-        log.debug("Async response already closed, path={}, message={}", request.getRequestURI(), ex.getMessage());
+        log.warn("Async response already closed, path={}, message={}", request.getRequestURI(), ex.getMessage());
     }
 
     @ExceptionHandler(IOException.class)
@@ -35,6 +35,7 @@ public class GlobalExceptionHandler {
             log.warn("Client disconnected, path={}, message={}", request.getRequestURI(), ex.getMessage());
             return;
         }
+        log.error("IO error, path={}, message={}", request.getRequestURI(), ex.getMessage(), ex);
         throw ex;
     }
 
@@ -46,7 +47,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = ex.getMessage() != null && ex.getMessage().contains("HTTP 401")
                 ? HttpStatus.UNAUTHORIZED
                 : HttpStatus.BAD_GATEWAY;
-        log.warn("AI upstream error, status={}, path={}, message={}", status.value(), request.getRequestURI(), ex.getMessage());
+        log.error("AI upstream error, status={}, path={}, message={}", status.value(), request.getRequestURI(), ex.getMessage());
         return ResponseEntity.status(status).body(new ApiErrorResponse(
                 status.value(),
                 "AI_UPSTREAM_ERROR",
@@ -61,6 +62,7 @@ public class GlobalExceptionHandler {
             NoResourceFoundException ex,
             HttpServletRequest request
     ) {
+        log.error("Resource not found, path={}, message={}", request.getRequestURI(), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiErrorResponse(
                 HttpStatus.NOT_FOUND.value(),
                 "NOT_FOUND",
@@ -76,7 +78,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
-        log.warn("Request error, status={}, path={}, message={}", status.value(), request.getRequestURI(), ex.getReason());
+        log.error("Request error, status={}, path={}, message={}", status.value(), request.getRequestURI(), ex.getReason());
         return ResponseEntity.status(status).body(new ApiErrorResponse(
                 status.value(),
                 "REQUEST_ERROR",
@@ -91,7 +93,7 @@ public class GlobalExceptionHandler {
             IllegalStateException ex,
             HttpServletRequest request
     ) {
-        log.warn("Build error, path={}, message={}", request.getRequestURI(), ex.getMessage(), ex);
+        log.error("Build error, path={}, message={}", request.getRequestURI(), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
                 "BUILD_ERROR",

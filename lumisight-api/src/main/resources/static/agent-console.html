@@ -102,7 +102,7 @@
 <body>
   <div class="wrap">
     <h1>Lumisight Agent Console</h1>
-    <p class="sub">浏览器直接调试 <code>/api/lumisight/agent/stream</code>，实时查看 SSE 事件。</p>
+    <p class="sub">按会话维持 1 条 SSE 长连接，再通过命令接口向同一 <code>sessionId</code> 投递问题、恢复或中断请求。</p>
     <div class="grid">
       <section class="card">
         <h2>Request</h2>
@@ -174,16 +174,22 @@
           </div>
         </div>
         <div class="btns">
-          <button id="sendBtn">Start Stream</button>
+          <button id="connectBtn" type="button">Connect</button>
+          <button id="sendBtn" type="button">Send Command</button>
+          <button class="warn" id="stopBtn" type="button">Interrupt</button>
+          <button class="alt" id="disconnectBtn" type="button">Disconnect</button>
           <button class="alt" id="newSessionBtn" type="button">New Session</button>
           <button class="alt" id="clearBtn" type="button">Clear</button>
-          <button class="warn" id="stopBtn" type="button">Stop</button>
         </div>
         <div class="status" id="status">idle</div>
       </section>
       <section class="card">
-        <h2>Response</h2>
-        <p class="panel-title">Per-request Streams</p>
+        <h2>Session Stream</h2>
+        <p class="panel-title">当前会话事件日志</p>
+        <div class="stream" id="sessionStream"></div>
+        <p class="panel-title" style="margin-top: 10px;">当前最终输出</p>
+        <div class="final" id="sessionFinal"></div>
+        <p class="panel-title" style="margin-top: 10px;">命令记录</p>
         <div class="runs" id="runs"></div>
       </section>
     </div>
@@ -192,9 +198,16 @@
     const $ = (id) => document.getElementById(id);
     const runsBox = $("runs");
     const statusBox = $("status");
+    const sessionStreamBox = $("sessionStream");
+    const sessionFinalBox = $("sessionFinal");
     const SESSION_KEY = "lumisight.agent.sessionId";
     const USER_KEY = "lumisight.agent.userId";
-    const activeRuns = new Set();
+    const EVENT_TYPES = [
+      "PLAN", "SKILL_SELECTED", "SKILL_ROUTE", "DIALOGUE_MODE", "LOOP_STATE",
+      "TOOL_CALL", "TOOL_RESULT", "ASK_USER", "HUMAN_GATE", "VERIFY_RESULT",
+      "TOKEN", "FINAL", "ERROR", "INTERRUPTED", "RESUMED"
+    ];
+    let eventSource = null;
 
     function randomId(prefix) {
       return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -210,6 +223,7 @@
     }
 
     function resetSession() {
+      disconnect();
       $("sessionId").value = randomId("session");
       localStorage.setItem(SESSION_KEY, $("sessionId").value);
       statusBox.textContent = "new session ready";
@@ -290,60 +304,102 @@
       };
     }
 
-    async function start() {
-      const requestBody = payload();
-      const runView = createRunView(requestBody);
-      const aborter = new AbortController();
-      const activeRun = { aborter, sessionId: requestBody.sessionId, taskType: requestBody.taskType };
-      activeRuns.add(activeRun);
-      statusBox.textContent = activeRuns.size > 1 ? "streaming multiple requests..." : "connecting...";
+    function appendSessionStream(line) {
+      sessionStreamBox.textContent += line + "\n";
+      sessionStreamBox.scrollTop = sessionStreamBox.scrollHeight;
+    }
 
-      const response = await fetch("/api/lumisight/agent/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-        signal: aborter.signal
-      });
-      if (!response.ok || !response.body) {
-        activeRuns.delete(activeRun);
-        statusBox.textContent = "failed: HTTP " + response.status;
-        runView.appendStream("HTTP error: " + response.status);
+    function appendSessionFinal(text) {
+      sessionFinalBox.textContent += text;
+      sessionFinalBox.scrollTop = sessionFinalBox.scrollHeight;
+    }
+
+    function appendSessionFinalLine(text) {
+      if (sessionFinalBox.textContent.length > 0 && !sessionFinalBox.textContent.endsWith("\n")) {
+        sessionFinalBox.textContent += "\n";
+      }
+      sessionFinalBox.textContent += text + "\n";
+      sessionFinalBox.scrollTop = sessionFinalBox.scrollHeight;
+    }
+
+    function handleEventMessage(eventName, rawData) {
+      if (!rawData) return;
+      appendSessionStream(`[${eventName}] ${rawData}`);
+      try {
+        const obj = JSON.parse(rawData);
+        if (obj.type === "TOKEN") {
+          appendSessionFinal(obj.message || "");
+        } else if (obj.type === "FINAL" || obj.type === "ASK_USER" || obj.type === "ERROR") {
+          appendSessionFinalLine(obj.message || "");
+        } else if (obj.type === "INTERRUPTED") {
+          appendSessionFinalLine("[INTERRUPTED] " + (obj.message || ""));
+        }
+      } catch (_) {}
+    }
+
+    function currentSessionId() {
+      return ($("sessionId").value || "").trim();
+    }
+
+    function isConnectedToCurrentSession() {
+      return eventSource && eventSource.readyState !== EventSource.CLOSED && eventSource.sessionId === currentSessionId();
+    }
+
+    function disconnect() {
+      if (!eventSource) return;
+      eventSource.close();
+      eventSource = null;
+      statusBox.textContent = "disconnected";
+    }
+
+    function connect() {
+      const sessionId = currentSessionId();
+      if (!sessionId) {
+        statusBox.textContent = "sessionId required";
         return;
       }
-      statusBox.textContent = "streaming...";
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          activeRuns.delete(activeRun);
-          statusBox.textContent = activeRuns.size === 0 ? "completed" : "streaming...";
-          break;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() || "";
-        for (const chunk of chunks) {
-          let eventName = "message";
-          let data = "";
-          for (const line of chunk.split("\n")) {
-            if (line.startsWith("event:")) eventName = line.slice(6).trim();
-            if (line.startsWith("data:")) data += line.slice(5).trim();
-          }
-          if (!data) continue;
-          runView.appendStream(`[${eventName}] ${data}`);
-          try {
-            const obj = JSON.parse(data);
-            if (obj.type === "TOKEN") {
-              runView.appendFinal(obj.message || "");
-            } else if (obj.type === "FINAL" || obj.type === "ASK_USER" || obj.type === "ERROR") {
-              runView.appendFinalLine(obj.message || "");
-            }
-          } catch (_) {}
-        }
+      if (isConnectedToCurrentSession()) {
+        statusBox.textContent = "connected";
+        return;
       }
+      disconnect();
+      const source = new EventSource(`/api/lumisight/agent/stream?sessionId=${encodeURIComponent(sessionId)}`);
+      source.sessionId = sessionId;
+      EVENT_TYPES.forEach((type) => {
+        source.addEventListener(type, (event) => handleEventMessage(type, event.data));
+      });
+      source.onopen = () => {
+        statusBox.textContent = `connected: ${sessionId}`;
+      };
+      source.onerror = () => {
+        if (source !== eventSource) {
+          return;
+        }
+        statusBox.textContent = "stream disconnected";
+      };
+      eventSource = source;
+    }
+
+    async function sendCommand(commandPayload) {
+      const response = await fetch("/api/lumisight/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commandPayload)
+      });
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+    }
+
+    async function start() {
+      const requestBody = payload();
+      if (!isConnectedToCurrentSession()) {
+        connect();
+      }
+      createRunView(requestBody).appendStream("[submitted] command accepted locally, waiting for session events...");
+      statusBox.textContent = "submitting...";
+      await sendCommand(requestBody);
+      statusBox.textContent = `connected: ${requestBody.sessionId}`;
     }
 
     function interruptPayload(sessionId, taskType) {
@@ -365,48 +421,39 @@
       };
     }
 
-    async function stopRun(activeRun) {
-      try {
-        await fetch("/api/lumisight/agent/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(interruptPayload(activeRun.sessionId, activeRun.taskType)),
-          keepalive: true
-        });
-      } catch (_) {
-      } finally {
-        activeRun.aborter.abort();
-        activeRuns.delete(activeRun);
-      }
+    async function interrupt() {
+      const requestBody = interruptPayload(currentSessionId(), $("taskType").value || "CHAT");
+      await sendCommand(requestBody);
+      statusBox.textContent = "interrupt sent";
     }
 
+    $("connectBtn").addEventListener("click", () => {
+      localStorage.setItem(USER_KEY, $("userId").value);
+      localStorage.setItem(SESSION_KEY, $("sessionId").value);
+      connect();
+    });
     $("sendBtn").addEventListener("click", () => {
       localStorage.setItem(USER_KEY, $("userId").value);
       localStorage.setItem(SESSION_KEY, $("sessionId").value);
       start().catch((e) => {
-        activeRuns.forEach((run) => {
-          if (run.aborter.signal.aborted) {
-            activeRuns.delete(run);
-          }
-        });
-        if (e.name === "AbortError") {
-          statusBox.textContent = activeRuns.size === 0 ? "stopped" : "streaming...";
-          return;
-        }
-        statusBox.textContent = "failed";
+        statusBox.textContent = "failed: " + e.message;
       });
+    });
+    $("disconnectBtn").addEventListener("click", () => {
+      disconnect();
     });
     $("newSessionBtn").addEventListener("click", () => {
       resetSession();
     });
     $("clearBtn").addEventListener("click", () => {
       runsBox.textContent = "";
+      sessionStreamBox.textContent = "";
+      sessionFinalBox.textContent = "";
       statusBox.textContent = "idle";
     });
     $("stopBtn").addEventListener("click", () => {
-      const runs = Array.from(activeRuns);
-      Promise.allSettled(runs.map(stopRun)).finally(() => {
-        statusBox.textContent = "stopped";
+      interrupt().catch((e) => {
+        statusBox.textContent = "interrupt failed: " + e.message;
       });
     });
     ensureIdentity();

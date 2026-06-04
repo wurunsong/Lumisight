@@ -4,7 +4,7 @@ import com.lumisight.common.concurrent.NamedExecutors;
 import com.lumisight.api.agent.dto.request.AgentRunRequest;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentEvent;
-import com.lumisight.core.support.AgentConversationManager;
+import com.lumisight.core.support.AgentSessionContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Component
 public class AgentSessionDispatcher {
@@ -31,11 +32,11 @@ public class AgentSessionDispatcher {
     private final Map<String, SessionMailbox> mailboxes = new ConcurrentHashMap<>();
     private final ExecutorService workerPool = NamedExecutors.newCachedPool("agent-session-worker");
     private final AgentInteractionOrchestrator interactionOrchestrator;
-    private final AgentConversationManager conversationManager;
+    private final AgentSessionContextStore conversationManager;
 
     public AgentSessionDispatcher(
             AgentInteractionOrchestrator interactionOrchestrator,
-            AgentConversationManager conversationManager
+            AgentSessionContextStore conversationManager
     ) {
         this.interactionOrchestrator = interactionOrchestrator;
         this.conversationManager = conversationManager;
@@ -43,11 +44,25 @@ public class AgentSessionDispatcher {
 
     public Flux<AgentEvent> stream(AgentRunRequest request) {
         AgentRunRequest normalized = ensureIds(request);
-        Sinks.Many<AgentEvent> sink = Sinks.many().unicast().onBackpressureBuffer();
-        QueuedEnvelope envelope = new QueuedEnvelope(normalized, sink);
+        return Flux.defer(() -> {
+            Flux<AgentEvent> events = subscribe(normalized.sessionId());
+            submit(normalized);
+            return events;
+        });
+    }
+
+    public void submit(AgentRunRequest request) {
+        AgentRunRequest normalized = ensureIds(request);
         SessionMailbox mailbox = mailboxes.computeIfAbsent(normalized.sessionId(), SessionMailbox::new);
-        mailbox.submit(envelope);
-        return sink.asFlux();
+        mailbox.submit(new QueuedEnvelope(normalized));
+    }
+
+    public Flux<AgentEvent> subscribe(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return Flux.error(new IllegalArgumentException("sessionId is required"));
+        }
+        SessionMailbox mailbox = mailboxes.computeIfAbsent(sessionId.trim(), SessionMailbox::new);
+        return mailbox.subscribe();
     }
 
     public void cancel(String sessionId, String reason) {
@@ -85,109 +100,137 @@ public class AgentSessionDispatcher {
     private final class SessionMailbox {
         private final String sessionId;
         private final BlockingQueue<QueuedEnvelope> queue = new LinkedBlockingQueue<>();
+        private final Sinks.Many<AgentEvent> eventSink = Sinks.many().multicast().directBestEffort();
+        private final ReentrantLock stateLock = new ReentrantLock();
         private volatile RunningExecution current;
-        private volatile boolean workerStarted;
+        private boolean workerStarted;
+        private int subscriberCount;
 
         private SessionMailbox(String sessionId) {
             this.sessionId = sessionId;
         }
 
-        private synchronized void submit(QueuedEnvelope envelope) {
-            if (envelope.request.interrupt()) {
-                handleInterrupt(envelope);
-                return;
-            }
-            AgentDialogueMode mode = parseMode(envelope.request.dialogueMode());
-            if (current == null && !queue.isEmpty()) {
-                switch (mode) {
-                    case COLLECT -> {
-                        QueuedEnvelope target = findMergeTarget();
-                        if (target != null) {
-                            target.merge(envelope);
-                            envelope.emit(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待启动的问题。"));
-                            ensureWorker();
+        private void submit(QueuedEnvelope envelope) {
+            List<AgentEvent> delayedEvents = new ArrayList<>();
+            RunningExecution runningToInterrupt = null;
+            boolean startWorker = false;
+            boolean manualInterrupt = Boolean.TRUE.equals(envelope.request.interrupt());
+
+            stateLock.lock();
+            try {
+                if (manualInterrupt) {
+                    clearPendingLocked("会话已被用户手动停止。", true, delayedEvents);
+                    runningToInterrupt = current;
+                    if (runningToInterrupt == null) {
+                        conversationManager.nextEpoch(sessionId);
+                        conversationManager.interrupt(sessionId);
+                    }
+                    delayedEvents.add(AgentEvent.interrupted("", sessionId, 0));
+                    return;
+                }
+
+                AgentDialogueMode mode = parseMode(envelope.request.dialogueMode());
+                if (current == null && !queue.isEmpty()) {
+                    switch (mode) {
+                        case COLLECT -> {
+                            if (mergeIntoPendingLocked(envelope)) {
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待启动的问题。"));
+                                startWorker = markWorkerStartLocked();
+                                return;
+                            }
+                        }
+                        case STEER -> {
+                            clearPendingLocked("被新的 STEER 请求替换。", true, delayedEvents);
+                            queue.offer(envelope);
+                            delayedEvents.add(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已替换尚未启动的待处理问题。"));
+                            startWorker = markWorkerStartLocked();
                             return;
                         }
-                    }
-                    case STEER -> {
-                        clearPending("被新的 STEER 请求替换。", true);
-                        queue.offer(envelope);
-                        envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已替换尚未启动的待处理问题。"));
-                        ensureWorker();
-                        return;
-                    }
-                    case FOLLOW -> {
-                        // no-op: keep FIFO ordering
-                    }
-                }
-            }
-            if (current != null) {
-                switch (mode) {
-                    case FOLLOW -> {
-                        envelope.emit(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "FOLLOW: 已进入本地会话队列，等待当前执行完成。"));
-                        queue.offer(envelope);
-                    }
-                    case COLLECT -> {
-                        QueuedEnvelope target = findMergeTarget();
-                        if (target == null) {
-                            envelope.emit(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已加入待处理队列，等待当前执行完成。"));
-                            queue.offer(envelope);
-                        } else {
-                            target.merge(envelope);
-                            envelope.emit(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到同会话待处理问题。"));
+                        case FOLLOW -> {
+                            // no-op: keep FIFO ordering
                         }
                     }
-                    case STEER -> {
-                        clearPending("被新的 STEER 请求替换。", true);
-                        queue.offer(envelope);
-                        envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
-                        current.interruptForSteer();
-                    }
                 }
-                ensureWorker();
-                return;
+
+                if (current != null) {
+                    switch (mode) {
+                        case FOLLOW -> {
+                            queue.offer(envelope);
+                            delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "FOLLOW: 已进入本地会话队列，等待当前执行完成。"));
+                        }
+                        case COLLECT -> {
+                            if (mergeIntoPendingLocked(envelope)) {
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到同会话待处理问题。"));
+                            } else {
+                                queue.offer(envelope);
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已加入待处理队列，等待当前执行完成。"));
+                            }
+                        }
+                        case STEER -> {
+                            clearPendingLocked("被新的 STEER 请求替换。", true, delayedEvents);
+                            queue.offer(envelope);
+                            delayedEvents.add(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
+                            runningToInterrupt = current;
+                        }
+                    }
+                    startWorker = markWorkerStartLocked();
+                    return;
+                }
+
+                queue.offer(envelope);
+                startWorker = markWorkerStartLocked();
+            } finally {
+                stateLock.unlock();
             }
 
-            queue.offer(envelope);
-            ensureWorker();
+            delayedEvents.forEach(this::emit);
+            if (runningToInterrupt != null) {
+                if (manualInterrupt) {
+                    log.info("agent_session interrupt requested, sessionId={}, hasRunning=true", sessionId);
+                    runningToInterrupt.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。", true);
+                } else {
+                    runningToInterrupt.interruptForSteer();
+                }
+            } else if (manualInterrupt) {
+                log.info("agent_session interrupt requested, sessionId={}, hasRunning=false", sessionId);
+            }
+            if (startWorker) {
+                workerPool.submit(this::drainLoop);
+            }
         }
 
-        private synchronized void cancel(String reason) {
-            if (current == null && queue.isEmpty()) {
-                return;
+        private Flux<AgentEvent> subscribe() {
+            return Flux.defer(() -> {
+                stateLock.lock();
+                try {
+                    subscriberCount++;
+                } finally {
+                    stateLock.unlock();
+                }
+                return eventSink.asFlux().doFinally(signalType -> onSubscriberDetached());
+            });
+        }
+
+        private void cancel(String reason) {
+            RunningExecution running = null;
+            stateLock.lock();
+            try {
+                if (current == null && queue.isEmpty()) {
+                    return;
+                }
+                log.info("agent_session cancel, sessionId={}, reason={}", sessionId, reason);
+                clearPendingLocked(reason, false, null);
+                running = current;
+                if (running == null) {
+                    conversationManager.nextEpoch(sessionId);
+                    conversationManager.interrupt(sessionId);
+                }
+            } finally {
+                stateLock.unlock();
             }
-            log.info("agent_session cancel, sessionId={}, reason={}", sessionId, reason);
-            clearPending(reason, false);
-            RunningExecution running = current;
             if (running != null) {
                 running.interrupt("INTERRUPT", "interrupting", reason, false);
-            } else {
-                conversationManager.nextEpoch(sessionId);
-                conversationManager.interrupt(sessionId);
             }
-        }
-
-        private void handleInterrupt(QueuedEnvelope envelope) {
-            clearPending("会话已被用户手动停止。", true);
-            RunningExecution running = current;
-            if (running != null) {
-                log.info("agent_session interrupt requested, sessionId={}, hasRunning=true", sessionId);
-                running.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。", true);
-            } else {
-                log.info("agent_session interrupt requested, sessionId={}, hasRunning=false", sessionId);
-                conversationManager.nextEpoch(sessionId);
-                conversationManager.interrupt(sessionId);
-            }
-            envelope.emit(AgentEvent.interrupted("", sessionId, 0));
-            envelope.complete();
-        }
-
-        private synchronized void ensureWorker() {
-            if (workerStarted) {
-                return;
-            }
-            workerStarted = true;
-            workerPool.submit(this::drainLoop);
         }
 
         private void drainLoop() {
@@ -195,12 +238,15 @@ public class AgentSessionDispatcher {
                 while (true) {
                     QueuedEnvelope envelope = queue.poll(200, TimeUnit.MILLISECONDS);
                     if (envelope == null) {
-                        synchronized (this) {
-                            if (current == null && queue.isEmpty()) {
+                        stateLock.lock();
+                        try {
+                            if (isIdleLocked()) {
                                 workerStarted = false;
                                 mailboxes.remove(sessionId, this);
                                 return;
                             }
+                        } finally {
+                            stateLock.unlock();
                         }
                         continue;
                     }
@@ -209,33 +255,37 @@ public class AgentSessionDispatcher {
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             } finally {
-                synchronized (this) {
+                stateLock.lock();
+                try {
                     workerStarted = false;
-                    if (current == null && queue.isEmpty()) {
+                    if (isIdleLocked()) {
                         mailboxes.remove(sessionId, this);
                     }
+                } finally {
+                    stateLock.unlock();
                 }
             }
         }
 
         private void runEnvelope(QueuedEnvelope envelope) {
             CountDownLatch latch = new CountDownLatch(1);
-            RunningExecution running = new RunningExecution(sessionId, envelope, latch);
+            RunningExecution running = new RunningExecution(this, sessionId, envelope, latch);
             running.workerThread = Thread.currentThread();
-            synchronized (this) {
+            stateLock.lock();
+            try {
                 current = running;
+            } finally {
+                stateLock.unlock();
             }
 
             Disposable disposable = interactionOrchestrator.stream(envelope.request)
-                    .doOnNext(envelope::emit)
+                    .doOnNext(this::emit)
                     .doOnError(error -> {
-                        envelope.error(error);
+                        log.warn("agent_session run failed, sessionId={}, message={}", sessionId, error.getMessage());
+                        emit(AgentEvent.error("agent run failed: " + error.getMessage()));
                         latch.countDown();
                     })
-                    .doOnComplete(() -> {
-                        envelope.complete();
-                        latch.countDown();
-                    })
+                    .doOnComplete(latch::countDown)
                     .doFinally(signalType -> latch.countDown())
                     .subscribe();
             running.disposable = disposable;
@@ -245,28 +295,66 @@ public class AgentSessionDispatcher {
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             } finally {
-                synchronized (this) {
+                stateLock.lock();
+                try {
                     current = null;
+                } finally {
+                    stateLock.unlock();
                 }
             }
+        }
+
+        private boolean mergeIntoPendingLocked(QueuedEnvelope incoming) {
+            QueuedEnvelope target = findMergeTarget();
+            if (target == null) {
+                return false;
+            }
+            target.merge(incoming);
+            return true;
         }
 
         private QueuedEnvelope findMergeTarget() {
+            QueuedEnvelope target = null;
             for (QueuedEnvelope candidate : queue) {
-                return candidate;
+                target = candidate;
             }
-            return null;
+            return target;
         }
 
-        private void clearPending(String reason, boolean emitEvents) {
+        private void clearPendingLocked(String reason, boolean emitEvents, List<AgentEvent> delayedEvents) {
             List<QueuedEnvelope> dropped = new ArrayList<>();
             queue.drainTo(dropped);
-            for (QueuedEnvelope envelope : dropped) {
-                if (emitEvents) {
-                    envelope.emit(AgentEvent.state("", sessionId, 0, "STEER", "interrupted", reason));
-                }
-                envelope.complete();
+            if (emitEvents && !dropped.isEmpty() && delayedEvents != null) {
+                delayedEvents.add(AgentEvent.state("", sessionId, 0, "STEER", "interrupted", reason));
             }
+        }
+
+        private void emit(AgentEvent event) {
+            eventSink.tryEmitNext(event);
+        }
+
+        private void onSubscriberDetached() {
+            stateLock.lock();
+            try {
+                subscriberCount = Math.max(0, subscriberCount - 1);
+                if (isIdleLocked()) {
+                    mailboxes.remove(sessionId, this);
+                }
+            } finally {
+                stateLock.unlock();
+            }
+        }
+
+        private boolean isIdleLocked() {
+            return current == null && queue.isEmpty() && subscriberCount == 0;
+        }
+
+        private boolean markWorkerStartLocked() {
+            if (workerStarted) {
+                return false;
+            }
+            workerStarted = true;
+            return true;
         }
     }
 
@@ -282,15 +370,13 @@ public class AgentSessionDispatcher {
     }
 
     private static final class QueuedEnvelope {
-        private final List<Sinks.Many<AgentEvent>> sinks = new ArrayList<>();
         private AgentRunRequest request;
 
-        private QueuedEnvelope(AgentRunRequest request, Sinks.Many<AgentEvent> sink) {
+        private QueuedEnvelope(AgentRunRequest request) {
             this.request = request;
-            this.sinks.add(sink);
         }
 
-        private synchronized void merge(QueuedEnvelope incoming) {
+        private void merge(QueuedEnvelope incoming) {
             String mergedQuestion = mergeQuestions(request.question(), incoming.request.question());
             request = new AgentRunRequest(
                     request.taskType(),
@@ -308,7 +394,6 @@ public class AgentSessionDispatcher {
                     request.runMode(),
                     request.dialogueMode()
             );
-            sinks.addAll(incoming.sinks);
         }
 
         private static String mergeQuestions(String base, String extra) {
@@ -321,33 +406,18 @@ public class AgentSessionDispatcher {
             return base + "\n用户追加问题: " + extra;
         }
 
-        private synchronized void emit(AgentEvent event) {
-            for (Sinks.Many<AgentEvent> sink : sinks) {
-                sink.tryEmitNext(event);
-            }
-        }
-
-        private synchronized void error(Throwable error) {
-            for (Sinks.Many<AgentEvent> sink : sinks) {
-                sink.tryEmitError(error);
-            }
-        }
-
-        private synchronized void complete() {
-            for (Sinks.Many<AgentEvent> sink : sinks) {
-                sink.tryEmitComplete();
-            }
-        }
     }
 
     private final class RunningExecution {
+        private final SessionMailbox mailbox;
         private final String sessionId;
         private final QueuedEnvelope envelope;
         private final CountDownLatch latch;
         private volatile Disposable disposable;
         private volatile Thread workerThread;
 
-        private RunningExecution(String sessionId, QueuedEnvelope envelope, CountDownLatch latch) {
+        private RunningExecution(SessionMailbox mailbox, String sessionId, QueuedEnvelope envelope, CountDownLatch latch) {
+            this.mailbox = mailbox;
             this.sessionId = sessionId;
             this.envelope = envelope;
             this.latch = latch;
@@ -361,8 +431,8 @@ public class AgentSessionDispatcher {
             conversationManager.nextEpoch(sessionId);
             conversationManager.interrupt(sessionId);
             if (emitEvents) {
-                envelope.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
-                envelope.emit(AgentEvent.interrupted("", sessionId, 0));
+                mailbox.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
+                mailbox.emit(AgentEvent.interrupted("", sessionId, 0));
             }
             Thread executingThread = workerThread;
             if (executingThread != null) {
