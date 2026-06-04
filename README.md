@@ -39,6 +39,16 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 - 同一 `sessionId` 如果重复建立 SSE 订阅，后到的连接会替换旧连接；客户端断开订阅不会自动 cancel 正在运行的会话。
 - SSE / WebSocket 事件都会渐进推送 `PLAN/TOOL/TOKEN/FINAL` 等统一 `AgentEvent`，不再要求“每次提问新开一条独立流”。
 - 协议契约文档见：`AGENT_PROTOCOL.md`（中文）。
+- 架构视图见：`agent-architecture.html`；上下文专项视图见：`context-management.html`。
+
+## 上下文管理（结构化账本）
+
+- Agent 上下文不再只是裸 `List<AgentContextItem>`；会话恢复时会同时持有 `AgentContextSession`，把 entry、artifact 引用与压缩状态一起带回主链路。
+- 工具结果过大时会先按字节阈值写入 `.lumisight/context-artifacts`，prompt 中只保留 preview 与 artifact 引用。
+- 调模型前会经过统一 `AgentContextManager`：
+  - 写时压缩：大结果落盘、Snip、Micro-Compact
+  - 读时压缩：Projection、必要时 Auto-Compact + 热文件恢复
+- 这套机制的目标是：在保留执行证据的同时，按不同模型上下文窗口动态控制 prompt 体积。
 
 ## Sandbox 执行与回滚
 
@@ -214,6 +224,18 @@ mvn -pl lumisight-api -am spring-boot:run
   - `ERROR`：错误事件
   - `INTERRUPTED` / `RESUMED`：会话被中断或恢复执行
 
+### Agent Cron 接口
+
+- `GET /api/lumisight/agent/cron-jobs`：列出所有定时任务。
+- `GET /api/lumisight/agent/cron-jobs/{jobId}`：查看单个定时任务详情与最近运行状态。
+- `POST /api/lumisight/agent/cron-jobs`：创建定时任务。
+- `PUT /api/lumisight/agent/cron-jobs/{jobId}`：更新 cron 表达式、开关和绑定的 Agent 请求。
+- `POST /api/lumisight/agent/cron-jobs/{jobId}/trigger`：立即手动触发一次。
+- `DELETE /api/lumisight/agent/cron-jobs/{jobId}`：删除定时任务。
+- 说明：
+  - 当前 job 定义和最近运行历史为内存态，服务重启后不会自动恢复。
+  - 定时执行最终仍走同一套 `AgentExecutionEngine` 主链路，不是独立的旁路实现。
+
 ### Agent 接口（WebSocket）
 
 - 地址：`ws://<host>/ws/lumisight/agent`（HTTPS 场景使用 `wss://`）
@@ -313,6 +335,7 @@ curl -X POST http://localhost:8080/api/lumisight/agent/run \
   - `AgentToolRuntimeContext`
   - `AgentToolInvocationContext`
   - `SLF4J MDC`
+- 会话状态存取也已经通过 `AgentSessionContextStore` 抽象收口，避免调度、todo、清理任务直接绑死具体实现。
 - 这套机制已覆盖会话 worker、并发工具执行、混合向量并行检索和 JDTLS 后台 drain 线程。
 
 ## 文档同步约定

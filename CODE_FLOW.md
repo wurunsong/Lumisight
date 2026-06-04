@@ -216,10 +216,20 @@
   - `AgentSessionDispatcher` 从“按请求持有 sink”改为“按会话持有共享事件总线”：单次 run 结束不再自动关闭整个会话流，显式 `interrupt` 才改变会话执行状态。
   - WebSocket 侧跟随收敛为“连接复用会话订阅 + 命令投递”模型；同一连接对同一 `sessionId` 的后续命令会复用既有事件订阅。
   - 调试页 `agent-console.html` 改为 `Connect -> Send Command -> Interrupt/Disconnect` 的会话式交互，不再伪装成“每个请求一条独立 SSE 流”。
+- 今日提交摘要（上下文与运行骨架补记）：
+  - 会话状态与上下文账本开始分层：新增 `AgentSessionContextStore` 抽象，`AgentConversationManager` 在保留等待态/中断/todo 的同时，开始持有 `AgentContextSession` 而不再只依赖裸 `List<AgentContextItem>`。
+  - 线程本地运行时上下文统一收口：`AgentToolRuntimeContext` 与 `AgentToolInvocationContext` 复用 `AbstractThreadLocalAgentContext`，并通过 `ThreadContextRegistry` 的 carrier 机制统一注册和跨线程恢复。
+  - 上下文管理正式收敛为结构化流水线：新增 `AgentContextManager / AgentContextSession / AgentContextEntry / AgentContextArtifactStore`，并由 `DefaultAgentContextManager` 统一负责入账、落盘、Snip、Micro-Compact、读时投影与 Auto-Compact。
+  - 主编排类继续瘦身：`CodeAssistantAgentService` 把决策循环与最终输出拆到 `AgentLoopOrchestrator` 和 `AgentFinalResponseEmitter`，让上下文投影、工具结果回填和最终答案流式输出各自归位。
+  - 新增 Cron 触发能力：提供 `/api/lumisight/agent/cron-jobs` 的增删改查与手动触发接口，后台用专用 `TaskScheduler + CronTrigger` 定时拉起 Agent 执行，并维护最近运行历史。
+  - 向量符号摘要兜底文案从占位 TODO 改成稳定模板说明，避免 `symbol_doc` 未接真实 AI 总结时暴露技术占位文本。
 - 关键修复：
   - “客户端断开 SSE 会误 cancel 正在执行的会话” -> 改为订阅断开仅释放通道，不再顺手中断后台执行。
   - “同一会话反复提问对应多条 SSE 流，前端心智和后端调度模型不一致” -> 收敛为单会话主流连接，命令与事件分离。
   - “COLLECT/FOLLOW/STEER 的会话语义被请求级流模型削弱” -> 统一回到 `sessionId` 维度建模，使传输层与调度层语义对齐。
+  - “上下文管理继续靠字符串列表硬拼，工具结果一多就迅速膨胀” -> 改为结构化 context entry + artifact 落盘 + 读时投影链路，为不同模型窗口预留压缩和恢复机制。
+  - “cron 任务只能手工重复触发，没有稳定的后台调度入口” -> 新增动态 cron job 注册、重调度与最近运行历史，让固定问题可按计划重复执行。
 - 验证：
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：通过，覆盖 SSE controller、session dispatcher、WebSocket handler 与调试页协议改造。
   - 文档同步：`README.md`、`AGENT_PROTOCOL.md`、`agent-architecture.html` 已同步改为“会话级单长连接 + 命令投递”口径。
+  - 同一编译命令也覆盖了上下文账本、上下文投影/压缩、cron 调度接口和 `CodeAssistantAgentService` 拆分后的主链路，结果仍为 `BUILD SUCCESS`。

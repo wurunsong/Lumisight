@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumisight 上下文管理视图</title>
+  <style>
+    :root {
+      --bg: #f4f8fb;
+      --surface: #ffffff;
+      --text: #13304b;
+      --muted: #5f748d;
+      --line: #d8e2ee;
+      --blue: #0d5dbc;
+      --green: #13806b;
+      --amber: #a56a11;
+      --rose: #a63b4a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(900px 500px at 100% 0, #e3efff 0, transparent 52%),
+        linear-gradient(180deg, #f8fbff 0, var(--bg) 100%);
+      font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .wrap { max-width: 1220px; margin: 0 auto; padding: 24px 20px 36px; }
+    .hero {
+      border-radius: 20px;
+      padding: 24px;
+      color: #edf6ff;
+      background: linear-gradient(140deg, #10325f, #137196);
+      box-shadow: 0 18px 36px rgba(16, 50, 95, 0.16);
+    }
+    h1 { margin: 0 0 10px; font-size: 30px; }
+    .hero p { margin: 0; color: #d4e9ff; line-height: 1.65; }
+    .title {
+      margin: 24px 0 12px;
+      padding-left: 10px;
+      border-left: 4px solid var(--blue);
+      color: var(--blue);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .panel, .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(17, 51, 88, 0.05);
+    }
+    .panel { padding: 16px; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(11, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+    .node {
+      border-radius: 999px;
+      text-align: center;
+      padding: 10px 8px;
+      font-size: 13px;
+      font-weight: 650;
+      border: 1px solid;
+      white-space: nowrap;
+    }
+    .source { background: #edf4ff; border-color: #bdd3f7; color: #1f4c9e; }
+    .control { background: #eafaf6; border-color: #99dcc8; color: #0d6a62; }
+    .collapse { background: #fff6ea; border-color: #f2cd9e; color: #8d5510; }
+    .final { background: #fff0f2; border-color: #edbac3; color: #943344; }
+    .arrow { text-align: center; color: #7a90aa; font-size: 18px; font-weight: 700; }
+    .grid3, .grid4 {
+      display: grid;
+      gap: 14px;
+    }
+    .grid3 { grid-template-columns: repeat(3, 1fr); }
+    .grid4 { grid-template-columns: repeat(4, 1fr); }
+    .card { padding: 14px; min-height: 210px; }
+    .card h3 { margin: 0 0 8px; color: var(--green); font-size: 16px; }
+    .card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+    .card li + li { margin-top: 4px; }
+    .legend {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--amber);
+      border-radius: 10px;
+      background: #fff8ee;
+      color: #80511a;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    code {
+      background: #eef3f8;
+      padding: 1px 5px;
+      border-radius: 5px;
+      font-size: 12px;
+    }
+    @media (max-width: 1080px) {
+      .flow { grid-template-columns: repeat(3, 1fr); }
+      .arrow { transform: rotate(90deg); }
+      .grid3, .grid4 { grid-template-columns: 1fr; }
+      .card { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Lumisight：Agent 上下文管理视图</h1>
+      <p>这张图单独描述“上下文如何入账、何时判断过大、如何压缩、何时落盘、最终如何投影给模型看”。它不重复主架构页的协议与工具细节，而是专门聚焦上下文账本与 5 层压缩流水线。</p>
+    </section>
+
+    <h2 class="title">1. 上下文主链路</h2>
+    <section class="panel">
+      <div class="flow">
+        <div class="node source">用户输入 / 工具结果</div><div class="arrow">→</div>
+        <div class="node source">Session Ledger 入账</div><div class="arrow">→</div>
+        <div class="node control">大结果落盘</div><div class="arrow">→</div>
+        <div class="node collapse">Snip / Micro-Compact</div><div class="arrow">→</div>
+        <div class="node collapse">读时投影 / Auto-Compact</div><div class="arrow">→</div>
+        <div class="node final">Prompt 视图</div>
+      </div>
+      <div class="legend">
+        当前上下文链路的判断单位不是“原始字符串列表”，而是结构化账本：每条 entry 会记录来源类型、token 估算、是否可裁剪、是否可重取、是否已有磁盘 artifact。
+      </div>
+    </section>
+
+    <h2 class="title">2. 会话账本结构</h2>
+    <section class="grid4">
+      <article class="card">
+        <h3>2.1 会话状态层</h3>
+        <ul>
+          <li><code>AgentConversationManager</code> 继续负责会话状态机、epoch、中断、todo 与等待态 TTL。</li>
+          <li>它通过 <code>AgentSessionContextStore</code> 抽象暴露保存/恢复接口，保存的不再只是 <code>List&lt;AgentContextItem&gt;</code>，还会附带 <code>AgentContextSession</code>。</li>
+          <li>作用：让“会话状态”和“上下文账本”分层，不再所有逻辑都堆在一个列表里。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.2 上下文账本层</h3>
+        <ul>
+          <li><code>AgentContextSession</code> 是会话级账本，内部持有多条 <code>AgentContextEntry</code>。</li>
+          <li>每条 entry 会标记 kind、priority、tokenEstimate、artifactRef、compactable、retriable。</li>
+          <li>作用：后续 Snip、Micro-Compact、Projection 都有统一抓手。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.3 Artifact 层</h3>
+        <ul>
+          <li>大结果通过 <code>FileAgentContextArtifactStore</code> 写入 <code>.lumisight/context-artifacts</code>。</li>
+          <li>prompt 中只保留 preview、artifact path、artifact id 和元数据。</li>
+          <li>作用：完整正文不丢，但不再直接撑满模型上下文。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.4 Projection 层</h3>
+        <ul>
+          <li>模型调用前不直接拿完整账本，而是由 <code>DefaultAgentContextManager</code> 动态生成“本轮视图”。</li>
+          <li>决策、复核、最终回答三种 prompt 都各自走投影。</li>
+          <li>作用：保留真实历史，同时避免每轮都把所有旧上下文原样塞进去。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2 class="title">3. 怎么判断“上下文太多了”</h2>
+    <section class="grid3">
+      <article class="card">
+        <h3>3.1 判断基线</h3>
+        <ul>
+          <li>当前主要按 token 估算而不是按字符数判断；入口是 <code>AgentContextEntry.tokenEstimate</code>。</li>
+          <li>预算上限由 <code>lumisight.agent.context.effective-context-window</code> 决定。</li>
+          <li>这个值就应该按模型能力调，不同模型上下文窗不同，这里必须可配置。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>3.2 两级投影阈值</h3>
+        <ul>
+          <li><code>projection-soft-tokens</code>：超过后开始主动折叠旧内容。</li>
+          <li><code>projection-hard-tokens</code>：超过后继续强裁，优先保高优先级 entry。</li>
+          <li>作用：在真正触发全量摘要前，先尽量保住细节上下文。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>3.3 Auto-Compact 阈值</h3>
+        <ul>
+          <li>触发阈值不是写死常量，而是：<code>effective-context-window - response-reserve-tokens - auto-compact-buffer-tokens</code>。</li>
+          <li>也就是说，模型越大，只要把 <code>effective-context-window</code> 调大，整个压缩触发点会自然后移。</li>
+          <li>作用：为不同模型留出可配置的输出空间和安全缓冲区。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2 class="title">4. 怎么判断“大结果”</h2>
+    <section class="grid3">
+      <article class="card">
+        <h3>4.1 单条结果阈值</h3>
+        <ul>
+          <li><code>single-artifact-bytes</code>：单个上下文 entry 超过这个大小，就直接落盘。</li>
+          <li>默认值是 50KB。</li>
+          <li>适合控制单个 <code>cat</code> / <code>grep</code> / 大 diff 输出。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>4.2 单轮总量阈值</h3>
+        <ul>
+          <li><code>tool-message-bytes</code>：同一批工具结果累计超过这个大小，会优先把最大的几条转成 artifact。</li>
+          <li>默认值是 200KB。</li>
+          <li>适合限制“一次工具批次”整体噪音，而不只是盯单条结果。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>4.3 Preview 阈值</h3>
+        <ul>
+          <li><code>preview-bytes</code> 决定 prompt 中保留多少预览内容。</li>
+          <li>默认值是 2KB。</li>
+          <li>作用：模型仍能看到结果大意，但不会因为 artifact 回填又重新爆上下文。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2 class="title">5. Claude Code 风格 5 层压缩流水线</h2>
+    <section class="grid4">
+      <article class="card">
+        <h3>5.1 大结果存盘</h3>
+        <ul>
+          <li>触发：单条或单批工具结果超过字节阈值。</li>
+          <li>处理：全文写磁盘，账本中保留 preview 与 artifact 引用。</li>
+          <li>输出：完整结果仍可追溯，但 prompt 只看到精简视图。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>5.2 Snip 老对话</h3>
+        <ul>
+          <li>触发：历史对话累计 token 达到 <code>snip-trigger-tokens</code>。</li>
+          <li>处理：较早、低优先级 conversation entry 被直接移除，并写入 boundary marker。</li>
+          <li>输出：释放空间，且记录本轮释放了多少 token。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>5.3 Micro-Compact 工具结果</h3>
+        <ul>
+          <li>触发：账本过大，或距离上次有效投影已过 <code>micro-compact-stale-minutes</code>。</li>
+          <li>处理：只裁剪可重取工具结果，保留最近 N 条原文和更老条目的 compact marker。</li>
+          <li>输出：模型知道“这里有内容被裁掉了”，需要时可重跑工具。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>5.4 读时投影 + Auto-Compact</h3>
+        <ul>
+          <li>触发：本轮决策/复核/最终回答前。</li>
+          <li>处理：先投影，再在必要时做全量摘要，并恢复最近访问的热文件/热证据；连续失败次数超过上限后不再无限重试 Auto-Compact。</li>
+          <li>输出：给模型的是“当前最值钱的一份上下文视图”，不是原始全历史。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2 class="title">6. 当前可调参数</h2>
+    <section class="panel">
+      <div class="legend">
+        推荐先调这几类：
+        <br />1. 模型窗口：<code>effective-context-window</code>、<code>response-reserve-tokens</code>、<code>auto-compact-buffer-tokens</code>
+        <br />2. 大结果策略：<code>single-artifact-bytes</code>、<code>tool-message-bytes</code>、<code>preview-bytes</code>
+        <br />3. 对话裁剪策略：<code>snip-trigger-tokens</code>、<code>snip-target-tokens</code>、<code>snip-keep-recent-conversation</code>
+        <br />4. 投影/裁剪策略：<code>projection-soft-tokens</code>、<code>projection-hard-tokens</code>、<code>micro-compact-keep-recent</code>、<code>micro-compact-stale-minutes</code>
+        <br />5. 恢复策略：<code>post-compact-token-budget</code>、<code>post-compact-max-restore-entries</code>、<code>post-compact-max-tokens-per-entry</code>、<code>post-compact-skill-token-budget</code>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

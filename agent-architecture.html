@@ -118,10 +118,10 @@
       <article class="card">
         <h3>2.1 入口归一化链路</h3>
         <ul>
-          <li>触发：SSE 会话订阅建立，或 SSE / WS 命令进入系统。</li>
-          <li>处理：订阅侧只绑定 `sessionId` 到事件通道；命令侧统一映射为 AgentRequest，补齐 userId/sessionId 与运行参数，再投递到 session mailbox。</li>
-          <li>保护：请求校验在入口完成，协议差异被隔离在适配层，不直接碰核心编排。</li>
-          <li>输出：形成可执行的标准化请求对象与会话级消息投递。</li>
+          <li>触发：SSE 会话订阅建立，SSE / WS 命令进入系统，或 cron 定时任务到点触发一次后台执行。</li>
+          <li>处理：订阅侧只绑定 `sessionId` 到事件通道；命令侧和 cron 侧都统一映射为 AgentRequest，补齐 userId/sessionId 与运行参数，再投递到 session mailbox 或执行引擎。</li>
+          <li>保护：请求校验在入口完成，协议差异与调度触发差异都被隔离在适配层，不直接碰核心编排。</li>
+          <li>输出：形成可执行的标准化请求对象与统一的会话级执行入口。</li>
         </ul>
       </article>
       <article class="card">
@@ -194,6 +194,15 @@
           <li>处理：释放会话租约、更新状态、定时清理过期等待态。</li>
           <li>保护：防止会话泄漏与僵尸状态堆积。</li>
           <li>输出：系统回到可持续服务的稳定基线。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.9 定时任务链路</h3>
+        <ul>
+          <li>触发：用户创建 cron job，或手动触发某个已注册 job。</li>
+          <li>处理：任务定义先落到内存态注册表，再由专用 `TaskScheduler + CronTrigger` 重调度；到点后统一构造成 AgentRequest，并订阅执行结果事件流更新最近运行历史。</li>
+          <li>保护：更新 job 会先取消旧 schedule，删除 job 会同时释放定时句柄和当前活跃订阅，避免重复触发或僵尸运行记录。</li>
+          <li>输出：固定问题可以按计划自动运行，且保留最近一次状态、时间和消息摘要，形成“后台触发但仍走同一编排内核”的闭环。</li>
         </ul>
       </article>
     </section>
@@ -280,6 +289,15 @@
           <li>线程池在提交时捕获父线程里的 runtime context、invocation context 和日志 MDC。</li>
           <li>子线程执行前恢复这些上下文，执行后再恢复线程原有状态，避免线程池复用造成 `ThreadLocal` 丢失或串线。</li>
           <li>这样并发工具、混合检索、会话 worker 与后台 drain 线程都能共享同一套上下文传播语义。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>亮点 F：上下文账本化</h3>
+        <ul>
+          <li>每轮用户输入、模型决策、工具结果和 verifier 反馈先进入结构化上下文账本，而不是只堆到字符串列表。</li>
+          <li>大结果会先判断字节阈值再落盘，老对话和可重取工具结果按写时压缩策略收缩，真正调用模型前再做读时投影。</li>
+          <li>会话状态层继续保存等待态、中断和 todo，账本层单独保存 entry、artifact 和压缩状态，两层通过 `AgentContextSession` 衔接。</li>
+          <li>这样既能保留完整执行证据，又能按不同模型窗口动态收缩 prompt 视图。</li>
         </ul>
       </article>
     </section>
