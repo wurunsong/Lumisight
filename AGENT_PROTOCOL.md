@@ -2,17 +2,22 @@
 
 ## 1. 统一执行语义
 - Agent 核心编排与传输协议解耦。
-- 无论是 SSE 还是 WebSocket，最终都会走同一条 `AgentRequest -> Flux<AgentEvent>` 执行链路。
+- 无论是 SSE 还是 WebSocket，命令最终都会走同一条 `AgentRequest -> Flux<AgentEvent>` 执行链路。
 - 会话调度语义（`FOLLOW/COLLECT/STEER`、`HUMAN_GATE`、`resume`、`interrupt`）在各协议下保持一致。
+- 连接建模以 `sessionId` 为单位，而不是以 `userId` 为单位；一个会话通常只保持一条主事件流连接。
 
 ## 2. SSE 协议
 
 ### 2.1 接口
-- `POST /api/lumisight/agent/stream`
-- `Content-Type: application/json`
+- `GET /api/lumisight/agent/stream?sessionId=s-1`
 - 响应类型：`text/event-stream`
+- 语义：建立 `sessionId` 级别的持续事件订阅；如果同一 `sessionId` 重复订阅，后到连接替换旧连接。
 
-### 2.2 请求体（`AgentRunRequest`）
+### 2.2 命令投递接口
+- `POST /api/lumisight/agent/run`
+- `Content-Type: application/json`
+
+### 2.3 请求体（`AgentRunRequest`）
 ```json
 {
   "taskType": "CHAT",
@@ -31,9 +36,10 @@
 }
 ```
 
-### 2.3 事件格式
+### 2.4 事件格式
 - SSE `event` 名称：`AgentEvent.type`
 - SSE `data` 内容：序列化后的 `AgentEvent` JSON
+- 客户端断开 SSE 订阅不会自动中断后台会话；如需停止执行，应显式发送 `interrupt=true` 的命令。
 
 ## 3. WebSocket 协议
 
@@ -61,7 +67,11 @@
 - `INTERRUPT`：中断会话
 - `PING`：心跳探测
 
-### 3.4 出站消息（`WsAgentMessage`）
+### 3.4 订阅语义
+- WebSocket 连接本身承担“长连接 + 命令投递 + 事件回传”三种职责。
+- 服务端会按 `request.sessionId` 订阅对应的会话事件流；同一 WebSocket 连接后续给同一 `sessionId` 发命令时会复用既有订阅。
+
+### 3.5 出站消息（`WsAgentMessage`）
 ```json
 {
   "type": "EVENT",
@@ -72,7 +82,7 @@
 }
 ```
 
-### 3.5 出站类型
+### 3.6 出站类型
 - `ACK`：命令已受理
 - `EVENT`：正常业务事件（`AgentEvent`）
 - `PONG`：`PING` 的响应

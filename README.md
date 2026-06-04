@@ -35,8 +35,9 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 - 核心编排已与传输协议解耦：统一通过 `AgentExecutionEngine` 执行主流程。
 - API 侧通过 `AgentTransportAdapter` + `AgentStreamGateway` 适配不同协议（当前内置 SSE 与 WebSocket）。
 - 同一 `sessionId` 的消息现在先进入本地 dispatcher/mailbox，再由单 worker 串行消费；`FOLLOW/COLLECT/STEER` 在消息投递层决策，而不是入口直接并发执行。
-- SSE 主链路已经改为 progressive emit：`INIT/PLAN/DECIDE/TOOL_CALL/TOOL_RESULT/TOKEN/FINAL` 会边执行边推送，不再等整轮编排结束后集中返回。
-- 前端调试页的 `Stop` 已改为“先发送 `interrupt=true` 请求，再关闭本地 SSE”；后端会同步执行 session cancel、订阅释放与 worker thread interrupt。
+- SSE 已收敛为“按会话维持单长连接 + 命令单独投递”：`GET /api/lumisight/agent/stream?sessionId=...` 负责持续消费事件，`POST /api/lumisight/agent/run` 负责提交问题、恢复或中断命令。
+- 同一 `sessionId` 如果重复建立 SSE 订阅，后到的连接会替换旧连接；客户端断开订阅不会自动 cancel 正在运行的会话。
+- SSE / WebSocket 事件都会渐进推送 `PLAN/TOOL/TOKEN/FINAL` 等统一 `AgentEvent`，不再要求“每次提问新开一条独立流”。
 - 协议契约文档见：`AGENT_PROTOCOL.md`（中文）。
 
 ## Sandbox 执行与回滚
@@ -53,14 +54,19 @@ export EMBEDDING_API_KEY="<your-embedding-key>"
 - Git 工具（`gitStatus/gitDiff/gitBlame`）已统一走 sandbox 执行器。
 - Hook 与 Tool 已统一到同一命令执行内核与同一份 sandbox 配置，不再存在 Hook 绕开 Tool 沙箱的独立路径。
 - 命令执行不再只是“先拼命令、再套通用模板”：
-  - 现在会先生成 `SandboxAccessSpec`，按本次 `tool/hook + args` 规划读路径、写路径、网络和可执行边界。
-  - 再由 `SandboxPolicyPlanner` 编译成最终 `CommandExecutionPolicy`，最后才进入 `SandboxCommandExecutor` 执行。
-  - 当前已接入 Git 工具与 Hook 命令；执行结果里会附带 `sandboxPlan`，方便调试本次实际放开的权限范围。
+  - 当前已经形成 `SandboxAccessSpec` -> `SandboxPolicyPlanner` -> `CommandExecutionPolicy` -> `SandboxCommandExecutor` 的受限执行链路。
+  - Git 工具与 Hook 命令已接入这条链路，执行结果里会附带 `sandboxPlan`，方便调试本次实际放开的权限范围。
+  - 目前 `mac-seatbelt` 侧仍以模板化临时 profile 为主；按 `tool/hook + args` 自动推导最小读写路径、网络和可执行边界的 planner 还会继续增强。
 - `writeRepoFile` 现在会返回 `snapshotId`（写前快照），可通过 `rollbackRepoFile` 回滚。
+
+## 启动路径建议
+
+- 仅调试 Agent 主链路：保留默认 `lumisight.kg.enabled=false`、`lumisight.vector.enabled=false`，直接启动 `lumisight-api` 即可。
+- 需要完整验证外挂知识库增强能力：先启动 NebulaGraph + Milvus，再开启 KG / Vector 开关。
 
 ## 第 1 步：本地启动外挂知识库（Podman）
 
-> 说明：正式开发 Agent 之前，需要先构建并启动 NebulaGraph + Milvus。
+> 说明：这一步只在你需要验证 KG / Vector 增强能力时才必需；如果只是调试 Agent 主链路，可跳过并保持默认关闭开关。
 > 当前 `infra/podman-compose.yml` 已使用国内镜像代理前缀（`m.daocloud.io`），用于提升拉取成功率。
 
 ### 1. 启动 Podman machine（如果尚未启动）
@@ -175,9 +181,10 @@ mvn -pl lumisight-api -am spring-boot:run
 
 ### Agent 接口（SSE 流式）
 
-- `POST /api/lumisight/agent/stream`：以 `text/event-stream` 持续返回 Agent 事件流。
+- `GET /api/lumisight/agent/stream?sessionId=<sessionId>`：建立该会话唯一的 SSE 订阅，持续返回 Agent 事件流。
+- `POST /api/lumisight/agent/run`：向指定 `sessionId` 投递命令，请求开始执行、恢复或中断。
 - 说明：最终回答阶段已经支持真实 `TOKEN` 流式输出，同时主循环事件也会渐进推送；但 `PLAN/DECIDE/VERIFY` 等中间模型推理目前仍以内部流式采集为主，前端看到的重点仍是阶段事件与最终回答 token。
-- 请求字段：
+- 命令字段（`AgentRunRequest`）：
   - `taskType`：`CODE_EXPLAIN` / `BUG_FIX` / `CHAT`（可为空，空时按服务默认策略处理）
   - `repoRoot`：仓库根路径
   - `question`：用户问题
@@ -190,6 +197,9 @@ mvn -pl lumisight-api -am spring-boot:run
     - `STEER`：新问题抢占当前执行并中断旧流输出
   - `skillPath`：可选；字段名保留为 `skillPath`，但实际传入的是“已注册技能引用”（如 id/name/path），仅允许命中 `lumisight.skills.allowed-paths` 扫描得到的 Markdown skill
   - 若不传 `skillPath`，Agent 会基于用户问题通过小模型在“已注册 skill 列表”中自动匹配一个技能；未命中或低置信时回退内置工作流。
+- 常见调用顺序：
+  - 先建立 SSE：`GET /api/lumisight/agent/stream?sessionId=s-1`
+  - 再投递命令：`POST /api/lumisight/agent/run`
 - 事件类型：
   - `PLAN`：计划输出
   - `SKILL_SELECTED`：技能路由结果
@@ -210,7 +220,7 @@ mvn -pl lumisight-api -am spring-boot:run
 - 入站命令：`WsAgentCommand`
   - `type`：`START` / `RESUME` / `INTERRUPT` / `PING`
   - `requestId`：前端请求追踪 id
-  - `request`：`AgentRunRequest`（与 SSE 请求体字段一致）
+  - `request`：`AgentRunRequest`（与 `POST /api/lumisight/agent/run` 的请求体字段一致）
 - 出站消息：`WsAgentMessage`
   - `ACK`：命令受理
   - `EVENT`：封装 `AgentEvent`
@@ -220,16 +230,19 @@ mvn -pl lumisight-api -am spring-boot:run
 ### 浏览器调试页（推荐替代 Postman）
 
 - 地址：`http://localhost:8080/agent-console.html`
-- 用途：可视化构造 Agent 请求、实时查看 SSE 事件流、查看最终输出文本。
+- 用途：先按 `sessionId` 建立 SSE 长连接，再可视化投递 Agent 命令、实时查看会话事件流与最终输出文本。
 - 适用：本地无 KG/Vector 环境时，仅调试 Agent 编排链路。
 
 示例：
 
 ```bash
-curl -N -X POST http://localhost:8080/api/lumisight/agent/stream \
+curl -N "http://localhost:8080/api/lumisight/agent/stream?sessionId=s-1"
+
+curl -X POST http://localhost:8080/api/lumisight/agent/run \
   -H "Content-Type: application/json" \
   -d '{
     "taskType":"BUG_FIX",
+    "sessionId":"s-1",
     "repoRoot":"/path/to/repo",
     "question":"分析空指针根因",
     "includeRagContext":true,

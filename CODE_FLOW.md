@@ -181,14 +181,14 @@
   - 当前 `mac-seatbelt` 只是“按模板动态生成临时 profile”，还不是像 Codex 那样按工具能力与实际参数自动规划最小权限规则；后续需要补齐统一的 sandbox planner，按 `tool + args` 推导读写路径、网络权限和可执行边界。
 
 ## 2026-06-03
-- 今日提交摘要（0 commits）：
-  - 今日未识别到新的代码提交；当前工作聚焦于收尾校对，确认昨日已提交的会话调度、Skill 注入、共享命令执行内核与 `mac-seatbelt` 文档描述保持一致。
+- 今日提交摘要（初版巡检时 0 commits）：
+  - 当日首次巡检时，`git log --since="2026-06-03 00:00:00" --until="2026-06-03 23:59:59"` 尚未识别到新的代码提交；当时工作聚焦于收尾校对，确认昨日已提交的会话调度、Skill 注入、共享命令执行内核与 `mac-seatbelt` 文档描述保持一致。
   - 文档同步仅追加日结记录，不补写未发生的功能增量；架构页与 README 只做必要措辞收敛，避免把“注册式 skill 引用”误写成“任意路径直读”。
 - 关键修复：
   - 文档表述可能让人误解 `skillPath` 仍可直接读取任意文件 -> 收紧为“字段名保留，但值必须命中已注册 skill 引用”，与 2026-06-02 前已提交实现保持一致。
   - 日结流程在无 commit 场景下容易遗漏留痕 -> 追加“无代码提交，仅运行验证/排障”的当日记录，保证流水账连续可追踪。
-- 验证：
-  - `git log --since="2026-06-03 00:00:00" --until="2026-06-03 23:59:59"`：未识别到代码提交。
+- 验证（初版巡检）：
+  - `git log --since="2026-06-03 00:00:00" --until="2026-06-03 23:59:59"`：当时未识别到代码提交。
   - `git log -5 --date=iso`：最近提交停留在 `2026-06-02 17:56:46 +0800`（`6218cc2 docs: 同步当日提交到 CODE_FLOW 与架构文档`）。
   - `rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html README.md`：用于检查本次同步后是否残留占位标记。
 
@@ -208,3 +208,18 @@
 - 验证（补记）：
   - `git log --since="2026-06-03 00:00:00" --until="2026-06-03 23:59:59"`：最终识别 24 条提交，覆盖 `core/api/common/hooks/docs` 全链路。
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：多次通过，覆盖文档同步前后的 Agent、线程池上下文传播、SSE 与工具治理改动。
+  - 文档口径收敛：将 README 与架构页中的 sandbox 描述统一为“已落地共享执行内核与受限策略编译链路，但按 `tool/hook + args` 自动推导最小权限边界的 planner 仍待继续增强”，避免与 `2026-06-02` TODO 冲突。
+
+## 2026-06-04
+- 今日提交摘要（协议模型收敛）：
+  - SSE 从“每次提问新建一条流”重构为“按 `sessionId` 建立单长连接订阅 + 命令单独投递”：新增 `GET /api/lumisight/agent/stream?sessionId=...` 会话流订阅语义，并将问题/恢复/中断统一收敛到 `POST /api/lumisight/agent/run`。
+  - `AgentSessionDispatcher` 从“按请求持有 sink”改为“按会话持有共享事件总线”：单次 run 结束不再自动关闭整个会话流，显式 `interrupt` 才改变会话执行状态。
+  - WebSocket 侧跟随收敛为“连接复用会话订阅 + 命令投递”模型；同一连接对同一 `sessionId` 的后续命令会复用既有事件订阅。
+  - 调试页 `agent-console.html` 改为 `Connect -> Send Command -> Interrupt/Disconnect` 的会话式交互，不再伪装成“每个请求一条独立 SSE 流”。
+- 关键修复：
+  - “客户端断开 SSE 会误 cancel 正在执行的会话” -> 改为订阅断开仅释放通道，不再顺手中断后台执行。
+  - “同一会话反复提问对应多条 SSE 流，前端心智和后端调度模型不一致” -> 收敛为单会话主流连接，命令与事件分离。
+  - “COLLECT/FOLLOW/STEER 的会话语义被请求级流模型削弱” -> 统一回到 `sessionId` 维度建模，使传输层与调度层语义对齐。
+- 验证：
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：通过，覆盖 SSE controller、session dispatcher、WebSocket handler 与调试页协议改造。
+  - 文档同步：`README.md`、`AGENT_PROTOCOL.md`、`agent-architecture.html` 已同步改为“会话级单长连接 + 命令投递”口径。

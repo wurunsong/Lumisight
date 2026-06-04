@@ -118,8 +118,8 @@
       <article class="card">
         <h3>2.1 入口归一化链路</h3>
         <ul>
-          <li>触发：SSE 请求或 WS 命令进入系统。</li>
-          <li>处理：统一映射为 AgentRequest，补齐 userId/sessionId 与运行参数，再投递到 session mailbox。</li>
+          <li>触发：SSE 会话订阅建立，或 SSE / WS 命令进入系统。</li>
+          <li>处理：订阅侧只绑定 `sessionId` 到事件通道；命令侧统一映射为 AgentRequest，补齐 userId/sessionId 与运行参数，再投递到 session mailbox。</li>
           <li>保护：请求校验在入口完成，协议差异被隔离在适配层，不直接碰核心编排。</li>
           <li>输出：形成可执行的标准化请求对象与会话级消息投递。</li>
         </ul>
@@ -235,8 +235,8 @@
         <h3>亮点 A：协议解耦</h3>
         <ul>
           <li>请求进入协议适配层。</li>
-          <li>统一映射到同一执行引擎，并先进入 session dispatcher。</li>
-          <li>执行结果回到事件通道抽象，SSE/WS 只消费统一 `AgentEvent`。</li>
+          <li>SSE 侧拆成“会话订阅”和“命令投递”，WS 侧维持单连接命令式协议；两者最终都统一映射到同一执行引擎，并先进入 session dispatcher。</li>
+          <li>执行结果回到事件通道抽象，SSE/WS 都只消费统一 `AgentEvent`。</li>
           <li>协议层仅负责分发与序列化，不再持有会话排队语义。</li>
           <li>新增协议时只扩适配层，不触碰主编排。</li>
         </ul>
@@ -257,7 +257,7 @@
           <li>决策触发工具调用。</li>
           <li>权限、typed args 绑定与策略先行校验。</li>
           <li>Hook 与 Tool 共用同一命令执行内核与同一 sandbox 配置。</li>
-          <li>执行前先由 planner 按本次 tool/hook + args 推导最小读写路径、网络和可执行边界，再编译成实际 sandbox policy。</li>
+          <li>执行前会先进入受限策略编译链路：基于本次调用生成访问规格，再编译成实际 sandbox policy；当前 `mac-seatbelt` 侧仍以模板化临时 profile 为主，按 `tool/hook + args` 自动推导最小权限边界的 planner 还会继续增强。</li>
           <li>默认走 macOS Seatbelt 执行边界；写入前快照、失败可回滚。</li>
           <li>运行时路径动态放行，避免用户目录下的 `node/python` 被误拦。</li>
           <li>形成“统一执行内核 + 操作系统强约束”的可控闭环。</li>
