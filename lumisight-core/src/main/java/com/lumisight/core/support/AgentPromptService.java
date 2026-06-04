@@ -258,8 +258,8 @@ public class AgentPromptService {
     }
 
     private String todoGuidanceBlock() {
-        return "- TODO: 如果任务是多步骤的，请优先使用 todo_write 维护任务清单；先列出所有步骤，再把状态从 pending 逐步更新为 in_progress 和 completed。\n"
-                + "- TODO: 系统可能会注入 <reminder>Update your todos.</reminder>，收到后请先刷新清单，再继续执行。";
+        return "- 任务清单：如果任务是多步骤的，请优先使用 todo_write 维护任务清单；先列出所有步骤，再把状态从 pending 逐步更新为 in_progress 和 completed。\n"
+                + "- 提醒机制：系统可能会注入 <reminder>Update your todos.</reminder>，收到后请先刷新清单，再继续执行。";
     }
 
     private String trimSkillContent(String rawSkillContent) {

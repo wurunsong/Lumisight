@@ -1,34 +1,26 @@
 package com.lumisight.core.agent;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
-import com.lumisight.core.hooks.runtime.HookedToolExecutor;
-import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;
 import com.lumisight.core.model.AgentToolExecutionResult;
-import com.lumisight.core.model.ToolDecision;
-import com.lumisight.core.model.AgentDialogueMode;
-import com.lumisight.core.model.ToolCall;
 import com.lumisight.core.support.AgentConversationManager;
-import com.lumisight.core.support.AgentDecisionParser;
-import com.lumisight.core.support.AgentFinalAnswerVerifier;
 import com.lumisight.core.support.AgentFlowSupport;
 import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentRequestValidators;
+import com.lumisight.core.support.AgentSessionContextStore;
 import com.lumisight.core.support.SkillAutoRouter;
 import com.lumisight.core.support.StreamingChatClientSupport;
+import com.lumisight.core.support.context.AgentContextManager;
+import com.lumisight.core.support.context.AgentContextSession;
 import com.lumisight.core.tool.AgentToolPermission;
-import com.lumisight.core.tool.AgentToolRegistry;
-import com.lumisight.hooks.AgentHookContext;
 import com.lumisight.hooks.AgentHookDispatcher;
 import com.lumisight.hooks.AgentHookPoint;
 import com.lumisight.skills.runtime.SkillContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import com.lumisight.skills.runtime.SkillRegistry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -36,7 +28,6 @@ import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,50 +36,45 @@ import java.util.UUID;
 @Service
 public class CodeAssistantAgentService implements AgentExecutionEngine {
 
-    private static final int MAX_TOOL_ROUNDS = 6;
     private static final int DEFAULT_CONTEXT_LIMIT = 5;
-    private static final Logger log = LoggerFactory.getLogger(CodeAssistantAgentService.class);
 
-    private final ChatClient llmChatClient;
-    private final AgentToolRegistry agentToolRegistry;
-    private final AgentPromptService agentPromptService;
-    private final AgentConversationManager conversationManager;
-    private final AgentHookDispatcher agentHookDispatcher;
-    private final HookedToolExecutor hookedToolExecutor;
+    private final AgentSessionContextStore conversationManager;
     private final SkillRegistry skillRegistry;
     private final AgentFlowSupport agentFlowSupport;
-    private final AgentDecisionParser decisionParser;
-    private final AgentFinalAnswerVerifier finalAnswerVerifier;
+    private final ChatClient llmChatClient;
+    private final AgentPromptService agentPromptService;
     private final SkillAutoRouter skillAutoRouter;
     private final StreamingChatClientSupport streamingChatClientSupport;
+    private final AgentContextManager agentContextManager;
+    private final AgentHookDispatcher agentHookDispatcher;
+    private final AgentLoopOrchestrator agentLoopOrchestrator;
+    private final AgentFinalResponseEmitter agentFinalResponseEmitter;
 
     @Autowired
     public CodeAssistantAgentService(
             ChatClient.Builder chatClientBuilder,
-            AgentToolRegistry agentToolRegistry,
-            AgentPromptService agentPromptService,
-            AgentConversationManager conversationManager,
-            AgentHookDispatcher agentHookDispatcher,
-            HookedToolExecutor hookedToolExecutor,
+            AgentSessionContextStore conversationManager,
             SkillRegistry skillRegistry,
             AgentFlowSupport agentFlowSupport,
-            AgentDecisionParser decisionParser,
-            AgentFinalAnswerVerifier finalAnswerVerifier,
+            AgentPromptService agentPromptService,
             SkillAutoRouter skillAutoRouter,
-            StreamingChatClientSupport streamingChatClientSupport
+            StreamingChatClientSupport streamingChatClientSupport,
+            AgentContextManager agentContextManager,
+            AgentHookDispatcher agentHookDispatcher,
+            AgentLoopOrchestrator agentLoopOrchestrator,
+            AgentFinalResponseEmitter agentFinalResponseEmitter
     ) {
         this.llmChatClient = chatClientBuilder.build();
-        this.agentToolRegistry = agentToolRegistry;
-        this.agentPromptService = agentPromptService;
         this.conversationManager = conversationManager;
-        this.agentHookDispatcher = agentHookDispatcher;
-        this.hookedToolExecutor = hookedToolExecutor;
         this.skillRegistry = skillRegistry;
         this.agentFlowSupport = agentFlowSupport;
-        this.decisionParser = decisionParser;
-        this.finalAnswerVerifier = finalAnswerVerifier;
+        this.agentPromptService = agentPromptService;
         this.skillAutoRouter = skillAutoRouter;
         this.streamingChatClientSupport = streamingChatClientSupport;
+        this.agentContextManager = agentContextManager;
+        this.agentHookDispatcher = agentHookDispatcher;
+        this.agentLoopOrchestrator = agentLoopOrchestrator;
+        this.agentFinalResponseEmitter = agentFinalResponseEmitter;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -114,206 +100,238 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
 
         try {
-            AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
-            long runEpoch = conversationManager.nextEpoch(sessionId);
-            String effectiveQuestion = request.question();
-            String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
-            int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
-            List<AgentContextItem> contexts = new ArrayList<>();
-            String directAnswerDraft = null;
-            boolean askUser = false;
-            boolean interrupted = false;
-            int finalRound = 0;
-            int startRound = 1;
-            SkillPlan skillPlan = new SkillPlan(
-                    "未指定技能，走默认编排",
-                    List.of(),
-                    "",
-                    ""
-            );
+            ExecutionContext context = prepareExecutionContext(request, sessionId);
+            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit())) {
+                publishInitState(request, context, traceId, publisher);
+                SkillPlan skillPlan = resolveSkillPlan(request, context, traceId, publisher);
+                Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
+                publishSkillPlan(traceId, sessionId, publisher, skillPlan);
 
-            if (request.resume() && resumeState != null) {
-                if (resumeState.interrupted()) {
-                    resumeState = new AgentConversationManager.ConversationState(
-                            AgentConversationManager.ConversationStatus.RUNNING,
-                            resumeState.baseQuestion(),
-                            resumeState.contexts(),
-                            resumeState.nextRound(),
-                            false,
-                            resumeState.pendingDecision(),
-                            System.currentTimeMillis()
-                    );
-                }
-                contexts.addAll(resumeState.contexts());
-                startRound = resumeState.nextRound();
-                if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
-                    effectiveQuestion = resumeState.baseQuestion();
-                }
-                publisher.emit(AgentEvent.resumed(traceId, sessionId));
-            }
-
-            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(resolvedRepoRoot, limit)) {
-            publisher.emit(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
-            publisher.emit(AgentEvent.dialogueMode(traceId, sessionId, request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
-
-            String skillRef = request.skillPath();
-            boolean shouldResolveSkill = StringUtils.hasText(skillRef);
-            if (!shouldResolveSkill) {
-                SkillAutoRouter.RouteResult routeResult = skillAutoRouter.route(effectiveQuestion);
-                publisher.emit(AgentEvent.skillRouted(
+                ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
+                        request,
+                        context,
                         traceId,
-                        sessionId,
-                        routeResult.candidateSkillId(),
-                        routeResult.confidence(),
-                        routeResult.accepted(),
-                        routeResult.reason()
-                ));
-                if (routeResult.accepted() && StringUtils.hasText(routeResult.skillId())) {
-                    skillRef = routeResult.skillId();
-                    shouldResolveSkill = true;
-                }
-            }
-
-            if (shouldResolveSkill) {
-                SkillContext skillContext = new SkillContext(
-                        request.taskType().name(),
-                        request.dialogueMode().name(),
-                        request.runMode().name(),
-                        effectiveQuestion,
-                        agentFlowSupport.buildSkillMetadata(resolvedRepoRoot, skillRef)
+                        publisher,
+                        enabledPermissions
                 );
-                SkillRegistry.ResolvedSkill resolvedSkill = skillRegistry.resolve(skillContext);
-                skillPlan = resolvedSkill.plan();
-                publisher.emit(AgentEvent.skillSelected(traceId, sessionId, resolvedSkill.skillName(), skillPlan.summary()));
-            }
-
-            Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
-
-            if (!skillPlan.executionSteps().isEmpty()) {
-                publisher.emit(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
-            }
-
-            // 会话恢复到 HUMAN_GATE 场景：这里执行“上次被挂起的高风险工具决策（pendingDecision）”。
-            // 只有调用方显式传入 approveRiskyToolCall=true 才会继续执行该工具。
-                if (request.resume() && resumeState != null && resumeState.pendingDecision() != null) {
-                    if (!request.approveRiskyToolCall()) {
-                        publisher.emit(AgentEvent.humanGate(
-                            traceId,
-                            sessionId,
-                            startRound,
-                            resumeState.pendingDecision().toolName(),
-                                "检测到待确认写操作，请设置 approveRiskyToolCall=true 后继续。"
-                        ));
-                        sink.complete();
-                        return;
-                    }
-                AgentToolExecutionResult gatedResult = executeToolWithHookContext(
-                        resumeState.pendingDecision(),
-                        enabledPermissions,
-                        limit,
-                        sessionId,
-                        startRound,
-                        effectiveQuestion
-                );
-                publisher.emit(AgentEvent.toolResult(traceId, sessionId, startRound, gatedResult));
-                contexts.addAll(gatedResult.items());
-                conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, startRound + 1);
-                startRound = startRound + 1;
-            }
-
-            if (request.runMode() == AgentRunMode.PLAN) {
-                if (shouldInterruptExecution(sessionId, runEpoch)) {
-                    appendInterruptedEvents(traceId, sessionId, 0, effectiveQuestion, contexts, publisher);
+                if (resumeHandling.completed()) {
                     sink.complete();
                     return;
                 }
-                publisher.emit(AgentEvent.state(traceId, sessionId, 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
-                fireHook(AgentHookPoint.BEFORE_PLAN, sessionId, 0, effectiveQuestion, null, Map.of());
-                String plan = streamingChatClientSupport.collect(
-                        llmChatClient,
-                        agentPromptService.systemPrompt(request.taskType()),
-                        agentPromptService.planPrompt(request, skillPlan),
-                        () -> !shouldInterruptExecution(sessionId, runEpoch),
-                        null
+                context = resumeHandling.context();
+
+                if (request.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(request, context, skillPlan, traceId, publisher)) {
+                    sink.complete();
+                    return;
+                }
+
+                AgentLoopOrchestrator.OrchestrationResult result = agentLoopOrchestrator.run(
+                        request,
+                        context.effectiveQuestion(),
+                        skillPlan,
+                        context.contextSession(),
+                        context.limit(),
+                        context.startRound(),
+                        publisher,
+                        sessionId,
+                        traceId,
+                        enabledPermissions,
+                        context.runEpoch()
                 );
-                publisher.emit(AgentEvent.plan(traceId, sessionId, plan));
-                fireHook(AgentHookPoint.AFTER_PLAN, sessionId, 0, effectiveQuestion, null, Map.of("plan", plan));
+                context = context.withContextSession(result.contextSession());
+
+                if (result.askUser() || result.interrupted()) {
+                    sink.complete();
+                    return;
+                }
+                if (!conversationManager.isActiveEpoch(sessionId, context.runEpoch())) {
+                    publisher.emit(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
+                    sink.complete();
+                    return;
+                }
+
+                emitFinalAnswer(request, context, skillPlan, result, traceId, publisher);
+                sink.complete();
             }
-
-            OrchestrationResult result = runManualOrchestration(
-                    request,
-                    effectiveQuestion,
-                    skillPlan,
-                    contexts,
-                    limit,
-                    startRound,
-                    publisher,
-                    sessionId,
-                    traceId,
-                    enabledPermissions,
-                    runEpoch
-            );
-            directAnswerDraft = result.directAnswer();
-            askUser = result.askUser();
-            interrupted = result.interrupted();
-            finalRound = result.finalRound();
-        }
-
-        if (askUser) {
-                sink.complete();
-                return;
-        }
-        if (interrupted) {
-                sink.complete();
-                return;
-        }
-        if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
-                publisher.emit(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
-                sink.complete();
-                return;
-        }
-
-        if (StringUtils.hasText(directAnswerDraft)) {
-            contexts.add(new AgentContextItem(
-                    "assistant_draft",
-                    "final_answer_draft",
-                    directAnswerDraft,
-                    Map.of("source", "orchestrator_final_decision")
-            ));
-        }
-
-        AgentRequest finalRequest = agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId);
-        String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, contexts, limit, skillPlan);
-        fireHook(AgentHookPoint.BEFORE_FINAL, sessionId, finalRound, effectiveQuestion, null, Map.of("directAnswer", StringUtils.hasText(directAnswerDraft)));
-        if (shouldInterruptExecution(sessionId, runEpoch)) {
-            appendInterruptedEvents(traceId, sessionId, finalRound, effectiveQuestion, contexts, publisher);
-            sink.complete();
-            return;
-        }
-        publisher.emit(AgentEvent.state(traceId, sessionId, finalRound, AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
-        StringBuilder finalAnswerBuffer = new StringBuilder();
-        int currentFinalRound = finalRound;
-        llmChatClient.prompt()
-                .system(agentPromptService.systemPrompt(request.taskType()))
-                .user(finalPrompt)
-                .stream()
-                .content()
-                .takeWhile(content -> conversationManager.isActiveEpoch(sessionId, runEpoch))
-                .doOnNext(content -> {
-                    finalAnswerBuffer.append(content);
-                    publisher.emit(AgentEvent.token(traceId, sessionId, currentFinalRound, content));
-                })
-                .blockLast();
-        if (!shouldInterruptExecution(sessionId, runEpoch)) {
-            String finalAnswer = finalAnswerBuffer.toString();
-            if (!finalAnswer.isBlank()) {
-                publisher.emit(AgentEvent.finalText(traceId, sessionId, currentFinalRound, finalAnswer));
-            }
-        }
-        sink.complete();
         } catch (Throwable t) {
             sink.error(t);
         }
+    }
+
+    private ExecutionContext prepareExecutionContext(AgentRequest request, String sessionId) {
+        AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
+        long runEpoch = conversationManager.nextEpoch(sessionId);
+        String effectiveQuestion = request.question();
+        String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
+        int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
+        AgentContextSession contextSession = agentContextManager.restore(sessionId, resumeState);
+        int startRound = 1;
+        if (request.resume() && resumeState != null) {
+            resumeState = normalizeResumeState(resumeState);
+            contextSession = agentContextManager.restore(sessionId, resumeState);
+            startRound = resumeState.nextRound();
+            if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
+                effectiveQuestion = resumeState.baseQuestion();
+            }
+        }
+        return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, startRound);
+    }
+
+    private AgentConversationManager.ConversationState normalizeResumeState(AgentConversationManager.ConversationState resumeState) {
+        if (resumeState == null || !resumeState.interrupted()) {
+            return resumeState;
+        }
+        return new AgentConversationManager.ConversationState(
+                AgentConversationManager.ConversationStatus.RUNNING,
+                resumeState.baseQuestion(),
+                resumeState.contexts(),
+                resumeState.contextSession(),
+                resumeState.nextRound(),
+                false,
+                resumeState.pendingDecision(),
+                System.currentTimeMillis()
+        );
+    }
+
+    private void publishInitState(AgentRequest request, ExecutionContext context, String traceId, AgentEventPublisher publisher) {
+        if (request.resume() && context.resumeState() != null) {
+            publisher.emit(AgentEvent.resumed(traceId, context.sessionId()));
+        }
+        publisher.emit(AgentEvent.state(traceId, context.sessionId(), 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
+        publisher.emit(AgentEvent.dialogueMode(traceId, context.sessionId(), request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
+    }
+
+    private SkillPlan resolveSkillPlan(AgentRequest request, ExecutionContext context, String traceId, AgentEventPublisher publisher) {
+        SkillPlan skillPlan = new SkillPlan("未指定技能，走默认编排", List.of(), "", "");
+        String skillRef = request.skillPath();
+        boolean shouldResolveSkill = StringUtils.hasText(skillRef);
+        if (!shouldResolveSkill) {
+            SkillAutoRouter.RouteResult routeResult = skillAutoRouter.route(context.effectiveQuestion());
+            publisher.emit(AgentEvent.skillRouted(
+                    traceId,
+                    context.sessionId(),
+                    routeResult.candidateSkillId(),
+                    routeResult.confidence(),
+                    routeResult.accepted(),
+                    routeResult.reason()
+            ));
+            if (routeResult.accepted() && StringUtils.hasText(routeResult.skillId())) {
+                skillRef = routeResult.skillId();
+                shouldResolveSkill = true;
+            }
+        }
+        if (!shouldResolveSkill) {
+            return skillPlan;
+        }
+        SkillContext skillContext = new SkillContext(
+                request.taskType().name(),
+                request.dialogueMode().name(),
+                request.runMode().name(),
+                context.effectiveQuestion(),
+                agentFlowSupport.buildSkillMetadata(context.resolvedRepoRoot(), skillRef)
+        );
+        SkillRegistry.ResolvedSkill resolvedSkill = skillRegistry.resolve(skillContext);
+        publisher.emit(AgentEvent.skillSelected(traceId, context.sessionId(), resolvedSkill.skillName(), resolvedSkill.plan().summary()));
+        return resolvedSkill.plan();
+    }
+
+    private void publishSkillPlan(String traceId, String sessionId, AgentEventPublisher publisher, SkillPlan skillPlan) {
+        if (!skillPlan.executionSteps().isEmpty()) {
+            publisher.emit(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
+        }
+    }
+
+    private ResumeHandlingResult handlePendingResumeDecision(
+            AgentRequest request,
+            ExecutionContext context,
+            String traceId,
+            AgentEventPublisher publisher,
+            Set<AgentToolPermission> enabledPermissions
+    ) {
+        AgentConversationManager.ConversationState resumeState = context.resumeState();
+        if (!request.resume() || resumeState == null || resumeState.pendingDecision() == null) {
+            return new ResumeHandlingResult(context, false);
+        }
+        if (!request.approveRiskyToolCall()) {
+            publisher.emit(AgentEvent.humanGate(
+                    traceId,
+                    context.sessionId(),
+                    context.startRound(),
+                    resumeState.pendingDecision().toolName(),
+                    "检测到待确认写操作，请设置 approveRiskyToolCall=true 后继续。"
+            ));
+            return new ResumeHandlingResult(context, true);
+        }
+        AgentToolExecutionResult gatedResult = agentLoopOrchestrator.executePendingDecision(
+                resumeState.pendingDecision(),
+                enabledPermissions,
+                context.limit(),
+                context.sessionId(),
+                context.startRound(),
+                context.effectiveQuestion()
+        );
+        publisher.emit(AgentEvent.toolResult(traceId, context.sessionId(), context.startRound(), gatedResult));
+        AgentContextSession nextSession = agentContextManager.appendToolResult(
+                context.sessionId(),
+                context.contextSession(),
+                context.startRound(),
+                gatedResult
+        ).session();
+        saveRunningState(context.sessionId(), context.effectiveQuestion(), nextSession, context.startRound() + 1);
+        return new ResumeHandlingResult(context.withContextSession(nextSession).withStartRound(context.startRound() + 1), false);
+    }
+
+    private boolean emitPlanIfNeeded(
+            AgentRequest request,
+            ExecutionContext context,
+            SkillPlan skillPlan,
+            String traceId,
+            AgentEventPublisher publisher
+    ) {
+        if (request.runMode() != AgentRunMode.PLAN) {
+            return false;
+        }
+        if (shouldInterruptExecution(context.sessionId(), context.runEpoch())) {
+            appendInterruptedEvents(traceId, context.sessionId(), 0, context.effectiveQuestion(), context.contextSession(), publisher);
+            return true;
+        }
+        publisher.emit(AgentEvent.state(traceId, context.sessionId(), 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
+        fireHook(AgentHookPoint.BEFORE_PLAN, context.sessionId(), 0, context.effectiveQuestion(), null, Map.of());
+        String plan = streamingChatClientSupport.collect(
+                llmChatClient,
+                agentPromptService.systemPrompt(request.taskType()),
+                agentPromptService.planPrompt(request, skillPlan),
+                () -> !shouldInterruptExecution(context.sessionId(), context.runEpoch()),
+                null
+        );
+        publisher.emit(AgentEvent.plan(traceId, context.sessionId(), plan));
+        fireHook(AgentHookPoint.AFTER_PLAN, context.sessionId(), 0, context.effectiveQuestion(), null, Map.of("plan", plan));
+        return false;
+    }
+
+    private void emitFinalAnswer(
+            AgentRequest request,
+            ExecutionContext context,
+            SkillPlan skillPlan,
+            AgentLoopOrchestrator.OrchestrationResult orchestrationResult,
+            String traceId,
+            AgentEventPublisher publisher
+    ) {
+        agentFinalResponseEmitter.emit(
+                request,
+                context.sessionId(),
+                context.runEpoch(),
+                context.effectiveQuestion(),
+                context.limit(),
+                skillPlan,
+                context.contextSession(),
+                orchestrationResult,
+                traceId,
+                publisher,
+                () -> fireHook(AgentHookPoint.BEFORE_FINAL, context.sessionId(), orchestrationResult.finalRound(), context.effectiveQuestion(), null, Map.of("directAnswer", StringUtils.hasText(orchestrationResult.directAnswer()))),
+                () -> shouldInterruptExecution(context.sessionId(), context.runEpoch()),
+                interruptedSession -> appendInterruptedEvents(traceId, context.sessionId(), orchestrationResult.finalRound(), context.effectiveQuestion(), interruptedSession, publisher)
+        );
     }
 
     public Flux<String> runText(AgentRequest request) {
@@ -327,218 +345,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 .map(AgentEvent::message);
     }
 
-    private OrchestrationResult runManualOrchestration(
-            AgentRequest request,
-            String effectiveQuestion,
-            SkillPlan skillPlan,
-            List<AgentContextItem> contexts,
-            int limit,
-            int startRound,
-            AgentEventPublisher publisher,
-            String sessionId,
-            String traceId,
-            Set<AgentToolPermission> enabledPermissions,
-            long runEpoch
-    ) {
-        int lastRound = Math.max(0, startRound - 1);
-        for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
-            lastRound = round;
-            OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
-            if (interruptedResult != null) {
-                return interruptedResult;
-            }
-
-            publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
-            contexts.add(new AgentContextItem(
-                    "conversation",
-                    "user_prompt_round_" + round,
-                    effectiveQuestion,
-                    Map.of("round", round, "role", "user")
-            ));
-            List<AgentContextItem> decisionContexts = new ArrayList<>(contexts);
-            int currentRound = round;
-            conversationManager.todoReminderContext(sessionId, currentRound).ifPresent(reminder -> {
-                decisionContexts.add(reminder);
-                publisher.emit(AgentEvent.state(traceId, sessionId, currentRound, "TODO_REMINDER", "reminded", "已注入 todo_write 提醒"));
-            });
-            log.info("agent_loop decide, sessionId={}, round={}, question={}, contextSummary={}, errorContexts={}",
-                    sessionId, round, effectiveQuestion, summarizeContextRefs(contexts), summarizeErrorContexts(contexts));
-            fireHook(AgentHookPoint.BEFORE_DECISION, sessionId, round, effectiveQuestion, null, Map.of("contextSize", contexts.size()));
-            String decisionRaw = streamingChatClientSupport.collect(
-                    llmChatClient,
-                    agentPromptService.orchestratorSystemPrompt(
-                            request.taskType(),
-                            request.dialogueMode(),
-                            enabledPermissions,
-                            agentToolRegistry,
-                            skillPlan
-                    ),
-                    agentPromptService.orchestratorUserPrompt(
-                            agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId),
-                            decisionContexts,
-                            limit,
-                            round,
-                            MAX_TOOL_ROUNDS,
-                            skillPlan
-                    ),
-                    () -> !shouldInterruptExecution(sessionId, runEpoch),
-                    null
-            );
-            interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
-            if (interruptedResult != null) {
-                return interruptedResult;
-            }
-            contexts.add(new AgentContextItem(
-                    "conversation",
-                    "model_response_round_" + round,
-                    decisionRaw,
-                    Map.of("round", round, "role", "assistant")
-            ));
-            fireHook(AgentHookPoint.AFTER_DECISION, sessionId, round, effectiveQuestion, null, Map.of("decisionRaw", decisionRaw));
-            log.info("agent_loop decision_raw, sessionId={}, round={}, decisionRaw={}", sessionId, round, trimForLog(decisionRaw));
-            ToolDecision decision = parseDecision(decisionRaw);
-
-            if ("ask_user".equalsIgnoreCase(decision.action())) {
-                String question = StringUtils.hasText(decision.askUserQuestion()) ? decision.askUserQuestion() : "我还需要你补充一些信息，才能继续。";
-                conversationManager.saveWaiting(sessionId, effectiveQuestion, contexts, round);
-                publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待用户补充信息"));
-                publisher.emit(AgentEvent.askUser(traceId, sessionId, round, question));
-                fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
-                return new OrchestrationResult(null, true, false, round);
-            }
-
-            if ("final".equalsIgnoreCase(decision.action())) {
-                if (StringUtils.hasText(decision.finalAnswer())) {
-                    boolean shouldVerify = agentFlowSupport.shouldVerifyFinalAnswer(request, effectiveQuestion, decision.finalAnswer(), contexts);
-                    AgentFinalAnswerVerifier.VerifyResult verifyResult = shouldVerify
-                            ? finalAnswerVerifier.verifyFinalAnswer(agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), contexts)
-                            : new AgentFinalAnswerVerifier.VerifyResult(true, "问题不要求精确事实，跳过复核");
-                    if (shouldVerify) {
-                        publisher.emit(AgentEvent.verifyResult(traceId, sessionId, round, verifyResult.pass(), verifyResult.reason()));
-                    }
-                    if (verifyResult.pass()) {
-                        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
-                        return new OrchestrationResult(decision.finalAnswer(), false, false, round);
-                    }
-                    contexts.add(new AgentContextItem(
-                            "verifier",
-                            "final_answer_check",
-                            "复核未通过: " + verifyResult.reason(),
-                            Map.of("round", round)
-                    ));
-                    continue;
-                }
-                break;
-            }
-
-            if (!"tool".equalsIgnoreCase(decision.action())) {
-                break;
-            }
-
-            List<ToolDecision> toolCalls = expandToolCalls(decision);
-            if (toolCalls.isEmpty()) {
-                break;
-            }
-            List<List<ToolDecision>> batches = hookedToolExecutor.partitionToolCalls(toolCalls, enabledPermissions);
-            boolean producedContext = false;
-            for (List<ToolDecision> batch : batches) {
-                ToolDecision gatedDecision = findHumanGatedDecision(batch);
-                if (gatedDecision != null && !request.approveRiskyToolCall()) {
-                    conversationManager.saveWaitingForGate(sessionId, effectiveQuestion, contexts, round, gatedDecision);
-                    publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待人工确认高风险工具调用"));
-                    publisher.emit(AgentEvent.humanGate(
-                            traceId,
-                            sessionId,
-                            round,
-                            gatedDecision.toolName(),
-                            "即将执行写操作工具 `" + gatedDecision.toolName() + "`，请确认后继续（approveRiskyToolCall=true）。"
-                    ));
-                    return new OrchestrationResult(null, true, false, round);
-                }
-
-                publisher.emit(AgentEvent.state(
-                        traceId,
-                        sessionId,
-                        round,
-                        AgentLoopState.TOOL_CALL.name(),
-                        "running",
-                        batch.size() > 1 ? "开始并发工具调用" : "开始工具调用"
-                ));
-                for (ToolDecision toolCall : batch) {
-                    publisher.emit(AgentEvent.toolCall(traceId, sessionId, round, toolCall.toolName(), toolCall.args()));
-                }
-                List<AgentToolExecutionResult> batchResults = hookedToolExecutor.executeBatch(
-                        batch,
-                        enabledPermissions,
-                        limit,
-                        sessionId,
-                        round,
-                        effectiveQuestion
-                );
-                interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contexts, publisher, runEpoch);
-                if (interruptedResult != null) {
-                    return interruptedResult;
-                }
-                for (AgentToolExecutionResult batchResult : batchResults) {
-                    publisher.emit(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
-                    contexts.add(new AgentContextItem(
-                            "conversation",
-                            "tool_result_round_" + round + "_" + batchResult.toolName(),
-                            renderToolResultContext(batchResult),
-                            Map.of(
-                                    "round", round,
-                                    "toolName", batchResult.toolName(),
-                                    "status", batchResult.status()
-                            )
-                    ));
-                    if (!"ok".equals(batchResult.status()) || containsToolError(batchResult.items())) {
-                        log.warn("agent_loop tool_result_error, sessionId={}, round={}, toolName={}, status={}, message={}, items={}",
-                                sessionId, round, batchResult.toolName(), batchResult.status(), batchResult.message(),
-                                summarizeContextItems(batchResult.items()));
-                    }
-                    if (!batchResult.items().isEmpty()) {
-                        producedContext = true;
-                        contexts.addAll(batchResult.items());
-                    }
-                }
-                conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round + 1);
-            }
-            if (!producedContext) {
-                break;
-            }
-        }
-        return new OrchestrationResult(null, false, false, Math.max(0, lastRound));
-    }
-
-    private OrchestrationResult checkInterrupted(
-            String traceId,
-            String sessionId,
-            int round,
-            String effectiveQuestion,
-            List<AgentContextItem> contexts,
-            AgentEventPublisher publisher,
-            long runEpoch
-    ) {
-        if (!shouldInterruptExecution(sessionId, runEpoch)) {
-            return null;
-        }
-        appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contexts, publisher);
-        return new OrchestrationResult(null, false, true, round);
-    }
-
-    private void appendInterruptedEvents(
-            String traceId,
-            String sessionId,
-            int round,
-            String effectiveQuestion,
-            List<AgentContextItem> contexts,
-            AgentEventPublisher publisher
-    ) {
-        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
-        publisher.emit(AgentEvent.interrupted(traceId, sessionId, round));
-        conversationManager.saveRunning(sessionId, effectiveQuestion, contexts, round);
-    }
-
     private boolean shouldInterruptExecution(String sessionId, long runEpoch) {
         if (Thread.currentThread().isInterrupted()) {
             return true;
@@ -550,65 +356,31 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         return state != null && state.interrupted();
     }
 
-    private ToolDecision parseDecision(String raw) {
-        try {
-            return decisionParser.parseOrFallback(raw);
-        } catch (Exception e) {
-            fireHook(AgentHookPoint.ON_ERROR, "", 0, "", null, Map.of("stage", "parseDecision", "error", e.getMessage()));
-            return decisionParser.fallbackDecision(e.getMessage());
-        }
-    }
-
-    private AgentToolExecutionResult executeToolWithHookContext(
-            ToolDecision decision,
-            Set<AgentToolPermission> enabledPermissions,
-            int limit,
+    private void appendInterruptedEvents(
+            String traceId,
             String sessionId,
             int round,
-            String question
+            String effectiveQuestion,
+            AgentContextSession contextSession,
+            AgentEventPublisher publisher
     ) {
-        return hookedToolExecutor.execute(decision, enabledPermissions, limit, sessionId, round, question);
+        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
+        publisher.emit(AgentEvent.interrupted(traceId, sessionId, round));
+        saveRunningState(sessionId, effectiveQuestion, contextSession, round);
     }
 
-    private List<ToolDecision> expandToolCalls(ToolDecision decision) {
-        if (decision.toolCalls() != null && !decision.toolCalls().isEmpty()) {
-            return decision.toolCalls().stream()
-                    .map(toolCall -> new ToolDecision(
-                            "tool",
-                            toolCall.toolName(),
-                            toolCall.args() == null ? Map.of() : toolCall.args(),
-                            List.of(),
-                            null,
-                            decision.reason(),
-                            null
-                    ))
-                    .toList();
-        }
-        if (!StringUtils.hasText(decision.toolName())) {
-            return List.of();
-        }
-        return List.of(new ToolDecision(
-                "tool",
-                decision.toolName(),
-                decision.args() == null ? Map.of() : decision.args(),
-                List.of(),
-                null,
-                decision.reason(),
-                null
-        ));
-    }
-
-    private ToolDecision findHumanGatedDecision(List<ToolDecision> batch) {
-        for (ToolDecision toolDecision : batch) {
-            if (agentFlowSupport.requiresHumanGate(toolDecision)) {
-                return toolDecision;
-            }
-        }
-        return null;
+    private void saveRunningState(String sessionId, String effectiveQuestion, AgentContextSession contextSession, int nextRound) {
+        conversationManager.saveRunning(
+                sessionId,
+                effectiveQuestion,
+                agentContextManager.snapshotContexts(contextSession),
+                contextSession,
+                nextRound
+        );
     }
 
     private void fireHook(AgentHookPoint point, String sessionId, int round, String question, String toolName, Map<String, Object> metadata) {
-        agentHookDispatcher.fire(point, new AgentHookContext(
+        agentHookDispatcher.fire(point, new com.lumisight.hooks.AgentHookContext(
                 sessionId,
                 round,
                 question,
@@ -617,76 +389,25 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         ));
     }
 
-    private boolean containsToolError(List<AgentContextItem> items) {
-        return items != null && items.stream().anyMatch(item -> "tool_error".equals(item.sourceType()));
+    private record ExecutionContext(
+            String sessionId,
+            long runEpoch,
+            AgentConversationManager.ConversationState resumeState,
+            String effectiveQuestion,
+            String resolvedRepoRoot,
+            int limit,
+            AgentContextSession contextSession,
+            int startRound
+    ) {
+        private ExecutionContext withContextSession(AgentContextSession nextContextSession) {
+            return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, nextContextSession, startRound);
+        }
+
+        private ExecutionContext withStartRound(int nextStartRound) {
+            return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, nextStartRound);
+        }
     }
 
-    private String summarizeContextRefs(List<AgentContextItem> contexts) {
-        if (contexts == null || contexts.isEmpty()) {
-            return "[]";
-        }
-        return contexts.stream()
-                .map(item -> "[" + item.sourceType() + "]" + item.sourceId())
-                .reduce((a, b) -> a + ", " + b)
-                .map(text -> "[" + text + "]")
-                .orElse("[]");
-    }
-
-    private String summarizeErrorContexts(List<AgentContextItem> contexts) {
-        if (contexts == null || contexts.isEmpty()) {
-            return "[]";
-        }
-        return contexts.stream()
-                .filter(item -> "tool_error".equals(item.sourceType()) || "verifier".equals(item.sourceType()))
-                .map(item -> "{sourceId=" + item.sourceId() + ", content=" + trimForLog(item.content()) + ", metadata=" + item.metadata() + "}")
-                .reduce((a, b) -> a + ", " + b)
-                .map(text -> "[" + text + "]")
-                .orElse("[]");
-    }
-
-    private String summarizeContextItems(List<AgentContextItem> items) {
-        if (items == null || items.isEmpty()) {
-            return "[]";
-        }
-        return items.stream()
-                .map(item -> "{sourceType=" + item.sourceType() + ", sourceId=" + item.sourceId() + ", content=" + trimForLog(item.content()) + ", metadata=" + item.metadata() + "}")
-                .reduce((a, b) -> a + ", " + b)
-                .map(text -> "[" + text + "]")
-                .orElse("[]");
-    }
-
-    private String trimForLog(String text) {
-        if (text == null || text.isBlank()) {
-            return "";
-        }
-        String normalized = text.trim();
-        int maxChars = 1000;
-        if (normalized.length() <= maxChars) {
-            return normalized;
-        }
-        return normalized.substring(0, maxChars) + "...(truncated)";
-    }
-
-    private String renderToolResultContext(AgentToolExecutionResult result) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("toolName: ").append(result.toolName()).append("\n");
-        builder.append("status: ").append(result.status()).append("\n");
-        builder.append("message: ").append(result.message()).append("\n");
-        builder.append("metrics: ").append(result.metrics() == null ? Map.of() : result.metrics()).append("\n");
-        builder.append("items:\n");
-        if (result.items() == null || result.items().isEmpty()) {
-            builder.append("- 无\n");
-        } else {
-            for (AgentContextItem item : result.items()) {
-                builder.append("- [").append(item.sourceType()).append("] ")
-                        .append(item.sourceId()).append("\n")
-                        .append(item.content()).append("\n")
-                        .append("  metadata: ").append(item.metadata() == null ? Map.of() : item.metadata()).append("\n");
-            }
-        }
-        return builder.toString().trim();
-    }
-
-    private record OrchestrationResult(String directAnswer, boolean askUser, boolean interrupted, int finalRound) {
+    private record ResumeHandlingResult(ExecutionContext context, boolean completed) {
     }
 }

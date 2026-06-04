@@ -23,6 +23,7 @@ public class SandboxPolicyPlanner {
 
         Set<String> readablePaths = new LinkedHashSet<>();
         readablePaths.add(normalizedWorkingDir.toString());
+        readablePaths.addAll(defaultReadablePaths(normalizedWorkingDir));
         readablePaths.addAll(normalize(spec.readablePaths()));
 
         Set<String> writablePaths = new LinkedHashSet<>();
@@ -45,6 +46,15 @@ public class SandboxPolicyPlanner {
                 List.copyOf(executablePaths)
         );
         return new SandboxExecutionPlan(spec.subject(), policy, spec.notes());
+    }
+
+    private List<String> defaultReadablePaths(Path normalizedWorkingDir) {
+        Path currentDir = Path.of("").toAbsolutePath().normalize();
+        Set<String> defaults = new LinkedHashSet<>();
+        defaults.add(currentDir.toString());
+        defaults.add(currentDir.resolve(".lumisight").normalize().toString());
+        defaults.add(normalizedWorkingDir.resolve(".lumisight").normalize().toString());
+        return List.copyOf(defaults);
     }
 
     private List<String> normalize(List<String> paths) {
