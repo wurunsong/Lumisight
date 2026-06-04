@@ -52,7 +52,7 @@
     .panel { padding: 16px; }
     .flow {
       display: grid;
-      grid-template-columns: repeat(11, 1fr);
+      grid-template-columns: repeat(13, 1fr);
       gap: 8px;
       align-items: center;
     }
@@ -118,7 +118,8 @@
         <div class="node source">Session Ledger 入账</div><div class="arrow">→</div>
         <div class="node control">大结果落盘</div><div class="arrow">→</div>
         <div class="node collapse">Snip / Micro-Compact</div><div class="arrow">→</div>
-        <div class="node collapse">读时投影 / Auto-Compact</div><div class="arrow">→</div>
+        <div class="node collapse">读时投影</div><div class="arrow">→</div>
+        <div class="node collapse">Auto-Compact</div><div class="arrow">→</div>
         <div class="node final">Prompt 视图</div>
       </div>
       <div class="legend">
@@ -127,7 +128,7 @@
     </section>
 
     <h2 class="title">2. 会话账本结构</h2>
-    <section class="grid4">
+    <section class="grid3">
       <article class="card">
         <h3>2.1 会话状态层</h3>
         <ul>
@@ -245,11 +246,19 @@
         </ul>
       </article>
       <article class="card">
-        <h3>5.4 读时投影 + Auto-Compact</h3>
+        <h3>5.4 读时投影</h3>
         <ul>
           <li>触发：本轮决策/复核/最终回答前。</li>
-          <li>处理：先投影，再在必要时做全量摘要，并恢复最近访问的热文件/热证据；连续失败次数超过上限后不再无限重试 Auto-Compact。</li>
-          <li>输出：给模型的是“当前最值钱的一份上下文视图”，不是原始全历史。</li>
+          <li>处理：不改原始账本，只在调用模型的那一刻按预算动态折叠旧上下文，优先保控制态、近期对话和高优先级证据。</li>
+          <li>输出：给模型的是“当前这一轮最值钱的一份上下文视图”，尽量在不做全量摘要的前提下保住更多细节。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>5.5 Auto-Compact 全量摘要</h3>
+        <ul>
+          <li>触发：读时投影后仍然超过 <code>effective-context-window - response-reserve-tokens - auto-compact-buffer-tokens</code>。</li>
+          <li>处理：把更早历史压成结构化摘要，再恢复最近访问的热文件/热证据；连续失败次数超过上限后不再无限重试。</li>
+          <li>输出：在上下文已经明显超限时，用一次更重的压缩换回可继续工作的 prompt 空间。</li>
         </ul>
       </article>
     </section>
