@@ -29,6 +29,8 @@ metadata:
 - 若两份文档冲突，先标注冲突，再给出建议修正位置。
 - 不输出任何密钥、令牌、个人敏感信息。
 - 默认不修改代码；仅在用户明确要求时再执行文档修订。
+- 若用户要求继续迭代实现功能，建议按“一个功能一个 commit”推进，避免把多类改动混在同一提交里。
+- 迭代提交的 commit message 默认使用中文，直述本次功能或修复内容。
 
 ## Execution Steps
 
@@ -65,3 +67,4 @@ metadata:
 
 ## Suggested Follow-up
 - `docs: align CODE_FLOW and architecture narrative`
+- 若进入实现阶段：每完成一个独立功能即提交一次，且使用中文 commit message。

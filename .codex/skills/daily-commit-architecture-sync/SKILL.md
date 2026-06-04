@@ -1,6 +1,6 @@
 ---
 name: daily-commit-architecture-sync
-description: At end of day, summarize today's git commits into CODE_FLOW.md and sync architecture updates into agent-architecture.html based only on committed facts.
+description: At end of day, summarize today's git commits into CODE_FLOW.md and sync architecture updates into agent-architecture.html plus context-management.html based only on committed facts.
 metadata:
   short-description: Sync daily commits to docs and architecture
 ---
@@ -12,8 +12,9 @@ metadata:
 1. 读取“今天”的 Git commit 记录。
 2. 将今日变更清晰总结到 `CODE_FLOW.md`（仅追加，不删除历史）。
 3. 在 `agent-architecture.html` 中清晰展示当日架构/流程变化（先整体后分点）。
-4. 同步完善 `README.md`，确保对外文档与当日已提交能力一致。
-5. 将上述文档更新提交并 push 到远程仓库。
+4. 在 `context-management.html` 中清晰展示上下文账本、压缩阈值与投影/压缩流水线变化。
+5. 同步完善 `README.md`，确保对外文档与当日已提交能力一致。
+6. 将上述文档更新提交并 push 到远程仓库。
 
 ## Inputs
 - 日期：默认使用本地当天（可手动指定 `YYYY-MM-DD`）。
@@ -22,12 +23,14 @@ metadata:
 ## Files To Update
 - `<repo-root>/CODE_FLOW.md`
 - `<repo-root>/agent-architecture.html`
+- `<repo-root>/context-management.html`
 - `<repo-root>/README.md`
 
 ## Mandatory Rules
 - 只基于当日 commit 事实更新，不臆造未提交功能。
 - `CODE_FLOW.md` 只追加到当天小节，不重写旧日期内容。
 - `agent-architecture.html` 必须维护为“统一融合架构视图”，不按日期新增“今日增量”章节；历史变更要融合进现有模块描述。
+- `context-management.html` 必须维护为“上下文管理专项视图”，聚焦上下文账本、阈值判断、压缩/投影/恢复流程，不和主架构页重复堆叠协议细节。
 - `agent-architecture.html` 的组织顺序必须为：
   1. 整体框架（端到端、分层、主流程）
   2. 分点细化（模块职责、数据流、运行策略、异常与降级）
@@ -39,7 +42,7 @@ metadata:
   - 字体清晰统一，避免默认系统混搭导致观感松散。
   - 流程节点与箭头对齐，卡片网格尽量对称，留白一致。
   - 避免“信息墙”式堆叠，优先“少而清楚”的结构表达。
-- `CODE_FLOW.md` 与 `agent-architecture.html` 必须清晰反映“当天变更”并纳入 Git。
+- `CODE_FLOW.md`、`agent-architecture.html` 与 `context-management.html` 必须清晰反映“当天变更”并纳入 Git。
 - `README.md` 为仓库对外说明文档，按当日提交事实更新并纳入 Git。
 - 当天开发过程必须按“每个独立功能一个 commit”执行（小步提交、可回滚）；禁止将多个无关功能合并为单一大 commit。
 - 不写入任何明文密钥、令牌、个人敏感信息。
@@ -112,6 +115,28 @@ git log --since="$(date +%F) 00:00:00" --until="$(date +%F) 23:59:59" \
 - 不允许将页面重心放在细枝末节配置清单，而弱化核心流程本身。
 - 不允许仅写“亮点标题 + 口号式短句”；必须写清楚亮点链路的输入、处理、保护、输出。
 
+### Step 3.5) Update context-management.html
+根据当天变更同步更新上下文专项视图：
+
+1. 先更新上下文主链路：
+- 上下文来源
+- Session ledger / context entry 结构
+- Prompt 前读时投影链路
+
+2. 再更新上下文压缩/恢复策略：
+- 大结果落盘阈值
+- Snip / Micro-Compact / Auto-Compact 的触发条件
+- 热文件/热技能恢复策略
+
+3. 若当天涉及模型窗口、artifact 阈值、压缩阈值变化，必须在页面中清楚反映：
+- 判断单位（token / bytes）
+- 阈值来源（固定值 / 公式 / 配置项）
+- 对业务行为的影响
+
+强制要求（清晰展示）：
+- 页面必须让读者单独看懂“为什么认为上下文过大”“什么时候落盘”“什么时候摘要”。
+- 不允许只列配置名，不解释配置如何影响上下文管理决策。
+
 ### Step 4) Update README.md
 根据当日提交同步更新 README（仅写已提交事实）：
 - 新增/更新接口清单（如 KG 与 Vector 能力变化）。
@@ -127,18 +152,19 @@ git log --since="$(date +%F) 00:00:00" --until="$(date +%F) 23:59:59" \
 更新完成后执行：
 
 ```bash
-rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html README.md
+rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html context-management.html README.md
 ```
 
 并人工确认：
 - `CODE_FLOW.md` 是否仅追加。
 - HTML 是否保持“先整体后分点”。
+- `context-management.html` 是否清楚解释上下文账本与压缩规则。
 - README/HTML 描述是否与今日 commit 一致。
 
 ### Step 6) Commit And Push
 在一致性检查通过后，执行：
 1. 先确认当天功能提交粒度符合“每个独立功能一个 commit”；若发现多功能混合提交，先在输出中标注风险并给出拆分建议。
-2. `git add CODE_FLOW.md agent-architecture.html README.md`
+2. `git add CODE_FLOW.md agent-architecture.html context-management.html README.md`
 3. 使用中文 commit message 提交文档同步（文档同步 commit 与功能 commit 分离）。
 4. `git push` 到当前分支对应远程。
 
@@ -149,8 +175,9 @@ rg -n "TODO|TBD|占位|待补" CODE_FLOW.md agent-architecture.html README.md
 1. 当天识别到的 commit 数量。
 2. `CODE_FLOW.md` 新增要点（3-8条）。
 3. `agent-architecture.html` 更新区块列表。
-4. `README.md` 更新要点（2-6条）。
-5. 本次文档 commit hash 与 push 结果（成功/失败）。
+4. `context-management.html` 更新区块列表。
+5. `README.md` 更新要点（2-6条）。
+6. 本次文档 commit hash 与 push 结果（成功/失败）。
 
 ## Suggested Commit Message
 - `docs: 同步当日提交到 CODE_FLOW 与架构文档`
