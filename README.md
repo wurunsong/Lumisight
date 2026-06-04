@@ -5,6 +5,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 当前主线能力包括：
 - 会话式 Agent 编排：支持 `FOLLOW / COLLECT / STEER`
 - 流式交互：SSE 与 WebSocket 会话事件流
+- macOS 客户端壳：原生 SwiftUI 会话界面
 - 本地代码工具：文件、Git、Java 编译、Lint、LSP
 - 知识增强：向量检索、知识图谱、方法源码补全
 - 安全执行：sandbox、快照、回滚、人工门控
@@ -74,6 +75,7 @@ podman machine start
 - [context-management.html](./context-management.html)：上下文管理专项视图
 - [CODE_FLOW.md](./CODE_FLOW.md)：按日期记录的开发进展
 - [AGENT_CAPABILITY_GAP.md](./AGENT_CAPABILITY_GAP.md)：当前能力与后续差距清单
+- [lumisight-desktop-macos/README.md](./lumisight-desktop-macos/README.md)：macOS 原生客户端壳说明
 
 ## Agent 交互模型
 
@@ -96,6 +98,11 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 - `http://localhost:8080/agent-console.html`
 
 它适合本地直接观察会话事件流、最终输出和命令投递效果。
+
+可选桌面壳：
+
+- `lumisight-desktop-macos`
+- 适合在 macOS 上以原生客户端方式连接同一套 Agent WebSocket
 
 ## 主要接口
 
@@ -192,6 +199,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - `lumisight-api`：HTTP / SSE / WebSocket 接入层
 - `lumisight-core`：Agent 编排、提示词、策略、上下文、工具编排
 - `lumisight-common`：通用执行与并发基础设施
+- `lumisight-desktop-macos`：macOS 原生客户端壳
 - `lumisight-tools`：知识图谱与向量构建工具
 - `lumisight-hooks`：Hook 能力相关代码
 - `lumisight-memory`：记忆相关模块
