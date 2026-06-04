@@ -12,19 +12,19 @@ public class ThreadContextConfiguration {
 
     @PostConstruct
     public void registerThreadContextCarriers() {
-        ThreadContextRegistry.register(
+        ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "agentToolRuntimeContext",
                 AgentToolRuntimeContext::current,
                 AgentToolRuntimeContext::restore,
                 AgentToolRuntimeContext::clear
-        );
-        ThreadContextRegistry.register(
+        ));
+        ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "agentToolInvocationContext",
                 AgentToolInvocationContext::current,
                 AgentToolInvocationContext::restore,
                 AgentToolInvocationContext::clear
-        );
-        ThreadContextRegistry.register(
+        ));
+        ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "slf4jMdc",
                 MDC::getCopyOfContextMap,
                 contextMap -> {
@@ -35,6 +35,6 @@ public class ThreadContextConfiguration {
                     MDC.setContextMap(contextMap);
                 },
                 MDC::clear
-        );
+        ));
     }
 }

@@ -2,40 +2,43 @@ package com.lumisight.core.context;
 
 public final class AgentToolInvocationContext {
 
-    private static final ThreadLocal<Context> HOLDER = new ThreadLocal<>();
+    private static final Support SUPPORT = new Support();
 
     private AgentToolInvocationContext() {
     }
 
     public static Scope open(String sessionId, Integer round, String question) {
-        HOLDER.set(new Context(sessionId, round == null ? 0 : round, question));
-        return new Scope();
+        return new Scope(SUPPORT.openValue(new Context(sessionId, round == null ? 0 : round, question)));
     }
 
     public static Context current() {
-        return HOLDER.get();
+        return SUPPORT.currentValue();
     }
 
     public static void restore(Context context) {
-        if (context == null) {
-            HOLDER.remove();
-            return;
-        }
-        HOLDER.set(context);
+        SUPPORT.restoreValue(context);
     }
 
     public static void clear() {
-        HOLDER.remove();
+        SUPPORT.clearValue();
     }
 
     public record Context(String sessionId, int round, String question) {
     }
 
     public static final class Scope implements AutoCloseable {
+        private final AbstractThreadLocalAgentContext.Scope delegate;
+
+        private Scope(AbstractThreadLocalAgentContext.Scope delegate) {
+            this.delegate = delegate;
+        }
 
         @Override
         public void close() {
-            HOLDER.remove();
+            delegate.close();
         }
+    }
+
+    private static final class Support extends AbstractThreadLocalAgentContext<Context> {
     }
 }

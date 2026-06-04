@@ -3,7 +3,7 @@ package com.lumisight.core.tool.impl;
 import com.lumisight.core.context.AgentToolInvocationContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.TodoTask;
-import com.lumisight.core.support.AgentConversationManager;
+import com.lumisight.core.support.AgentSessionContextStore;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
@@ -31,9 +31,9 @@ public class TodoWriteTool implements PermissionedAgentTool<TodoWriteTool.Args> 
     ) {
     }
 
-    private final AgentConversationManager conversationManager;
+    private final AgentSessionContextStore conversationManager;
 
-    public TodoWriteTool(AgentConversationManager conversationManager) {
+    public TodoWriteTool(AgentSessionContextStore conversationManager) {
         this.conversationManager = conversationManager;
     }
 

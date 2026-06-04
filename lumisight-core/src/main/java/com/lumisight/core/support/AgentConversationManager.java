@@ -3,6 +3,7 @@ package com.lumisight.core.support;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.model.TodoTask;
+import com.lumisight.core.support.context.AgentContextSession;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -15,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Component
-public class AgentConversationManager {
+public class AgentConversationManager implements AgentSessionContextStore {
 
     private static final Map<ConversationStatus, EnumSet<ConversationStatus>> ALLOWED_TRANSITIONS = Map.of(
             ConversationStatus.RUNNING, EnumSet.of(ConversationStatus.WAITING_USER, ConversationStatus.WAITING_GATE, ConversationStatus.INTERRUPTED, ConversationStatus.COMPLETED),
@@ -49,25 +50,25 @@ public class AgentConversationManager {
         return state;
     }
 
-    public void saveWaiting(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
+    public void saveWaiting(String sessionId, String baseQuestion, List<AgentContextItem> contexts, AgentContextSession contextSession, int nextRound) {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        putState(sessionId, ConversationState.waitingUser(baseQuestion, new ArrayList<>(contexts), nextRound, null));
+        putState(sessionId, ConversationState.waitingUser(baseQuestion, new ArrayList<>(contexts), contextSession, nextRound, null));
     }
 
-    public void saveWaitingForGate(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
+    public void saveWaitingForGate(String sessionId, String baseQuestion, List<AgentContextItem> contexts, AgentContextSession contextSession, int nextRound, ToolDecision pendingDecision) {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        putState(sessionId, ConversationState.waitingGate(baseQuestion, new ArrayList<>(contexts), nextRound, pendingDecision));
+        putState(sessionId, ConversationState.waitingGate(baseQuestion, new ArrayList<>(contexts), contextSession, nextRound, pendingDecision));
     }
 
-    public void saveRunning(String sessionId, String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
+    public void saveRunning(String sessionId, String baseQuestion, List<AgentContextItem> contexts, AgentContextSession contextSession, int nextRound) {
         if (!StringUtils.hasText(sessionId)) {
             return;
         }
-        putState(sessionId, ConversationState.running(baseQuestion, new ArrayList<>(contexts), nextRound));
+        putState(sessionId, ConversationState.running(baseQuestion, new ArrayList<>(contexts), contextSession, nextRound));
     }
 
     public void interrupt(String sessionId) {
@@ -204,37 +205,38 @@ public class AgentConversationManager {
             ConversationStatus status,
             String baseQuestion,
             List<AgentContextItem> contexts,
+            AgentContextSession contextSession,
             int nextRound,
             boolean interrupted,
             ToolDecision pendingDecision,
             long lastUpdatedAt
     ) {
-        static ConversationState waitingUser(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
-            return new ConversationState(ConversationStatus.WAITING_USER, baseQuestion, contexts, nextRound, false, pendingDecision, System.currentTimeMillis());
+        static ConversationState waitingUser(String baseQuestion, List<AgentContextItem> contexts, AgentContextSession contextSession, int nextRound, ToolDecision pendingDecision) {
+            return new ConversationState(ConversationStatus.WAITING_USER, baseQuestion, contexts, contextSession, nextRound, false, pendingDecision, System.currentTimeMillis());
         }
 
-        static ConversationState waitingGate(String baseQuestion, List<AgentContextItem> contexts, int nextRound, ToolDecision pendingDecision) {
-            return new ConversationState(ConversationStatus.WAITING_GATE, baseQuestion, contexts, nextRound, false, pendingDecision, System.currentTimeMillis());
+        static ConversationState waitingGate(String baseQuestion, List<AgentContextItem> contexts, AgentContextSession contextSession, int nextRound, ToolDecision pendingDecision) {
+            return new ConversationState(ConversationStatus.WAITING_GATE, baseQuestion, contexts, contextSession, nextRound, false, pendingDecision, System.currentTimeMillis());
         }
 
-        static ConversationState running(String baseQuestion, List<AgentContextItem> contexts, int nextRound) {
-            return new ConversationState(ConversationStatus.RUNNING, baseQuestion, contexts, nextRound, false, null, System.currentTimeMillis());
+        static ConversationState running(String baseQuestion, List<AgentContextItem> contexts, AgentContextSession contextSession, int nextRound) {
+            return new ConversationState(ConversationStatus.RUNNING, baseQuestion, contexts, contextSession, nextRound, false, null, System.currentTimeMillis());
         }
 
         ConversationState withInterrupted(boolean interrupted) {
-            return new ConversationState(interrupted ? ConversationStatus.INTERRUPTED : status, baseQuestion, contexts, nextRound, interrupted, pendingDecision, lastUpdatedAt);
+            return new ConversationState(interrupted ? ConversationStatus.INTERRUPTED : status, baseQuestion, contexts, contextSession, nextRound, interrupted, pendingDecision, lastUpdatedAt);
         }
 
         ConversationState withoutPendingDecision() {
-            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, null, lastUpdatedAt);
+            return new ConversationState(status, baseQuestion, contexts, contextSession, nextRound, interrupted, null, lastUpdatedAt);
         }
 
         ConversationState withStatus(ConversationStatus nextStatus) {
-            return new ConversationState(nextStatus, baseQuestion, contexts, nextRound, interrupted, pendingDecision, lastUpdatedAt);
+            return new ConversationState(nextStatus, baseQuestion, contexts, contextSession, nextRound, interrupted, pendingDecision, lastUpdatedAt);
         }
 
         ConversationState withLastUpdatedAt(long timestamp) {
-            return new ConversationState(status, baseQuestion, contexts, nextRound, interrupted, pendingDecision, timestamp);
+            return new ConversationState(status, baseQuestion, contexts, contextSession, nextRound, interrupted, pendingDecision, timestamp);
         }
     }
 

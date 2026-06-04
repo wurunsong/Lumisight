@@ -6,6 +6,24 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+/**
+ * 线程上下文注册表。
+ * <p>
+ * 这里维护的是一组“上下文载体”（例如运行时上下文、调用上下文、SLF4J MDC），
+ * 每个载体都知道三件事：
+ * <ul>
+ *   <li>如何从当前线程抓取值；</li>
+ *   <li>如何把抓到的值恢复到另一个线程；</li>
+ *   <li>当快照里没有值时如何清空上下文。</li>
+ * </ul>
+ * <p>
+ * 典型流程是：
+ * <ol>
+ *   <li>任务提交到线程池之前，先从当前线程抓取一份上下文快照；</li>
+ *   <li>任务在工作线程执行时，把这份快照临时安装进去；</li>
+ *   <li>任务结束后，再把工作线程原来的上下文恢复回去。</li>
+ * </ol>
+ */
 public final class ThreadContextRegistry {
 
     private static final List<ContextCarrier> CARRIERS = new CopyOnWriteArrayList<>();
@@ -19,29 +37,12 @@ public final class ThreadContextRegistry {
             Consumer<T> restore,
             Runnable clear
     ) {
-        CARRIERS.removeIf(carrier -> carrier.name().equals(name));
-        CARRIERS.add(new ContextCarrier() {
-            @Override
-            public String name() {
-                return name;
-            }
+        register(ContextCarrier.of(name, capture, restore, clear));
+    }
 
-            @Override
-            public Object captureValue() {
-                return capture.get();
-            }
-
-            @SuppressWarnings("unchecked")
-            @Override
-            public void restoreValue(Object value) {
-                restore.accept((T) value);
-            }
-
-            @Override
-            public void clearValue() {
-                clear.run();
-            }
-        });
+    public static void register(ContextCarrier carrier) {
+        CARRIERS.removeIf(existing -> existing.name().equals(carrier.name()));
+        CARRIERS.add(carrier);
     }
 
     public static Runnable wrap(Runnable runnable) {
@@ -113,7 +114,7 @@ public final class ThreadContextRegistry {
         }
     }
 
-    private interface ContextCarrier {
+    public interface ContextCarrier {
         String name();
 
         Object captureValue();
@@ -121,5 +122,35 @@ public final class ThreadContextRegistry {
         void restoreValue(Object value);
 
         void clearValue();
+
+        static <T> ContextCarrier of(
+                String name,
+                Supplier<T> capture,
+                Consumer<T> restore,
+                Runnable clear
+        ) {
+            return new ContextCarrier() {
+                @Override
+                public String name() {
+                    return name;
+                }
+
+                @Override
+                public Object captureValue() {
+                    return capture.get();
+                }
+
+                @SuppressWarnings("unchecked")
+                @Override
+                public void restoreValue(Object value) {
+                    restore.accept((T) value);
+                }
+
+                @Override
+                public void clearValue() {
+                    clear.run();
+                }
+            };
+        }
     }
 }

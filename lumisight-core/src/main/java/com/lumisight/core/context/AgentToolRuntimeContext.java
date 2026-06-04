@@ -2,48 +2,47 @@ package com.lumisight.core.context;
 
 public final class AgentToolRuntimeContext {
 
-    private static final ThreadLocal<Context> HOLDER = new ThreadLocal<>();
+    private static final Support SUPPORT = new Support();
 
     private AgentToolRuntimeContext() {
     }
 
     public static Scope open(String repoRoot, Integer defaultLimit) {
-        HOLDER.set(new Context(repoRoot, defaultLimit));
-        return new Scope();
+        return new Scope(SUPPORT.openValue(new Context(repoRoot, defaultLimit)));
     }
 
     public static Context required() {
-        Context context = HOLDER.get();
-        if (context == null) {
-            throw new IllegalStateException("Agent tool runtime context is missing");
-        }
-        return context;
+        return SUPPORT.requiredValue("Agent tool runtime context is missing");
     }
 
     public static Context current() {
-        return HOLDER.get();
+        return SUPPORT.currentValue();
     }
 
     public static void restore(Context context) {
-        if (context == null) {
-            HOLDER.remove();
-            return;
-        }
-        HOLDER.set(context);
+        SUPPORT.restoreValue(context);
     }
 
     public static void clear() {
-        HOLDER.remove();
+        SUPPORT.clearValue();
     }
 
     public record Context(String repoRoot, Integer defaultLimit) {
     }
 
     public static final class Scope implements AutoCloseable {
+        private final AbstractThreadLocalAgentContext.Scope delegate;
+
+        private Scope(AbstractThreadLocalAgentContext.Scope delegate) {
+            this.delegate = delegate;
+        }
 
         @Override
         public void close() {
-            HOLDER.remove();
+            delegate.close();
         }
+    }
+
+    private static final class Support extends AbstractThreadLocalAgentContext<Context> {
     }
 }

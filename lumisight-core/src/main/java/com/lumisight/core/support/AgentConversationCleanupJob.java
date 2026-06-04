@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 public class AgentConversationCleanupJob {
 
     private static final Logger log = LoggerFactory.getLogger(AgentConversationCleanupJob.class);
-    private final AgentConversationManager conversationManager;
+    private final AgentSessionContextStore conversationManager;
 
-    public AgentConversationCleanupJob(AgentConversationManager conversationManager) {
+    public AgentConversationCleanupJob(AgentSessionContextStore conversationManager) {
         this.conversationManager = conversationManager;
     }
 
@@ -23,4 +23,3 @@ public class AgentConversationCleanupJob {
         }
     }
 }
-

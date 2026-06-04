@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Component
-public class AgentContextEnrichmentService {
+public class AgentContextEnrichmentService implements AgentContextEnricher {
 
     private final KnowledgeGraphOneHopProvider knowledgeGraphOneHopProvider;
     private final SourceCodeLookupProvider sourceCodeLookupProvider;
