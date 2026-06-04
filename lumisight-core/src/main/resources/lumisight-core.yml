@@ -57,10 +57,34 @@ lumisight:
     allowed-paths:
       - .lumisight/skills
   agent:
+    context:
+      artifact-dir: ${LUMISIGHT_AGENT_CONTEXT_ARTIFACT_DIR:.lumisight/context-artifacts}
+      single-artifact-bytes: ${LUMISIGHT_AGENT_CONTEXT_SINGLE_ARTIFACT_BYTES:51200}
+      tool-message-bytes: ${LUMISIGHT_AGENT_CONTEXT_TOOL_MESSAGE_BYTES:204800}
+      preview-bytes: ${LUMISIGHT_AGENT_CONTEXT_PREVIEW_BYTES:2048}
+      snip-trigger-tokens: ${LUMISIGHT_AGENT_CONTEXT_SNIP_TRIGGER_TOKENS:24000}
+      snip-target-tokens: ${LUMISIGHT_AGENT_CONTEXT_SNIP_TARGET_TOKENS:18000}
+      projection-soft-tokens: ${LUMISIGHT_AGENT_CONTEXT_PROJECTION_SOFT_TOKENS:28000}
+      projection-hard-tokens: ${LUMISIGHT_AGENT_CONTEXT_PROJECTION_HARD_TOKENS:34000}
+      effective-context-window: ${LUMISIGHT_AGENT_CONTEXT_EFFECTIVE_WINDOW:180000}
+      response-reserve-tokens: ${LUMISIGHT_AGENT_CONTEXT_RESPONSE_RESERVE_TOKENS:20000}
+      auto-compact-buffer-tokens: ${LUMISIGHT_AGENT_CONTEXT_AUTO_COMPACT_BUFFER_TOKENS:13000}
+      micro-compact-keep-recent: ${LUMISIGHT_AGENT_CONTEXT_MICRO_COMPACT_KEEP_RECENT:8}
+      snip-keep-recent-conversation: ${LUMISIGHT_AGENT_CONTEXT_SNIP_KEEP_RECENT_CONVERSATION:12}
+      post-compact-max-restore-entries: ${LUMISIGHT_AGENT_CONTEXT_POST_COMPACT_MAX_RESTORE_ENTRIES:5}
+      post-compact-token-budget: ${LUMISIGHT_AGENT_CONTEXT_POST_COMPACT_TOKEN_BUDGET:50000}
+      post-compact-max-tokens-per-entry: ${LUMISIGHT_AGENT_CONTEXT_POST_COMPACT_MAX_TOKENS_PER_ENTRY:5000}
+      post-compact-skill-token-budget: ${LUMISIGHT_AGENT_CONTEXT_POST_COMPACT_SKILL_TOKEN_BUDGET:25000}
+      micro-compact-stale-minutes: ${LUMISIGHT_AGENT_CONTEXT_MICRO_COMPACT_STALE_MINUTES:60}
+      max-auto-compact-failures: ${LUMISIGHT_AGENT_CONTEXT_MAX_AUTO_COMPACT_FAILURES:3}
     conversation:
       waiting-user-ttl-seconds: ${LUMISIGHT_AGENT_WAITING_USER_TTL_SECONDS:900}
       waiting-gate-ttl-seconds: ${LUMISIGHT_AGENT_WAITING_GATE_TTL_SECONDS:1800}
       cleanup-interval-ms: ${LUMISIGHT_AGENT_CONVERSATION_CLEANUP_INTERVAL_MS:60000}
+    cron:
+      timezone: ${LUMISIGHT_AGENT_CRON_TIMEZONE:Asia/Shanghai}
+      scheduler-pool-size: ${LUMISIGHT_AGENT_CRON_POOL_SIZE:2}
+      max-recent-runs: ${LUMISIGHT_AGENT_CRON_MAX_RECENT_RUNS:20}
     skill-routing:
       min-confidence: ${LUMISIGHT_AGENT_SKILL_ROUTING_MIN_CONFIDENCE:0.6}
       low-confidence-fallback: ${LUMISIGHT_AGENT_SKILL_ROUTING_LOW_CONFIDENCE_FALLBACK:NONE}
