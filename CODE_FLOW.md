@@ -214,6 +214,7 @@
 - 今日提交摘要（协议模型收敛）：
   - SSE 从“每次提问新建一条流”重构为“按 `sessionId` 建立单长连接订阅 + 命令单独投递”：新增 `GET /api/lumisight/agent/stream?sessionId=...` 会话流订阅语义，并将问题/恢复/中断统一收敛到 `POST /api/lumisight/agent/run`。
   - `AgentSessionDispatcher` 从“按请求持有 sink”改为“按会话持有共享事件总线”：单次 run 结束不再自动关闭整个会话流，显式 `interrupt` 才改变会话执行状态。
+  - `AgentSessionDispatcher` 的状态保护也从“多处 `synchronized` 方法/代码块”收敛为“单个 `ReentrantLock` 管状态 + 锁外执行副作用”：广播事件、线程中断与 worker 提交尽量移出临界区，降低同会话高频投递时的锁竞争。
   - WebSocket 侧跟随收敛为“连接复用会话订阅 + 命令投递”模型；同一连接对同一 `sessionId` 的后续命令会复用既有事件订阅。
   - 调试页 `agent-console.html` 改为 `Connect -> Send Command -> Interrupt/Disconnect` 的会话式交互，不再伪装成“每个请求一条独立 SSE 流”。
 - 今日提交摘要（上下文与运行骨架补记）：
@@ -227,6 +228,7 @@
   - “客户端断开 SSE 会误 cancel 正在执行的会话” -> 改为订阅断开仅释放通道，不再顺手中断后台执行。
   - “同一会话反复提问对应多条 SSE 流，前端心智和后端调度模型不一致” -> 收敛为单会话主流连接，命令与事件分离。
   - “COLLECT/FOLLOW/STEER 的会话语义被请求级流模型削弱” -> 统一回到 `sessionId` 维度建模，使传输层与调度层语义对齐。
+  - “Session mailbox 上锁范围过大，广播/中断/线程池提交都发生在锁内” -> 改成显式状态锁 + 锁外副作用，保线程安全的同时减少热点锁持有时间。
   - “上下文管理继续靠字符串列表硬拼，工具结果一多就迅速膨胀” -> 改为结构化 context entry + artifact 落盘 + 读时投影链路，为不同模型窗口预留压缩和恢复机制。
   - “cron 任务只能手工重复触发，没有稳定的后台调度入口” -> 新增动态 cron job 注册、重调度与最近运行历史，让固定问题可按计划重复执行。
 - 验证：
