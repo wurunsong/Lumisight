@@ -13,6 +13,9 @@ public class TemplateSymbolDocGenerator implements SymbolDocGenerator {
         if (preview.length() > 300) {
             preview = preview.substring(0, 300);
         }
-        return "TODO: AI总结待生成\nsymbol=" + qualifiedName + "\nsignature=" + signature + "\ncodePreview=" + preview;
+        return "模板摘要（非 AI 生成）\n"
+                + "symbol=" + qualifiedName + "\n"
+                + "signature=" + signature + "\n"
+                + "codePreview=" + preview;
     }
 }
