@@ -1,5 +1,8 @@
 package com.lumisight.core.support;
 
+import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
+import com.lumisight.core.agent.multiagent.service.ChildAgentPermissionPolicy;
+import com.lumisight.core.agent.multiagent.service.MultiAgentExecutionContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.ToolDecision;
@@ -26,13 +29,16 @@ public class AgentFlowSupport {
             AgentToolPermission.GIT_READ,
             AgentToolPermission.MEMORY_READ,
             AgentToolPermission.MEMORY_WRITE,
-            AgentToolPermission.TODO_WRITE
+            AgentToolPermission.TODO_WRITE,
+            AgentToolPermission.AGENT_SPAWN
     );
 
     private final AgentToolRegistry agentToolRegistry;
+    private final ChildAgentPermissionPolicy childAgentPermissionPolicy;
 
-    public AgentFlowSupport(AgentToolRegistry agentToolRegistry) {
+    public AgentFlowSupport(AgentToolRegistry agentToolRegistry, ChildAgentPermissionPolicy childAgentPermissionPolicy) {
         this.agentToolRegistry = agentToolRegistry;
+        this.childAgentPermissionPolicy = childAgentPermissionPolicy;
     }
 
     public String resolveRepoRoot(String repoRoot, String skillPath) {
@@ -69,6 +75,13 @@ public class AgentFlowSupport {
     }
 
     public Set<AgentToolPermission> enabledPermissions(AgentRequest request, SkillPlan skillPlan) {
+        MultiAgentExecutionContext.Context executionContext = MultiAgentExecutionContext.current();
+        if (executionContext != null && executionContext.role() != MultiAgentExecutionContext.Role.LEAD_AGENT) {
+            return childAgentPermissionPolicy.permissionsFor(
+                    executionContext.role(),
+                    capabilityFromTaskType(request)
+            );
+        }
         Set<AgentToolPermission> enabledPermissions = EnumSet.noneOf(AgentToolPermission.class);
         enabledPermissions.addAll(BASE_TOOL_PERMISSIONS);
         if (request.includeRagContext()) {
@@ -83,6 +96,16 @@ public class AgentFlowSupport {
             enabledPermissions.add(AgentToolPermission.BUILD_COMPILE);
         }
         return enabledPermissions;
+    }
+
+    private SubAgentCapability capabilityFromTaskType(AgentRequest request) {
+        if (request == null || request.taskType() == null) {
+            return SubAgentCapability.CODE_EXPLAIN;
+        }
+        return switch (request.taskType()) {
+            case BUG_FIX -> SubAgentCapability.BUG_FIX;
+            case CHAT, CODE_EXPLAIN -> SubAgentCapability.CODE_EXPLAIN;
+        };
     }
 
     public boolean requiresHumanGate(ToolDecision decision) {

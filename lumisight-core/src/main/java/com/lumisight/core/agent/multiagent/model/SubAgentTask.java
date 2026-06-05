@@ -7,6 +7,12 @@ public record SubAgentTask(
         String title,
         String instruction,
         SubAgentCapability capability,
+        Map<String, Object> inputs,
+        String expectedOutput,
+        java.util.List<String> dependsOn,
+        String parallelGroup,
+        Map<String, Object> budget,
+        int priority,
         Map<String, Object> metadata
 ) {
 }

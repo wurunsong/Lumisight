@@ -33,12 +33,20 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
                 "主任务分解",
                 context.request().question(),
                 capability,
+                Map.of("question", context.request().question()),
+                "返回结构化分析结论、证据引用和建议下一步",
+                List.of(),
+                "lead",
+                Map.of("maxRounds", 6),
+                100,
                 Map.of("taskType", context.request().taskType().name())
         );
         return new OrchestrationPlan(
                 context.orchestrationId(),
                 "完成用户请求: " + context.request().question(),
                 List.of(task),
+                com.lumisight.core.agent.multiagent.model.TopologyType.SERIAL_DAG,
+                "汇总所有子任务结果，仅由 lead 执行最终写入或最终回答",
                 Map.of("mode", "single-step-default")
         );
     }

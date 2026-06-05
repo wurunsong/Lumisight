@@ -31,6 +31,10 @@ public class NoopSubAgent implements SubAgent {
                 agentName(),
                 true,
                 "占位执行完成，后续可替换为真实子代理实现",
+                java.util.List.of("noop executor"),
+                java.util.List.of(),
+                java.util.List.of("replace with concrete subagent"),
+                0.2d,
                 Map.of(
                         "taskTitle", task.title(),
                         "capability", task.capability().name()

@@ -7,6 +7,8 @@ public record OrchestrationPlan(
         String planId,
         String goal,
         List<SubAgentTask> tasks,
+        TopologyType topology,
+        String outputContract,
         Map<String, Object> metadata
 ) {
 }

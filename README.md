@@ -12,6 +12,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 安全执行：sandbox、快照、回滚、人工门控
 - 上下文管理：结构化账本、artifact 落盘、投影与压缩
 - 自修复闭环：BUG_FIX 模式下写代码后自动编译 / lint，失败就继续迭代修复
+- 多 Agent 演进：单 Agent 默认路径、`task_subagent` 干净子任务、team mailbox 骨架
 - 定时触发：cron job 调用 Agent 执行固定任务
 - 持久化任务系统：`.tasks/` 下的跨会话任务图、依赖与认领状态
 
@@ -84,6 +85,7 @@ podman machine start
 - [context-management.html](./context-management.html)：上下文管理专项视图
 - [CODE_FLOW.md](./CODE_FLOW.md)：按日期记录的开发进展
 - [AGENT_CAPABILITY_GAP.md](./AGENT_CAPABILITY_GAP.md)：当前能力与后续差距清单
+- [MULTI_AGENT_PLAN.md](./MULTI_AGENT_PLAN.md)：多 Agent 统一蓝图与分阶段落地说明
 - [lumisight-desktop-macos/README.md](./lumisight-desktop-macos/README.md)：macOS 原生客户端壳说明
 
 ## Agent 交互模型
@@ -174,6 +176,21 @@ Lumisight 现在同时有两套“任务”能力：
 - `pending -> in_progress -> completed`
 
 当前先实现了 `blockedBy` 依赖检查和跨会话持久化，还没有做环检测、release 回退和任务看板 UI。
+
+## Multi-Agent
+
+当前多 Agent 体系采用三层结构：
+
+- 默认仍是单 Agent 路径
+- 当局部分析会显著污染上下文时，主 Agent 可调用 `task_subagent`
+- `.lumisight/teams/` 下已预留 team mailbox 骨架，用于后续长期协作 agent
+
+`task_subagent` 的当前约束：
+
+- 子 Agent 使用独立上下文，不继承完整主会话历史
+- 子 Agent 默认最小只读权限
+- 子 Agent 不能递归创建新的 agent
+- 子 Agent 只返回结构化结论，最终写仓库和最终回答仍由主 Agent 负责
 
 ### KG / Vector
 

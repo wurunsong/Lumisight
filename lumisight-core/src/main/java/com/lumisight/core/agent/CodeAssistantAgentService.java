@@ -1,5 +1,6 @@
 package com.lumisight.core.agent;
 
+import com.lumisight.core.agent.multiagent.service.MultiAgentModeDecider;
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
@@ -53,6 +54,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     private final AgentLoopOrchestrator agentLoopOrchestrator;
     private final AgentFinalResponseEmitter agentFinalResponseEmitter;
     private final RelevantMemoryService relevantMemoryService;
+    private final MultiAgentModeDecider multiAgentModeDecider;
 
     @Autowired
     public CodeAssistantAgentService(
@@ -67,7 +69,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             AgentHookDispatcher agentHookDispatcher,
             AgentLoopOrchestrator agentLoopOrchestrator,
             AgentFinalResponseEmitter agentFinalResponseEmitter,
-            RelevantMemoryService relevantMemoryService
+            RelevantMemoryService relevantMemoryService,
+            MultiAgentModeDecider multiAgentModeDecider
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.conversationManager = conversationManager;
@@ -81,6 +84,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         this.agentLoopOrchestrator = agentLoopOrchestrator;
         this.agentFinalResponseEmitter = agentFinalResponseEmitter;
         this.relevantMemoryService = relevantMemoryService;
+        this.multiAgentModeDecider = multiAgentModeDecider;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -107,31 +111,32 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
         try {
             ExecutionContext context = prepareExecutionContext(request, sessionId);
+            AgentRequest effectiveRequest = resolveEffectiveRequest(request, context.effectiveQuestion(), traceId, sessionId, publisher);
             CompletableFuture<RelevantMemoryContext> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
-                    request.taskType(),
+                    effectiveRequest.taskType(),
                     context.resolvedRepoRoot(),
                     context.effectiveQuestion(),
-                    request.skillPath(),
-                    request.userId(),
+                    effectiveRequest.skillPath(),
+                    effectiveRequest.userId(),
                     sessionId,
-                    request.approveRiskyToolCall(),
-                    request.interrupt(),
-                    request.resume(),
-                    request.includeRagContext(),
-                    request.includeKnowledgeGraphContext(),
-                    request.contextLimit(),
-                    request.runMode(),
-                    request.dialogueMode()
+                    effectiveRequest.approveRiskyToolCall(),
+                    effectiveRequest.interrupt(),
+                    effectiveRequest.resume(),
+                    effectiveRequest.includeRagContext(),
+                    effectiveRequest.includeKnowledgeGraphContext(),
+                    effectiveRequest.contextLimit(),
+                    effectiveRequest.runMode(),
+                    effectiveRequest.dialogueMode()
             ));
-            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit(), request.userId())) {
-                publishInitState(request, context, traceId, publisher);
-                SkillPlan skillPlan = resolveSkillPlan(request, context, traceId, publisher);
-                Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
+            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit(), effectiveRequest.userId())) {
+                publishInitState(effectiveRequest, context, traceId, publisher);
+                SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, context, traceId, publisher);
+                Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest, skillPlan);
                 RelevantMemoryContext relevantMemoryContext = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
 
                 ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
-                        request,
+                        effectiveRequest,
                         context,
                         traceId,
                         publisher,
@@ -143,13 +148,13 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 }
                 context = resumeHandling.context();
 
-                if (request.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(request, context, skillPlan, traceId, publisher, relevantMemoryContext)) {
+                if (effectiveRequest.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(effectiveRequest, context, skillPlan, traceId, publisher, relevantMemoryContext)) {
                     sink.complete();
                     return;
                 }
 
                 AgentLoopOrchestrator.OrchestrationResult result = agentLoopOrchestrator.run(
-                        request,
+                        effectiveRequest,
                         context.effectiveQuestion(),
                         skillPlan,
                         context.contextSession(),
@@ -174,7 +179,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     return;
                 }
 
-                emitFinalAnswer(request, context, skillPlan, result, traceId, publisher, relevantMemoryContext);
+                emitFinalAnswer(effectiveRequest, context, skillPlan, result, traceId, publisher, relevantMemoryContext);
                 sink.complete();
             }
         } catch (Throwable t) {
@@ -191,6 +196,32 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         } catch (Exception e) {
             return RelevantMemoryContext.empty();
         }
+    }
+
+    private AgentRequest resolveEffectiveRequest(AgentRequest request, String effectiveQuestion, String traceId, String sessionId, AgentEventPublisher publisher) {
+        MultiAgentModeDecider.Decision decision = multiAgentModeDecider.decide(request, effectiveQuestion);
+        if (decision.multiAgentSelected()) {
+            publisher.emit(AgentEvent.multiAgentSelected(traceId, sessionId, 0, decision.effectiveRunMode().name(), decision.reason()));
+        }
+        if (decision.effectiveRunMode() == request.runMode()) {
+            return request;
+        }
+        return new AgentRequest(
+                request.taskType(),
+                request.repoRoot(),
+                request.question(),
+                request.skillPath(),
+                request.userId(),
+                request.sessionId(),
+                request.approveRiskyToolCall(),
+                request.interrupt(),
+                request.resume(),
+                request.includeRagContext(),
+                request.includeKnowledgeGraphContext(),
+                request.contextLimit(),
+                decision.effectiveRunMode(),
+                request.dialogueMode()
+        );
     }
 
     private ExecutionContext prepareExecutionContext(AgentRequest request, String sessionId) {

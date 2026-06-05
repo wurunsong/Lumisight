@@ -1,8 +1,10 @@
 package com.lumisight.core.support;
 
+import com.lumisight.core.agent.multiagent.service.MultiAgentExecutionContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentRequest;
+import com.lumisight.core.model.AgentRunMode;
 import com.lumisight.core.model.AgentTaskType;
 import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -39,7 +41,9 @@ public class AgentPromptService {
             default -> "system_code_explain";
         }, Map.of());
         String memoryBlock = memoryReminderBlock(memoryContext);
-        return memoryBlock.isBlank() ? base : base + "\n\n" + memoryBlock;
+        String multiAgentBlock = multiAgentExecutionBlock();
+        String prompt = memoryBlock.isBlank() ? base : base + "\n\n" + memoryBlock;
+        return multiAgentBlock.isBlank() ? prompt : prompt + "\n\n" + multiAgentBlock;
     }
 
     public String verifySystemPrompt() {
@@ -66,6 +70,7 @@ public class AgentPromptService {
 
     public String orchestratorSystemPrompt(
             AgentTaskType taskType,
+            AgentRunMode runMode,
             AgentDialogueMode dialogueMode,
             Set<AgentToolPermission> enabledPermissions,
             AgentToolRegistry registry,
@@ -76,6 +81,7 @@ public class AgentPromptService {
                 "systemPrompt", systemPrompt(taskType),
                 "skillGuidance", skillGuidanceBlock(skillPlan, false),
                 "dialogueModeGuidance", dialogueModeGuidance(dialogueMode),
+                "multiAgentGuidance", multiAgentGuidance(runMode),
                 "memoryGuidance", memoryReminderBlock(memoryContext),
                 "todoGuidance", todoGuidanceBlock(),
                 "enabledToolHints", enabledToolHints(enabledPermissions, registry)
@@ -274,6 +280,13 @@ public class AgentPromptService {
         return "- FOLLOW: 严格跟随用户当前问题，最短路径完成回答。";
     }
 
+    private String multiAgentGuidance(AgentRunMode runMode) {
+        if (runMode == AgentRunMode.MULTI_AGENT) {
+            return "- MULTI_AGENT: 先判断是否保持单 Agent；只有局部分析会显著污染上下文时才调用 task_subagent。不要把所有任务都机械拆给子 Agent。";
+        }
+        return "- NORMAL: 默认优先单 Agent；只有在局部复杂分析明显受益时才考虑 task_subagent。";
+    }
+
     private String todoGuidanceBlock() {
         return "- 会话内 checklist：如果只是当前会话里的多步骤执行，请使用 todo_write 维护任务清单；先列出所有步骤，再把状态从 pending 逐步更新为 in_progress 和 completed。\n"
                 + "- 持久化任务系统：如果任务需要跨会话保留、存在 blockedBy 依赖关系，或需要 claim/complete 语义，请使用 task_create / task_list / task_get / task_claim / task_complete，而不是只写 todo。\n"
@@ -294,6 +307,26 @@ public class AgentPromptService {
             builder.append(safeContext.remindersBlock());
         }
         return builder.toString();
+    }
+
+    private String multiAgentExecutionBlock() {
+        MultiAgentExecutionContext.Context context = MultiAgentExecutionContext.current();
+        if (context == null) {
+            return "";
+        }
+        if (context.role() == MultiAgentExecutionContext.Role.SUB_AGENT) {
+            return "子 Agent 约束:\n"
+                    + "- 你运行在隔离子上下文中，只完成当前子任务。\n"
+                    + "- 不要请求用户，不要再委派新的 agent，不要假设自己拥有写仓库权限。\n"
+                    + "- 只输出完成当前任务所需的结论、证据和建议下一步。";
+        }
+        if (context.role() == MultiAgentExecutionContext.Role.TEAM_AGENT) {
+            return "Team Agent 约束:\n"
+                    + "- 你是长期协作队友，只处理 inbox 分配给你的任务。\n"
+                    + "- 不要创建新的 agent，不要直接面向用户给最终答案。\n"
+                    + "- 返回结构化结论与证据引用，等待 Lead 汇总。";
+        }
+        return "";
     }
 
     private String trimSkillContent(String rawSkillContent) {

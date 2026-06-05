@@ -16,5 +16,6 @@ public enum AgentToolPermission {
     LSP_JAVA_READ,
     BUILD_COMPILE,
     GIT_READ,
-    TODO_WRITE
+    TODO_WRITE,
+    AGENT_SPAWN
 }

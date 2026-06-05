@@ -116,6 +116,19 @@ lumisight:
       run-lint: ${LUMISIGHT_AGENT_SELF_HEAL_RUN_LINT:true}
       require-success-before-final: ${LUMISIGHT_AGENT_SELF_HEAL_REQUIRE_SUCCESS_BEFORE_FINAL:true}
       max-validation-files: ${LUMISIGHT_AGENT_SELF_HEAL_MAX_VALIDATION_FILES:5}
+    multi-agent:
+      enabled: ${LUMISIGHT_AGENT_MULTI_ENABLED:true}
+      auto-upgrade-enabled: ${LUMISIGHT_AGENT_MULTI_AUTO_UPGRADE_ENABLED:true}
+      auto-upgrade-threshold: ${LUMISIGHT_AGENT_MULTI_AUTO_UPGRADE_THRESHOLD:0.9}
+      allow-subagent: ${LUMISIGHT_AGENT_MULTI_ALLOW_SUBAGENT:true}
+      allow-team-agent: ${LUMISIGHT_AGENT_MULTI_ALLOW_TEAM_AGENT:false}
+      max-subagent-depth: ${LUMISIGHT_AGENT_MULTI_MAX_SUBAGENT_DEPTH:1}
+      max-tasks-per-plan: ${LUMISIGHT_AGENT_MULTI_MAX_TASKS_PER_PLAN:8}
+      max-parallel-agents: ${LUMISIGHT_AGENT_MULTI_MAX_PARALLEL_AGENTS:3}
+      subagent-max-rounds: ${LUMISIGHT_AGENT_MULTI_SUBAGENT_MAX_ROUNDS:6}
+      child-context-limit: ${LUMISIGHT_AGENT_MULTI_CHILD_CONTEXT_LIMIT:6}
+      child-timeout-ms: ${LUMISIGHT_AGENT_MULTI_CHILD_TIMEOUT_MS:120000}
+      team-root-dir: ${LUMISIGHT_AGENT_MULTI_TEAM_ROOT_DIR:.lumisight/teams}
     websocket:
       allowed-origins: ${LUMISIGHT_AGENT_WS_ALLOWED_ORIGINS:*}
       max-connections: ${LUMISIGHT_AGENT_WS_MAX_CONNECTIONS:200}

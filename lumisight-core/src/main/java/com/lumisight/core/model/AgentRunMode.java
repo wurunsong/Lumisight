@@ -2,5 +2,6 @@ package com.lumisight.core.model;
 
 public enum AgentRunMode {
     NORMAL,
-    PLAN
+    PLAN,
+    MULTI_AGENT
 }

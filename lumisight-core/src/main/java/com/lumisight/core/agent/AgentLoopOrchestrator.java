@@ -137,6 +137,7 @@ class AgentLoopOrchestrator {
                     llmChatClient,
                     agentPromptService.orchestratorSystemPrompt(
                             request.taskType(),
+                            request.runMode(),
                             request.dialogueMode(),
                             enabledPermissions,
                             agentToolRegistry,
@@ -275,6 +276,15 @@ class AgentLoopOrchestrator {
             ));
             for (ToolDecision toolCall : batch) {
                 publisher.emit(AgentEvent.toolCall(traceId, sessionId, round, toolCall.toolName(), toolCall.args()));
+                if ("task_subagent".equals(toolCall.toolName())) {
+                    publisher.emit(AgentEvent.subagentSpawned(
+                            traceId,
+                            sessionId,
+                            round,
+                            "",
+                            String.valueOf(toolCall.args() == null ? "" : toolCall.args().getOrDefault("capability", "CODE_EXPLAIN"))
+                    ));
+                }
             }
             List<AgentToolExecutionResult> batchResults = hookedToolExecutor.executeBatch(
                     batch,
@@ -290,6 +300,7 @@ class AgentLoopOrchestrator {
             }
             for (AgentToolExecutionResult batchResult : batchResults) {
                 publisher.emit(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
+                emitMultiAgentToolEvents(traceId, sessionId, round, batchResult, publisher);
                 if (!"ok".equals(batchResult.status()) || containsToolError(batchResult.items())) {
                     log.warn("agent_loop tool_result_error, sessionId={}, round={}, toolName={}, status={}, message={}, items={}",
                             sessionId, round, batchResult.toolName(), batchResult.status(), batchResult.message(),
@@ -594,6 +605,29 @@ class AgentLoopOrchestrator {
 
     private boolean containsToolError(List<AgentContextItem> items) {
         return items != null && items.stream().anyMatch(item -> "tool_error".equals(item.sourceType()));
+    }
+
+    private void emitMultiAgentToolEvents(
+            String traceId,
+            String sessionId,
+            int round,
+            AgentToolExecutionResult batchResult,
+            AgentEventPublisher publisher
+    ) {
+        if (batchResult == null || batchResult.items() == null || !"task_subagent".equals(batchResult.toolName()) || batchResult.items().isEmpty()) {
+            return;
+        }
+        AgentContextItem item = batchResult.items().getFirst();
+        Object taskId = item.metadata() == null ? null : item.metadata().get("taskId");
+        Object success = item.metadata() == null ? null : item.metadata().get("success");
+        publisher.emit(AgentEvent.subagentResult(
+                traceId,
+                sessionId,
+                round,
+                taskId == null ? "" : String.valueOf(taskId),
+                success instanceof Boolean ok && ok,
+                item.content()
+        ));
     }
 
     private boolean isBugFixRequest(AgentRequest request) {

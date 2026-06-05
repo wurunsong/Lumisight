@@ -148,6 +148,76 @@ public record AgentEvent(
         );
     }
 
+    public static AgentEvent multiAgentSelected(String traceId, String sessionId, Integer round, String mode, String reason) {
+        return base(
+                "MULTI_AGENT_SELECTED",
+                "多 Agent 路径已选择",
+                null,
+                Map.of("mode", mode == null ? "" : mode, "reason", reason == null ? "" : reason),
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                "ok"
+        );
+    }
+
+    public static AgentEvent orchestrationPlan(String traceId, String sessionId, Integer round, Map<String, Object> payload) {
+        return base(
+                "ORCHESTRATION_PLAN",
+                "已生成多 Agent 任务图",
+                null,
+                payload == null ? Map.of() : payload,
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                "ok"
+        );
+    }
+
+    public static AgentEvent subagentSpawned(String traceId, String sessionId, Integer round, String taskId, String capability) {
+        return base(
+                "SUBAGENT_SPAWNED",
+                "子 Agent 已启动",
+                null,
+                Map.of("taskId", taskId == null ? "" : taskId, "capability", capability == null ? "" : capability),
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                "running"
+        );
+    }
+
+    public static AgentEvent subagentResult(String traceId, String sessionId, Integer round, String taskId, boolean success, String summary) {
+        return base(
+                "SUBAGENT_RESULT",
+                summary == null ? "" : summary,
+                null,
+                Map.of("taskId", taskId == null ? "" : taskId, "success", success),
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                success ? "ok" : "error"
+        );
+    }
+
+    public static AgentEvent multiAgentFallback(String traceId, String sessionId, Integer round, String reason) {
+        return base(
+                "MULTI_AGENT_FALLBACK",
+                "多 Agent 已回退到主 Agent",
+                null,
+                Map.of("reason", reason == null ? "" : reason),
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                "fallback"
+        );
+    }
+
     public static AgentEvent token(String content) {
         return base("TOKEN", content, null, Map.of(), "", "", 0, "FINAL_STREAM", "streaming");
     }

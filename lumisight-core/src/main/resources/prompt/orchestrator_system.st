@@ -28,6 +28,9 @@ JSON 结构:
 当前对话管理策略:
 <dialogueModeGuidance>
 
+多 Agent 策略:
+<multiAgentGuidance>
+
 长期记忆提醒:
 <memoryGuidance>
 
