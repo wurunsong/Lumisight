@@ -43,6 +43,7 @@ public class MultiAgentCoordinator {
         MultiAgentExecutionState executionState;
         if (useTeamAgent) {
             TeamAgentExecutionService.ExecutionResult executionResult = teamAgentExecutionService.executePlan(plan, context);
+            plan = executionResult.executionState().plan();
             results = executionResult.results();
             lifecycleEvents = executionResult.lifecycleEvents();
             executionState = executionResult.executionState();

@@ -319,7 +319,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             String traceId,
             AgentEventPublisher publisher
     ) {
-        if (request.runMode() != AgentRunMode.MULTI_AGENT || context.startRound() > 1) {
+        if (request.runMode() != AgentRunMode.MULTI_AGENT) {
             return context;
         }
         AgentRequest orchestrationRequest = new AgentRequest(

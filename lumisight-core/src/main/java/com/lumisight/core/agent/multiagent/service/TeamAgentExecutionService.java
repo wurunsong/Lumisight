@@ -35,40 +35,54 @@ public class TeamAgentExecutionService {
     private final MultiAgentProperties properties;
     private final ObjectMapper objectMapper;
     private final ChildAgentPermissionPolicy childAgentPermissionPolicy;
+    private final MultiAgentExecutionStateStore executionStateStore;
 
     public TeamAgentExecutionService(
             AgentMailboxBus mailboxBus,
             ExecutingSubAgent executingSubAgent,
             MultiAgentProperties properties,
             ObjectMapper objectMapper,
-            ChildAgentPermissionPolicy childAgentPermissionPolicy
+            ChildAgentPermissionPolicy childAgentPermissionPolicy,
+            MultiAgentExecutionStateStore executionStateStore
     ) {
         this.mailboxBus = mailboxBus;
         this.executingSubAgent = executingSubAgent;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.childAgentPermissionPolicy = childAgentPermissionPolicy;
+        this.executionStateStore = executionStateStore;
     }
 
     public ExecutionResult executePlan(OrchestrationPlan plan, OrchestrationContext context) {
-        String teamId = "team-" + plan.planId();
+        String teamId = stableTeamId(context);
         String repoRoot = context.request().repoRoot();
-        List<SubAgentTask> tasks = plan.tasks() == null ? List.of() : plan.tasks();
-        List<String> workerIds = allocateWorkers(tasks, plan.topology());
-        Map<String, TaskExecutionStatus> taskStates = initTaskStates(tasks);
-        Map<String, Long> inboxOffsets = new LinkedHashMap<>();
-        Map<String, SubAgentResult> completed = new LinkedHashMap<>();
-        Map<String, List<String>> permissionsByTask = new LinkedHashMap<>();
-        List<String> lifecycleEvents = new ArrayList<>();
+        MultiAgentExecutionState resumeState = context.request().resume()
+                ? executionStateStore.load(repoRoot, teamId).orElse(null)
+                : null;
+        OrchestrationPlan effectivePlan = resumeState != null && resumeState.plan() != null ? resumeState.plan() : plan;
+        List<SubAgentTask> tasks = effectivePlan.tasks() == null ? List.of() : effectivePlan.tasks();
+        List<String> workerIds = allocateWorkers(tasks, effectivePlan.topology());
+        Map<String, TaskExecutionStatus> taskStates = initTaskStates(tasks, resumeState);
+        Map<String, Long> inboxOffsets = initInboxOffsets(resumeState);
+        Map<String, SubAgentResult> completed = initCompleted(resumeState);
+        Map<String, List<String>> permissionsByTask = initPermissionsByTask(resumeState);
+        List<String> lifecycleEvents = initLifecycleEvents(resumeState);
 
-        List<List<SubAgentTask>> waves = buildExecutionWaves(tasks, plan.topology());
-        int currentRound = 0;
+        List<List<SubAgentTask>> waves = buildExecutionWaves(tasks, effectivePlan.topology());
+        int currentRound = resumeState == null ? 0 : Math.max(0, resumeState.currentRound());
+        if (resumeState != null) {
+            lifecycleEvents.add("lead:resume_loaded:" + effectivePlan.planId());
+        }
+        executionStateStore.save(repoRoot, teamId, snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask));
         for (List<SubAgentTask> wave : waves) {
-            currentRound++;
-            List<SubAgentTask> runnable = filterRunnableTasks(wave, plan.topology(), completed, taskStates, lifecycleEvents);
+            List<SubAgentTask> waveCandidates = filterRunnableTasks(wave, effectivePlan.topology(), completed, taskStates, lifecycleEvents);
+            List<SubAgentTask> runnable = waveCandidates.stream()
+                    .filter(task -> shouldExecute(taskStates.get(task.taskId())))
+                    .toList();
             if (runnable.isEmpty()) {
                 continue;
             }
+            currentRound++;
             dispatchTasks(repoRoot, teamId, runnable, workerIds, completed, inboxOffsets, lifecycleEvents, permissionsByTask, taskStates);
             Map<String, WorkerPendingTask> pendingByWorker = new LinkedHashMap<>();
             for (String workerId : workerIds) {
@@ -86,23 +100,12 @@ public class TeamAgentExecutionService {
             collectLeadResults(leadMessages, completed, taskStates, lifecycleEvents);
             runnable.forEach(task -> taskStates.computeIfAbsent(task.taskId(), ignored -> TaskExecutionStatus.PENDING));
             markWaveCompletions(runnable, completed, taskStates);
+            executionStateStore.save(repoRoot, teamId, snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask));
         }
 
         lifecycleEvents.addAll(shutdownWorkers(repoRoot, teamId, workerIds, inboxOffsets));
-        MultiAgentExecutionState state = new MultiAgentExecutionState(
-                plan.planId(),
-                "TEAM_AGENT",
-                plan.topology(),
-                plan,
-                Map.copyOf(taskStates),
-                completed.values().stream().sorted(Comparator.comparing(SubAgentResult::taskId)).toList(),
-                Map.copyOf(inboxOffsets),
-                currentRound,
-                Map.of(
-                        "lifecycleEvents", List.copyOf(lifecycleEvents),
-                        "permissionsByTask", Map.copyOf(permissionsByTask)
-                )
-        );
+        MultiAgentExecutionState state = snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask);
+        executionStateStore.save(repoRoot, teamId, state);
         return new ExecutionResult(teamId, state.childSummaries(), lifecycleEvents, state);
     }
 
@@ -120,12 +123,61 @@ public class TeamAgentExecutionService {
         return workerIds;
     }
 
-    private Map<String, TaskExecutionStatus> initTaskStates(List<SubAgentTask> tasks) {
+    private Map<String, TaskExecutionStatus> initTaskStates(List<SubAgentTask> tasks, MultiAgentExecutionState resumeState) {
         Map<String, TaskExecutionStatus> states = new LinkedHashMap<>();
         for (SubAgentTask task : tasks) {
-            states.put(task.taskId(), TaskExecutionStatus.PENDING);
+            TaskExecutionStatus restored = resumeState == null || resumeState.taskStates() == null
+                    ? null
+                    : resumeState.taskStates().get(task.taskId());
+            states.put(task.taskId(), restored == null ? TaskExecutionStatus.PENDING : restored);
         }
         return states;
+    }
+
+    private Map<String, Long> initInboxOffsets(MultiAgentExecutionState resumeState) {
+        if (resumeState == null || resumeState.inboxOffsets() == null) {
+            return new LinkedHashMap<>();
+        }
+        return new LinkedHashMap<>(resumeState.inboxOffsets());
+    }
+
+    private Map<String, SubAgentResult> initCompleted(MultiAgentExecutionState resumeState) {
+        Map<String, SubAgentResult> completed = new LinkedHashMap<>();
+        if (resumeState == null || resumeState.childSummaries() == null) {
+            return completed;
+        }
+        for (SubAgentResult result : resumeState.childSummaries()) {
+            completed.put(result.taskId(), result);
+        }
+        return completed;
+    }
+
+    private Map<String, List<String>> initPermissionsByTask(MultiAgentExecutionState resumeState) {
+        if (resumeState == null || resumeState.fallbackState() == null) {
+            return new LinkedHashMap<>();
+        }
+        Object raw = resumeState.fallbackState().get("permissionsByTask");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, List<String>> permissionsByTask = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> {
+            if (value instanceof List<?> list) {
+                permissionsByTask.put(String.valueOf(key), list.stream().map(String::valueOf).toList());
+            }
+        });
+        return permissionsByTask;
+    }
+
+    private List<String> initLifecycleEvents(MultiAgentExecutionState resumeState) {
+        if (resumeState == null || resumeState.fallbackState() == null) {
+            return new ArrayList<>();
+        }
+        Object raw = resumeState.fallbackState().get("lifecycleEvents");
+        if (!(raw instanceof List<?> list)) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(list.stream().map(String::valueOf).toList());
     }
 
     private List<List<SubAgentTask>> buildExecutionWaves(List<SubAgentTask> tasks, TopologyType topology) {
@@ -174,6 +226,10 @@ public class TeamAgentExecutionService {
             runnable.add(task);
         }
         return runnable;
+    }
+
+    private boolean shouldExecute(TaskExecutionStatus status) {
+        return status == null || status == TaskExecutionStatus.PENDING || status == TaskExecutionStatus.RUNNING;
     }
 
     private void dispatchTasks(
@@ -374,7 +430,22 @@ public class TeamAgentExecutionService {
             List<String> lifecycleEvents
     ) {
         lifecycleEvents.add(workerId + ":running:" + task.taskId());
-        SubAgentResult result = executingSubAgent.executeAsTeamAgent(task, context, teamId, workerId);
+        SubAgentResult result;
+        try {
+            result = executingSubAgent.executeAsTeamAgent(task, context, teamId, workerId);
+        } catch (Exception e) {
+            result = new SubAgentResult(
+                    task.taskId(),
+                    workerId,
+                    false,
+                    "Team agent 执行失败: " + e.getMessage(),
+                    List.of("team agent execution failed"),
+                    List.of(),
+                    List.of("Lead 可接管该任务，或拆小后重试"),
+                    0.1d,
+                    Map.of("error", e.getClass().getSimpleName())
+            );
+        }
         sendResult(context.request().repoRoot(), teamId, workerId, result, task.taskId(), inboxOffsets, lifecycleEvents);
     }
 
@@ -518,6 +589,41 @@ public class TeamAgentExecutionService {
 
     private void incrementOffset(Map<String, Long> inboxOffsets, String inboxId, long delta) {
         inboxOffsets.merge(inboxId, delta, Long::sum);
+    }
+
+    private MultiAgentExecutionState snapshot(
+            String teamId,
+            OrchestrationPlan plan,
+            Map<String, TaskExecutionStatus> taskStates,
+            Map<String, SubAgentResult> completed,
+            Map<String, Long> inboxOffsets,
+            int currentRound,
+            List<String> lifecycleEvents,
+            Map<String, List<String>> permissionsByTask
+    ) {
+        return new MultiAgentExecutionState(
+                plan.planId(),
+                "TEAM_AGENT",
+                plan.topology(),
+                plan,
+                Map.copyOf(taskStates),
+                completed.values().stream().sorted(Comparator.comparing(SubAgentResult::taskId)).toList(),
+                Map.copyOf(inboxOffsets),
+                currentRound,
+                Map.of(
+                        "teamId", teamId,
+                        "lifecycleEvents", List.copyOf(lifecycleEvents),
+                        "permissionsByTask", Map.copyOf(permissionsByTask)
+                )
+        );
+    }
+
+    private String stableTeamId(OrchestrationContext context) {
+        String sessionId = context.request() == null ? null : context.request().sessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return "team-anonymous";
+        }
+        return "team-" + sessionId.replaceAll("[^a-zA-Z0-9._-]", "-");
     }
 
     public record ExecutionResult(
