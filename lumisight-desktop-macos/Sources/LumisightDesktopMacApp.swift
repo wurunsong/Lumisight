@@ -9,6 +9,7 @@ struct LumisightDesktopMacApp: App {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 1320, minHeight: 840)
+                .preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
 
@@ -24,6 +25,7 @@ struct LumisightDesktopMacApp: App {
                 .padding(16)
             }
             .frame(minWidth: 720, minHeight: 420)
+            .preferredColorScheme(.dark)
         }
     }
 }

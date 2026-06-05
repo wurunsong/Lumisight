@@ -17,13 +17,34 @@ struct ContentView: View {
     }
 }
 
+private enum ShellPalette {
+    static let appBackground = Color(red: 0.06, green: 0.07, blue: 0.10)
+    static let sidebarTop = Color(red: 0.12, green: 0.14, blue: 0.18)
+    static let sidebarBottom = Color(red: 0.08, green: 0.09, blue: 0.13)
+    static let conversationTop = Color(red: 0.10, green: 0.11, blue: 0.16)
+    static let conversationBottom = Color(red: 0.07, green: 0.08, blue: 0.12)
+    static let inspectorTop = Color(red: 0.11, green: 0.13, blue: 0.18)
+    static let inspectorBottom = Color(red: 0.08, green: 0.09, blue: 0.14)
+    static let panelFill = Color.white.opacity(0.06)
+    static let panelBorder = Color.white.opacity(0.10)
+    static let panelStrongFill = Color.white.opacity(0.10)
+    static let accent = Color(red: 0.35, green: 0.69, blue: 1.0)
+    static let accentStrong = Color(red: 0.24, green: 0.47, blue: 0.96)
+    static let success = Color(red: 0.22, green: 0.72, blue: 0.49)
+    static let warning = Color(red: 0.98, green: 0.71, blue: 0.27)
+    static let danger = Color(red: 0.95, green: 0.36, blue: 0.37)
+    static let textPrimary = Color.white.opacity(0.96)
+    static let textSecondary = Color.white.opacity(0.64)
+    static let textTertiary = Color.white.opacity(0.42)
+}
+
 private struct SidebarView: View {
     @EnvironmentObject private var store: DesktopStore
 
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.95, green: 0.97, blue: 0.99), Color(red: 0.89, green: 0.94, blue: 0.98)],
+                colors: [ShellPalette.sidebarTop, ShellPalette.sidebarBottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -34,9 +55,10 @@ private struct SidebarView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Lumisight")
                             .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(ShellPalette.textPrimary)
                         Text("macOS Agent Shell")
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(ShellPalette.textSecondary)
                     }
                     Spacer()
                     Button(action: store.createSession) {
@@ -44,32 +66,38 @@ private struct SidebarView: View {
                             .font(.headline)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.black.opacity(0.8))
+                    .tint(ShellPalette.accentStrong)
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Connection")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ShellPalette.textSecondary)
                     TextField("ws://127.0.0.1:8080/ws/lumisight/agent", text: $store.socketEndpoint)
-                        .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(ShellPalette.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(ShellPalette.panelStrongFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                     HStack {
                         StatusPill(state: store.connectionState)
                         Spacer()
                         Button("Connect", action: store.connect)
                             .buttonStyle(.borderedProminent)
+                            .tint(ShellPalette.accentStrong)
                         Button("Disconnect", action: store.disconnect)
                             .buttonStyle(.bordered)
+                            .tint(.white.opacity(0.3))
                     }
                 }
                 .padding(14)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(panelBackground)
 
                 Text("Sessions")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ShellPalette.textSecondary)
 
                 ScrollView {
                     LazyVStack(spacing: 10) {
@@ -97,7 +125,7 @@ private struct ConversationColumnView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.99, green: 0.98, blue: 0.96), Color(red: 0.96, green: 0.97, blue: 1.0)],
+                colors: [ShellPalette.conversationTop, ShellPalette.conversationBottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -115,6 +143,8 @@ private struct ConversationColumnView: View {
                 .padding(18)
             } else {
                 ContentUnavailableView("No Session", systemImage: "bolt.horizontal.circle")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(ShellPalette.textSecondary)
             }
         }
     }
@@ -126,7 +156,7 @@ private struct InspectorColumnView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.09, green: 0.11, blue: 0.15), Color(red: 0.13, green: 0.16, blue: 0.22)],
+                colors: [ShellPalette.inspectorTop, ShellPalette.inspectorBottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -136,19 +166,19 @@ private struct InspectorColumnView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Inspector")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ShellPalette.textPrimary)
 
                     GlassPanel(dark: true) {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Protocol", systemImage: "wave.3.right")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(ShellPalette.textPrimary)
                             Text(store.lastProtocolMessage)
-                                .foregroundStyle(Color.white.opacity(0.8))
-                            Divider().overlay(Color.white.opacity(0.12))
+                                .foregroundStyle(ShellPalette.textSecondary)
+                            Divider().overlay(ShellPalette.panelBorder)
                             Text("State: \(store.connectionState.label)")
-                                .foregroundStyle(Color.white.opacity(0.7))
+                                .foregroundStyle(ShellPalette.textSecondary)
                             Text("Sessions: \(store.sessionCount)")
-                                .foregroundStyle(Color.white.opacity(0.7))
+                                .foregroundStyle(ShellPalette.textSecondary)
                         }
                     }
 
@@ -157,19 +187,19 @@ private struct InspectorColumnView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(event.title)
                                     .font(.headline)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(ShellPalette.textPrimary)
                                 Text(event.body)
-                                    .foregroundStyle(Color.white.opacity(0.82))
+                                    .foregroundStyle(ShellPalette.textSecondary)
                                 if !event.payload.isEmpty {
-                                    Divider().overlay(Color.white.opacity(0.12))
+                                    Divider().overlay(ShellPalette.panelBorder)
                                     ForEach(event.payload.sorted(by: { $0.key < $1.key }), id: \.key) { entry in
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(entry.key.titleShellLabel)
                                                 .font(.caption2.weight(.bold))
-                                                .foregroundStyle(Color.white.opacity(0.5))
+                                                .foregroundStyle(ShellPalette.textTertiary)
                                             Text(entry.value.pretty)
                                                 .font(.system(.caption, design: .monospaced))
-                                                .foregroundStyle(Color.white.opacity(0.82))
+                                                .foregroundStyle(ShellPalette.textSecondary)
                                         }
                                     }
                                 }
@@ -181,11 +211,11 @@ private struct InspectorColumnView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Connection Log")
                                 .font(.headline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(ShellPalette.textPrimary)
                             ForEach(store.connectionLog.prefix(12), id: \.self) { line in
                                 Text(line)
                                     .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(Color.white.opacity(0.72))
+                                    .foregroundStyle(ShellPalette.textSecondary)
                             }
                         }
                     }
@@ -204,24 +234,26 @@ private struct HeaderBar: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(session.name)
                     .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(ShellPalette.textPrimary)
                 Text(session.repoRoot.isEmpty ? "No repo root configured" : session.repoRoot)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ShellPalette.textSecondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
                 Text(session.sessionId)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ShellPalette.textSecondary)
                 Text(session.lastStatus.titleShellLabel)
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.08), in: Capsule())
+                    .background(ShellPalette.panelStrongFill, in: Capsule())
+                    .foregroundStyle(ShellPalette.textPrimary)
             }
         }
         .padding(16)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(panelBackground(cornerRadius: 22))
     }
 }
 
@@ -232,9 +264,11 @@ private struct FinalOutputCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Final Output")
                 .font(.headline)
+                .foregroundStyle(ShellPalette.textPrimary)
             ScrollView {
                 Text(text)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(ShellPalette.textPrimary)
                     .textSelection(.enabled)
             }
             .frame(minHeight: 90, maxHeight: 160)
@@ -242,7 +276,7 @@ private struct FinalOutputCard: View {
         .padding(16)
         .background(
             LinearGradient(
-                colors: [Color(red: 0.96, green: 0.99, blue: 0.97), Color.white],
+                colors: [ShellPalette.success.opacity(0.28), ShellPalette.panelFill],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
@@ -250,7 +284,7 @@ private struct FinalOutputCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                .stroke(ShellPalette.success.opacity(0.34), lineWidth: 1)
         )
     }
 }
@@ -292,20 +326,32 @@ private struct ComposerView: View {
                 Spacer()
                 Button("Clear", action: store.clearSelectedSession)
                     .buttonStyle(.borderless)
+                    .foregroundStyle(ShellPalette.textSecondary)
             }
+            .foregroundStyle(ShellPalette.textPrimary)
 
             TextField("Repository root", text: binding(\.repoRoot))
-                .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
+                .textFieldStyle(.plain)
+                .foregroundStyle(ShellPalette.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(ShellPalette.panelStrongFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             TextField("Skill path (optional)", text: binding(\.skillPath))
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .foregroundStyle(ShellPalette.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(ShellPalette.panelStrongFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             TextEditor(text: binding(\.questionDraft))
                 .font(.system(.body, design: .rounded))
                 .frame(minHeight: 96)
                 .padding(10)
-                .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .scrollContentBackground(.hidden)
+                .background(ShellPalette.panelStrongFill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .foregroundStyle(ShellPalette.textPrimary)
 
             HStack(spacing: 10) {
                 Picker("Task", selection: binding(\.taskType)) {
@@ -324,7 +370,11 @@ private struct ComposerView: View {
                     }
                 }
                 TextField("Context limit", text: binding(\.contextLimit))
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(ShellPalette.textPrimary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(ShellPalette.panelStrongFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .frame(width: 108)
             }
             .pickerStyle(.segmented)
@@ -337,16 +387,20 @@ private struct ComposerView: View {
                 Spacer()
                 Button("Resume", action: store.resumeSelectedSession)
                     .buttonStyle(.bordered)
+                    .tint(.white.opacity(0.3))
                 Button("Interrupt", action: store.interruptSelectedSession)
                     .buttonStyle(.bordered)
+                    .tint(ShellPalette.warning)
                 Button(action: store.sendPrompt) {
                     Label("Send", systemImage: "paperplane.fill")
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(ShellPalette.accentStrong)
             }
+            .foregroundStyle(ShellPalette.textSecondary)
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(panelBackground(cornerRadius: 24))
     }
 
     private func binding<T>(_ keyPath: WritableKeyPath<AgentSession, T>) -> Binding<T> {
@@ -393,25 +447,29 @@ private struct SessionRow: View {
                             .font(.caption2.weight(.bold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.14), in: Capsule())
+                            .background(Color.white.opacity(0.14), in: Capsule())
                     }
                 }
                 Text(session.sessionId)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.76) : ShellPalette.textSecondary)
                 Text(session.updatedAt.formatted(date: .omitted, time: .shortened))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.70) : ShellPalette.textSecondary)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 isSelected
-                ? LinearGradient(colors: [Color.black.opacity(0.88), Color.blue.opacity(0.72)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                : LinearGradient(colors: [Color.white.opacity(0.8), Color.white.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                ? LinearGradient(colors: [ShellPalette.accentStrong, ShellPalette.accent.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                : LinearGradient(colors: [ShellPalette.panelStrongFill, ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? Color.white.opacity(0.18) : ShellPalette.panelBorder, lineWidth: 1)
+            )
+            .foregroundStyle(isSelected ? Color.white : ShellPalette.textPrimary)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -428,41 +486,57 @@ private struct EventCard: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(event.title)
                     .font(.headline)
+                    .foregroundStyle(ShellPalette.textPrimary)
                 Spacer()
                 Text(event.createdAt.formatted(date: .omitted, time: .standard))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ShellPalette.textSecondary)
             }
             Text(event.body.isEmpty ? " " : event.body)
                 .font(event.type == "TOKEN" ? .system(.body, design: .monospaced) : .body)
-                .foregroundStyle(.primary)
+                .foregroundStyle(ShellPalette.textPrimary)
                 .textSelection(.enabled)
             if let toolName = event.toolName, !toolName.isEmpty {
                 Label(toolName, systemImage: "wrench.and.screwdriver")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ShellPalette.textSecondary)
             }
         }
         .padding(16)
         .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                .stroke(cardStrokeColor, lineWidth: 1)
         )
     }
 
     private var backgroundStyle: LinearGradient {
         switch event.type {
         case "FINAL":
-            return LinearGradient(colors: [Color(red: 0.95, green: 1.0, blue: 0.95), .white], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [ShellPalette.success.opacity(0.22), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "ERROR":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.94, blue: 0.94), .white], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [ShellPalette.danger.opacity(0.24), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "TOOL_CALL", "TOOL_RESULT":
-            return LinearGradient(colors: [Color(red: 0.97, green: 0.97, blue: 1.0), .white], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [ShellPalette.accentStrong.opacity(0.18), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "ASK_USER", "HUMAN_GATE":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.98, blue: 0.92), .white], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [ShellPalette.warning.opacity(0.22), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         default:
-            return LinearGradient(colors: [Color.white.opacity(0.94), Color.white.opacity(0.72)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [ShellPalette.panelStrongFill, ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+
+    private var cardStrokeColor: Color {
+        switch event.type {
+        case "FINAL":
+            return ShellPalette.success.opacity(0.30)
+        case "ERROR":
+            return ShellPalette.danger.opacity(0.34)
+        case "TOOL_CALL", "TOOL_RESULT":
+            return ShellPalette.accent.opacity(0.22)
+        case "ASK_USER", "HUMAN_GATE":
+            return ShellPalette.warning.opacity(0.32)
+        default:
+            return ShellPalette.panelBorder
         }
     }
 }
@@ -481,10 +555,10 @@ private struct StatusPill: View {
 
     private var color: Color {
         switch state {
-        case .connected: return .green
-        case .connecting: return .orange
-        case .disconnected: return .secondary
-        case .failed: return .red
+        case .connected: return ShellPalette.success
+        case .connecting: return ShellPalette.warning
+        case .disconnected: return ShellPalette.textSecondary
+        case .failed: return ShellPalette.danger
         }
     }
 
@@ -507,11 +581,29 @@ private struct GlassPanel<Content: View>: View {
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(dark ? Color.white.opacity(0.08) : Color.white.opacity(0.8))
+                    .fill(dark ? ShellPalette.panelFill : Color.white.opacity(0.8))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(dark ? 0.12 : 0.35), lineWidth: 1)
+                    .stroke(dark ? ShellPalette.panelBorder : Color.white.opacity(0.35), lineWidth: 1)
             )
     }
+}
+
+private var panelBackground: some View {
+    RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .fill(ShellPalette.panelFill)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(ShellPalette.panelBorder, lineWidth: 1)
+        )
+}
+
+private func panelBackground(cornerRadius: CGFloat) -> some View {
+    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .fill(ShellPalette.panelFill)
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(ShellPalette.panelBorder, lineWidth: 1)
+        )
 }
