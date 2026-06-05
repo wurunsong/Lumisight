@@ -3,391 +3,375 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lumisight 架构流程图</title>
+  <title>Lumisight Multi-Agent Flow</title>
   <style>
     :root {
-      --bg: #f4f7fc;
-      --surface: #fff;
-      --text: #14233a;
-      --muted: #586b88;
-      --line: #d9e3f1;
-      --blue: #1a63c7;
-      --green: #0d8b72;
-      --amber: #b7791f;
+      --bg: #eef3f8;
+      --paper: rgba(255, 255, 255, 0.84);
+      --line: #cfd9e6;
+      --text: #132338;
+      --muted: #5a6d84;
+      --navy: #12345d;
+      --blue: #2b6ff2;
+      --cyan: #e4f1ff;
+      --mint: #e6f7f2;
+      --warm: #fff2df;
+      --rose: #f6ebff;
+      --shadow: 0 20px 44px rgba(26, 53, 90, 0.08);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: radial-gradient(900px 500px at 100% 0, #e5efff 0, transparent 55%), var(--bg);
       color: var(--text);
       font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(101, 155, 255, 0.22), transparent 28%),
+        radial-gradient(circle at left 20%, rgba(54, 180, 151, 0.16), transparent 24%),
+        linear-gradient(180deg, #f6f9fc 0%, #edf2f7 100%);
     }
-    .wrap { max-width: 1220px; margin: 0 auto; padding: 24px 20px 34px; }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 20px 44px;
+    }
     .hero {
-      background: linear-gradient(140deg, #0f2e55, #1367aa);
-      color: #f1f7ff;
-      border-radius: 18px;
+      padding: 28px 30px;
+      border-radius: 28px;
+      background: linear-gradient(135deg, #0f2747 0%, #174d86 58%, #2b77c6 100%);
+      color: #f4f8ff;
+      box-shadow: var(--shadow);
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      line-height: 1.12;
+      letter-spacing: -0.02em;
+    }
+    .hero p {
+      max-width: 860px;
+      margin: 0;
+      color: rgba(236, 245, 255, 0.88);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .section {
+      margin-top: 24px;
       padding: 22px;
+      border: 1px solid rgba(207, 217, 230, 0.9);
+      border-radius: 24px;
+      background: var(--paper);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
     }
-    h1 { margin: 0 0 8px; font-size: 30px; }
-    .hero p { margin: 0; color: #d8e9ff; }
-    .title {
-      margin: 22px 0 10px;
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--blue);
-      border-left: 4px solid var(--blue);
-      padding-left: 10px;
+    .section h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      color: var(--navy);
     }
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 16px;
+    .section > p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
     }
     .flow {
       display: grid;
       grid-template-columns: repeat(11, 1fr);
-      gap: 8px;
+      gap: 10px;
       align-items: center;
     }
-    .lane-flow {
-      display: grid;
-      grid-template-columns: repeat(13, 1fr);
-      gap: 8px;
-      align-items: center;
-      margin-top: 14px;
-    }
-    .node {
-      border-radius: 999px;
+    .arrow {
       text-align: center;
-      padding: 9px 8px;
-      font-size: 13px;
-      font-weight: 650;
-      border: 1px solid;
-      white-space: nowrap;
+      color: #7890ac;
+      font-size: 20px;
+      font-weight: 700;
     }
-    .node.block {
-      border-radius: 16px;
-      white-space: normal;
-      line-height: 1.35;
-      padding: 12px 10px;
-    }
-    .off { background: #edf3ff; border-color: #bad0fb; color: #1e4690; }
-    .on { background: #e9fbf7; border-color: #9fe1d2; color: #0a6c64; }
-    .hi { background: #fff5e7; border-color: #f7cea0; color: #8c4d07; }
-    .arrow { text-align: center; color: #7f91ad; font-weight: 700; font-size: 18px; }
-    .grid3, .grid4 { display: grid; gap: 14px; }
-    .grid3 { grid-template-columns: repeat(3, 1fr); }
-    .grid4 { grid-template-columns: repeat(4, 1fr); }
-    .card {
-      background: var(--surface);
+    .step {
+      min-height: 116px;
+      padding: 16px 14px;
+      border-radius: 20px;
       border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 14px;
-      min-height: 188px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
-    .card h3 { margin: 0 0 8px; color: var(--green); font-size: 16px; }
-    .card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
-    .card li + li { margin-top: 4px; }
-    .legend {
-      margin-top: 16px;
-      background: #fff8ed;
-      border-left: 4px solid var(--amber);
-      border-radius: 8px;
-      padding: 10px 12px;
-      color: #7d4910;
+    .step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+    .step span {
+      color: var(--muted);
       font-size: 13px;
+      line-height: 1.55;
     }
-    @media (max-width: 1060px) {
-      .flow { grid-template-columns: repeat(3, 1fr); }
-      .arrow { transform: rotate(90deg); }
-      .grid3, .grid4 { grid-template-columns: 1fr; }
-      .card { min-height: auto; }
+    .step.blue { background: var(--cyan); }
+    .step.green { background: var(--mint); }
+    .step.warm { background: var(--warm); }
+    .step.rose { background: var(--rose); }
+    .multi-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 0.95fr;
+      gap: 18px;
+    }
+    .board {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .board h3 {
+      margin: 0 0 12px;
+      font-size: 17px;
+      color: var(--navy);
+    }
+    .lane {
+      display: grid;
+      grid-template-columns: 118px 1fr;
+      gap: 14px;
+      align-items: stretch;
+      margin-top: 12px;
+    }
+    .lane:first-of-type { margin-top: 0; }
+    .lane-label {
+      padding: 14px 12px;
+      border-radius: 18px;
+      background: #f3f7fb;
+      border: 1px solid var(--line);
+      font-weight: 700;
+      color: var(--navy);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .lane-track {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+    .chip {
+      padding: 12px 10px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+      min-height: 84px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+    }
+    .chip b {
+      font-size: 13px;
+      line-height: 1.35;
+      margin-bottom: 6px;
+    }
+    .chip small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .side-card {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,248,253,0.96));
+    }
+    .side-card h3 {
+      margin: 0 0 12px;
+      font-size: 17px;
+      color: var(--navy);
+    }
+    .side-card ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 14px;
+    }
+    .side-card li + li { margin-top: 8px; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .summary-card {
+      padding: 16px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .summary-card h3 {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 16px;
+    }
+    .summary-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    @media (max-width: 1080px) {
+      .flow {
+        grid-template-columns: 1fr;
+      }
+      .arrow {
+        transform: rotate(90deg);
+      }
+      .multi-grid,
+      .summary,
+      .lane {
+        grid-template-columns: 1fr;
+      }
+      .lane-track {
+        grid-template-columns: 1fr;
+      }
+      .lane-label {
+        justify-content: flex-start;
+      }
     }
   </style>
 </head>
 <body>
   <main class="wrap">
     <section class="hero">
-      <h1>Lumisight：Agent 主流程与技术亮点（详细链路版）</h1>
-      <p>统一展示“会话接入 -> 技能约束 -> 决策编排 -> 工具执行 -> 事件回传”的在线主链路；当前主链已经吸收多 Agent 编排、team 协议、并发 wave、执行状态持久化与 resume 恢复，浏览器调试页与 macOS 客户端壳都消费同一套运行时能力。</p>
+      <h1>Lumisight 多 Agent 主流程</h1>
+      <p>这张图只讲一件事：用户的信息如何进入系统，什么时候保持单 Agent，什么时候升级成多 Agent，Lead 如何拆任务，worker 如何回传，最后又怎样收敛回同一个最终回答。</p>
     </section>
 
-    <h2 class="title">1. 端到端主流程（离线构建 + 在线执行）</h2>
-    <section class="panel">
+    <section class="section">
+      <h2>端到端主流程</h2>
+      <p>这是用户视角下的主信息流。重点不是工具细节，而是请求从进入到产出结果，中间经过了哪些关键决策点。</p>
       <div class="flow">
-        <div class="node off">代码仓离线解析</div><div class="arrow">→</div>
-        <div class="node off">向量/图谱构建</div><div class="arrow">→</div>
-        <div class="node on">在线请求接入</div><div class="arrow">→</div>
-        <div class="node on">Agent 决策编排</div><div class="arrow">→</div>
-        <div class="node on">工具执行回填</div><div class="arrow">→</div>
-        <div class="node hi">事件流/最终答案</div>
+        <div class="step blue">
+          <strong>1. 请求进入</strong>
+          <span>用户问题、session、控制指令进入统一会话入口。</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <strong>2. 会话调度</strong>
+          <span>系统决定这是继续当前会话、打断重定向，还是恢复上次执行。</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step green">
+          <strong>3. 模式判断</strong>
+          <span>简单任务留在单 Agent，复杂任务才升级到多 Agent。</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step warm">
+          <strong>4. 计划生成</strong>
+          <span>Lead 把问题拆成一个或多个可执行任务，并决定拓扑。</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step rose">
+          <strong>5. 执行与汇总</strong>
+          <span>单 Agent 直接执行，多 Agent 则分发给 worker，再回到 Lead 汇总。</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step blue">
+          <strong>6. 最终回答</strong>
+          <span>所有结果重新回到主会话，统一输出事件流和最终答案。</span>
+        </div>
       </div>
     </section>
 
-    <h2 class="title">2. Agent 详细执行链路（完整分段）</h2>
-    <section class="panel" style="margin-bottom: 14px;">
-      <div class="lane-flow">
-        <div class="node off block">ModeDecider<br />单 Agent / 自动升级 / 显式 MULTI_AGENT</div><div class="arrow">→</div>
-        <div class="node on block">Orchestrator<br />生成 plan 与 topology</div><div class="arrow">→</div>
-        <div class="node on block">Lead<br />按 wave 派发 task</div><div class="arrow">→</div>
-        <div class="node on block">Team Workers<br />并发执行或申请权限</div><div class="arrow">→</div>
-        <div class="node hi block">Lead 汇总<br />task state / lifecycle / subagent result</div><div class="arrow">→</div>
-        <div class="node off block">State Store<br />execution-state.json / resume</div><div class="arrow">→</div>
-        <div class="node hi block">主 Agent<br />继续最终回答或下一轮动作</div>
+    <section class="section">
+      <h2>多 Agent 信息流</h2>
+      <p>只有在第 3 步判断需要升级时，主流程才会进入这条分支。这里的重点是 Lead 和 worker 之间的信息怎样来回流动，以及恢复点在哪里。</p>
+      <div class="multi-grid">
+        <div class="board">
+          <h3>Lead 与 Worker 的流向</h3>
+          <div class="lane">
+            <div class="lane-label">Lead</div>
+            <div class="lane-track">
+              <div class="chip">
+                <b>收到复杂请求</b>
+                <small>进入 MULTI_AGENT</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>拆成任务</b>
+                <small>生成 plan 与依赖</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>按 wave 派发</b>
+                <small>把 task 发给 worker</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>汇总结果</b>
+                <small>收 task state 和结论</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>收敛回主会话</b>
+                <small>继续最终回答</small>
+              </div>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="lane-label">Workers</div>
+            <div class="lane-track">
+              <div class="chip">
+                <b>等待任务</b>
+                <small>读取 assignment</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>必要时申请权限</b>
+                <small>先问 Lead 再继续</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>执行子任务</b>
+                <small>并发分析或修复</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>回传结果</b>
+                <small>summary、state、idle</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="chip">
+                <b>等待下一波</b>
+                <small>或结束本次协作</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="side-card">
+          <h3>恢复点在哪里</h3>
+          <ul>
+            <li>Lead 每完成一波任务，都会保存当前执行状态。</li>
+            <li>如果用户中断，会在 wave 边界停下来，而不是把半波状态写乱。</li>
+            <li>下一次 `resume` 不会从头再来，而是只继续剩下的 pending 任务。</li>
+            <li>所以多 Agent 最终仍然服务于同一个主会话，而不是散成几个独立对话。</li>
+          </ul>
+        </aside>
+      </div>
+
+      <div class="summary">
+        <article class="summary-card">
+          <h3>什么时候不升级</h3>
+          <p>如果一个请求本身很直接，或者虽然复杂但不值得拆分，系统就继续走单 Agent，避免为了多 Agent 而多 Agent。</p>
+        </article>
+        <article class="summary-card">
+          <h3>什么时候升级</h3>
+          <p>当问题天然需要“分别分析”“并行看多个模块”“前后端协同”“修复加验证分工”时，Lead 才会拆计划并拉起 worker。</p>
+        </article>
+        <article class="summary-card">
+          <h3>最后谁负责收口</h3>
+          <p>无论中间拆成多少任务，最终写入、验证、事件输出和回答用户的始终是主 Agent / Lead，而不是某个 worker。</p>
+        </article>
       </div>
     </section>
-    <section class="grid4">
-      <article class="card">
-        <h3>2.1 入口归一化链路</h3>
-        <ul>
-          <li>触发：浏览器调试页建立 SSE 会话订阅，macOS 客户端或其他调用方通过 WS / HTTP 投递命令，或 cron 定时任务到点触发一次后台执行。</li>
-          <li>处理：订阅侧只绑定 `sessionId` 到事件通道；命令侧和 cron 侧都统一映射为 AgentRequest，补齐 userId/sessionId 与运行参数，再投递到 session mailbox 或执行引擎。</li>
-          <li>保护：请求校验在入口完成，协议差异与调度触发差异都被隔离在适配层，不直接碰核心编排。</li>
-          <li>输出：形成可执行的标准化请求对象与统一的会话级执行入口。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.2 会话调度链路</h3>
-        <ul>
-          <li>触发：同一 session 在运行中收到新问题或控制命令。</li>
-          <li>处理：请求先进入 mailbox；FOLLOW 排队、COLLECT 合并待处理问题、STEER 中断当前执行并替换待处理项。</li>
-          <li>保护：同会话单 worker 串行消费，single-flight + 状态机迁移校验避免并发状态漂移。</li>
-          <li>输出：得到“同会话严格串行、跨会话可并行”的确定性执行顺序。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.3 技能与策略链路</h3>
-        <ul>
-          <li>触发：请求进入决策前的策略准备阶段。</li>
-          <li>处理：显式 skill 引用或自动路由 skill，生成本轮策略与权限边界，并把 skill 摘要、步骤、输出约束与原文片段注入 prompt。</li>
-          <li>保护：skill 先经过白名单目录扫描与注册解析，低置信路由回退默认路径，避免任意路径注入与误路由放大错误。</li>
-          <li>输出：得到受约束的编排上下文、可用工具集合与更稳定的模型行为约束。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.4 决策循环链路</h3>
-        <ul>
-          <li>触发：编排引擎启动轮次循环。</li>
-          <li>处理：模型在每轮输出 tool / toolCalls / ask_user / final 决策，并显式给出工具参数 JSON；同时把本轮用户提示词、模型原始响应和工具结果摘要持续写回上下文。</li>
-          <li>保护：轮次上限、决策解析容错、防止无限循环；提示词显式约束模型不要依赖服务端默认值偷省范围参数。</li>
-          <li>输出：把复杂问题拆成可执行的多轮动作，并让下一轮决策真正看到上一轮发生了什么。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.4b 任务规划链路</h3>
-        <ul>
-          <li>触发：问题是明显多步骤任务，或连续多轮执行后仍需维护节奏。</li>
-          <li>处理：模型调用 `todo_write` 维护会话内任务清单，把步骤状态从 `pending` 更新到 `in_progress` / `completed`。</li>
-          <li>保护：若连续 3 轮没有刷新任务清单，系统会在下一轮决策前自动注入 reminder，提醒先更新 todo 再继续。</li>
-          <li>输出：给 Agent 增加规划能力和可追踪执行节奏，而不是额外外部执行能力。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.5 工具执行链路</h3>
-        <ul>
-          <li>触发：决策选择具体工具及参数。</li>
-          <li>处理：权限校验 -> typed args 绑定与校验 -> Hook 检查 -> 工具调用 -> 结果标准化。</li>
-          <li>保护：连续并发安全工具按批并发执行；批间顺序严格保持，重试/回退、超时治理、错误结构化返回一起生效。</li>
-          <li>输出：工具证据回填上下文，驱动下一轮决策，并保持参数、prompt、执行三层一致。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.5b 长期记忆与任务链路</h3>
-        <ul>
-          <li>触发：问题涉及跨会话偏好、长期项目信息，或需要把一件事拆成可持续推进的任务。</li>
-          <li>处理：长期记忆通过 `memory_write / memory_list` 和 `/api/lumisight/memory/*` 进入四分类文件化存储；跨会话任务通过 `.tasks/*.json` 与 `task_*` 工具维护依赖、认领和完成状态。</li>
-          <li>保护：记忆类型被固定为 `user / feedback / project / reference`，反馈类强调 why/how to apply；任务系统只记录结构化状态，不把临时会话噪音误沉淀成长期事实。</li>
-          <li>输出：Agent 不仅记得“这轮聊了什么”，也开始具备“跨会话知道该记什么、该续什么”的独立层。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.5c 浏览器与页面验证链路</h3>
-        <ul>
-          <li>触发：问题需要页面打开、DOM 识别、表单操作、点击导航或截图取证。</li>
-          <li>处理：决策层调用会话级浏览器工具；`browser_open` 建立页面上下文，`browser_snapshot` 提取标题、URL、可见文本和可操作元素摘要，点击、输入和截图继续复用同一 `sessionId` 绑定的页面。</li>
-          <li>保护：浏览器态能力仍走统一权限与工具执行链路，不直接绕过 Hook、日志和上下文入账；截图落到 `.lumisight/browser-artifacts/` 便于后续审计。</li>
-          <li>输出：前端验证、后台操作和 DOM 级证据开始纳入同一 Agent 工作流，不再只能靠本地命令和静态文件判断页面行为。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.5d 多 Agent 子任务链路</h3>
-        <ul>
-          <li>触发：`MultiAgentModeDecider` 看到显式 `MULTI_AGENT`，或问题中出现“同时/分别/并行/多个模块/前后端/测试修复”等信号触发自动升级。</li>
-          <li>处理：Lead 先生成 `OrchestrationPlan`；若只有单任务则走 `task_subagent`，把最小 `TaskContextEnvelope` 交给一次性 child session，由 child 在独立上下文里完成局部分析并回结构化结果。</li>
-          <li>保护：child session 带最大深度、最大轮次和 deadline；默认禁止写仓库、写记忆、写 todo 和递归 spawn，最终写入、编译验证和最终回答仍由主 Agent 负责。</li>
-          <li>输出：得到“主 Agent 仍掌控收敛、child 只做局部分析”的轻量多 Agent 模式，并把 `SUBAGENT_RESULT` 回灌到主账本和事件流。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.5e Team 编排与恢复链路</h3>
-        <ul>
-          <li>触发：plan 中存在多 task，或拓扑为 `FAN_OUT_FAN_IN / HYBRID`，Lead 升级到 team execution。</li>
-          <li>处理：Lead 为同一 `sessionId` 生成稳定 `teamId`，把 task 写入 `.lumisight/teams/{teamId}/inboxes/`；worker 并发读取 assignment，必要时先发 `PERMISSION_REQUEST`，获批后执行子任务，再把 `RESULT / IDLE` 回送给 Lead。</li>
-          <li>保护：Lead 维护 `PENDING/RUNNING/SUCCEEDED/FAILED/BLOCKED/SKIPPED` 状态；依赖失败时非 `HYBRID` 任务会被阻断；每轮 wave 后把 `execution-state.json` 落盘，若收到 interrupt 则在 wave 边界暂停，后续 `resume` 只继续剩余 task。</li>
-          <li>输出：主链路获得 task state、lifecycle event、subagent result 和 resume 能力，形成“请求内 team 协议 + 并发 wave + 持久化恢复”的基础版多 Agent 闭环。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.6 人工门控链路</h3>
-        <ul>
-          <li>触发：检测到高风险写操作。</li>
-          <li>处理：挂起为 HUMAN_GATE，等待用户 approve + resume。</li>
-          <li>保护：未确认不执行，确认后仅恢复挂起决策。</li>
-          <li>输出：实现“可控写入”的人工闭环。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.7 最终答案链路</h3>
-        <ul>
-          <li>触发：决策收敛到 final 或达到可回答状态。</li>
-          <li>处理：必要时进行答案复核，再生成最终输出事件流；最终答案阶段按真实 `TOKEN` 流持续回传，主循环阶段事件也会渐进发出。</li>
-          <li>保护：复核失败回退继续推理，防止低质量直接出结果；模型 HTTP 超时与重试次数单独治理，避免决策阶段长时间悬停。</li>
-          <li>输出：返回渐进式 `PLAN/TOOL/TOKEN/FINAL` 事件与可追踪证据；当前最终回答已是真流式，但中间推理 token 仍以内采集为主。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.8 清理与恢复链路</h3>
-        <ul>
-          <li>触发：完成、异常、中断或长时间等待。</li>
-          <li>处理：释放会话租约、更新状态、定时清理过期等待态。</li>
-          <li>保护：防止会话泄漏与僵尸状态堆积。</li>
-          <li>输出：系统回到可持续服务的稳定基线。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.9 定时任务链路</h3>
-        <ul>
-          <li>触发：用户创建 cron job，或手动触发某个已注册 job。</li>
-          <li>处理：任务定义先落到内存态注册表，再由专用 `TaskScheduler + CronTrigger` 重调度；到点后统一构造成 AgentRequest，并订阅执行结果事件流更新最近运行历史。</li>
-          <li>保护：更新 job 会先取消旧 schedule，删除 job 会同时释放定时句柄和当前活跃订阅，避免重复触发或僵尸运行记录。</li>
-          <li>输出：固定问题可以按计划自动运行，且保留最近一次状态、时间和消息摘要，形成“后台触发但仍走同一编排内核”的闭环。</li>
-        </ul>
-      </article>
-    </section>
-
-    <h2 class="title">3. 外挂知识库链路（你这套的核心增强点）</h2>
-    <section class="grid3">
-      <article class="card">
-        <h3>3.1 离线知识沉淀链路</h3>
-        <ul>
-          <li>触发：仓库变更后启动离线构建（全量或增量）。</li>
-          <li>处理：代码解析后分别沉淀到向量层与图谱层。</li>
-          <li>保护：构建失败不阻塞在线 Agent 主链路启动。</li>
-          <li>输出：形成可被在线查询的结构化代码知识资产。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>3.2 在线知识注入链路</h3>
-        <ul>
-          <li>触发：问题需要证据时，决策层选择 RAG/KG 相关工具。</li>
-          <li>处理：召回结果以统一上下文项回填到推理上下文。</li>
-          <li>保护：无外挂依赖时自动降级为 Noop provider。</li>
-          <li>输出：有知识库时增强准确性，无知识库时仍可回答。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>3.3 知识与主编排解耦链路</h3>
-        <ul>
-          <li>触发：部署环境不同（开发机/测试机/生产）。</li>
-          <li>处理：通过开关决定是否启用外挂知识库能力。</li>
-          <li>保护：知识库不可用不会导致核心执行引擎失效。</li>
-          <li>输出：实现“可增强但不依赖”的弹性架构。</li>
-        </ul>
-      </article>
-    </section>
-
-    <h2 class="title">4. 技术亮点链路（详细版）</h2>
-    <section class="grid4">
-      <article class="card">
-        <h3>亮点 A：协议解耦</h3>
-        <ul>
-          <li>请求进入协议适配层。</li>
-          <li>SSE 侧拆成“会话订阅”和“命令投递”，WS 侧维持单连接命令式协议；浏览器调试页和 macOS 原生客户端只是不同壳子，最终都统一映射到同一执行引擎，并先进入 session dispatcher。</li>
-          <li>执行结果回到事件通道抽象，SSE/WS 都只消费统一 `AgentEvent`。</li>
-          <li>协议层仅负责分发与序列化，不再持有会话排队语义。</li>
-          <li>新增协议时只扩适配层，不触碰主编排。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 B：会话控制</h3>
-        <ul>
-          <li>运行中收到新问题触发会话调度。</li>
-          <li>FOLLOW/COLLECT/STEER 在 mailbox 投递层分流。</li>
-          <li>状态机约束迁移合法性，单 worker 串行消费确保不会重复开执行链。</li>
-          <li>等待态超时自动清理，运行态通过租约与中断标记控制；Stop 会走“前端 interrupt -> dispatcher cancel -> worker interrupt -> 静默收流”的完整闭环。</li>
-          <li>保证会话行为可预测，也更接近真实续聊产品语义。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 C：安全执行</h3>
-        <ul>
-          <li>决策触发工具调用。</li>
-          <li>权限、typed args 绑定与策略先行校验。</li>
-          <li>Hook 与 Tool 共用同一命令执行内核与同一 sandbox 配置。</li>
-          <li>执行前会先进入受限策略编译链路：基于本次调用生成访问规格，再编译成实际 sandbox policy；当前 `mac-seatbelt` 侧仍以模板化临时 profile 为主，按 `tool/hook + args` 自动推导最小权限边界的 planner 还会继续增强。</li>
-          <li>默认走 macOS Seatbelt 执行边界；写入前快照、失败可回滚。</li>
-          <li>运行时路径动态放行，避免用户目录下的 `node/python` 被误拦。</li>
-          <li>形成“统一执行内核 + 操作系统强约束”的可控闭环。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 D：Skill 路由</h3>
-        <ul>
-          <li>问题进入技能路由器。</li>
-          <li>输出候选 skill、置信度与路由理由，并解析到已注册的 skill 引用。</li>
-          <li>低置信回退默认路径，未注册路径不会直接参与执行。</li>
-          <li>执行计划与 skill 原文共同影响 prompt、权限与策略。</li>
-          <li>兼顾自动化与可控性，也让测试型 skill 能直接观察到模型行为变化。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 E：线程上下文传播</h3>
-        <ul>
-          <li>并发任务提交到统一的命名线程池。</li>
-          <li>线程池在提交时捕获父线程里的 runtime context、invocation context 和日志 MDC。</li>
-          <li>子线程执行前恢复这些上下文，执行后再恢复线程原有状态，避免线程池复用造成 `ThreadLocal` 丢失或串线。</li>
-          <li>这样并发工具、混合检索、会话 worker 与后台 drain 线程都能共享同一套上下文传播语义。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 F：上下文账本化</h3>
-        <ul>
-          <li>每轮用户输入、模型决策、工具结果和 verifier 反馈先进入结构化上下文账本，而不是只堆到字符串列表。</li>
-          <li>大结果会先判断字节阈值再落盘，老对话和可重取工具结果按写时压缩策略收缩，真正调用模型前再做读时投影。</li>
-          <li>会话状态层继续保存等待态、中断和 todo，账本层单独保存 entry、artifact 和压缩状态，两层通过 `AgentContextSession` 衔接。</li>
-          <li>这样既能保留完整执行证据，又能按不同模型窗口动态收缩 prompt 视图。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 G：跨会话记忆与任务持久化</h3>
-        <ul>
-          <li>长期记忆和持久化任务都从主会话账本旁路出去，分别走独立文件层。</li>
-          <li>记忆层只允许四分类，任务层保存依赖、认领与完成状态，二者都能按需再回灌主编排。</li>
-          <li>这样可以把“长期事实”和“当前对话历史”分层，减少把会话噪音错误固化成长期状态的风险。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 H：页面级验证与最小自修复</h3>
-        <ul>
-          <li>浏览器工具把 DOM、点击、输入、截图接回主工作流；BUG_FIX 自修复则在写 Java 后自动编译与 lint。</li>
-          <li>页面态证据和编译/lint 失败结果都会回填到上下文账本，供下一轮继续判断。</li>
-          <li>这让 Agent 从“能改代码”向“能自己做最小验证并继续修”迈出一层，但集成测试、服务启动和页面行为断言仍留作下一阶段。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>亮点 I：多 Agent 默认保守升级</h3>
-        <ul>
-          <li>系统不会因为有 `task_subagent` 就默认多 Agent；大多数请求仍优先走单 Agent。</li>
-          <li>只有当显式进入 `MULTI_AGENT`，或 auto-upgrade 信号足够强时，才会进入 orchestration；单任务走隔离 subagent，多任务再升级成 Lead + team protocol。</li>
-          <li>当前已经具备 topology 调度、permission 协议、并发 wave、状态持久化和 wave 级 resume，但 team 仍是“请求内编排系统”，不是长期自治后台团队。</li>
-          <li>这样先把父子上下文隔离、权限收紧、结果合同、恢复链路做稳，再逐步扩大角色长期化和异步协作能力。</li>
-        </ul>
-      </article>
-    </section>
-
-    <div class="legend">说明：这里刻意不罗列 `xxx.yyy.zzz` 配置项；重点是讲清楚“链路如何运转、在哪保护、产出什么价值”。</div>
   </main>
 </body>
 </html>
