@@ -67,6 +67,16 @@ lumisight:
   task:
     root-dir: ${LUMISIGHT_TASK_ROOT_DIR:.tasks}
     max-list-limit: ${LUMISIGHT_TASK_MAX_LIST_LIMIT:200}
+  browser:
+    enabled: ${LUMISIGHT_BROWSER_ENABLED:true}
+    headless: ${LUMISIGHT_BROWSER_HEADLESS:true}
+    artifact-dir: ${LUMISIGHT_BROWSER_ARTIFACT_DIR:.lumisight/browser-artifacts}
+    viewport-width: ${LUMISIGHT_BROWSER_VIEWPORT_WIDTH:1440}
+    viewport-height: ${LUMISIGHT_BROWSER_VIEWPORT_HEIGHT:960}
+    navigation-timeout-ms: ${LUMISIGHT_BROWSER_NAVIGATION_TIMEOUT_MS:15000}
+    action-timeout-ms: ${LUMISIGHT_BROWSER_ACTION_TIMEOUT_MS:10000}
+    max-snapshot-elements: ${LUMISIGHT_BROWSER_MAX_SNAPSHOT_ELEMENTS:40}
+    max-snapshot-text-chars: ${LUMISIGHT_BROWSER_MAX_SNAPSHOT_TEXT_CHARS:4000}
   agent:
     context:
       artifact-dir: ${LUMISIGHT_AGENT_CONTEXT_ARTIFACT_DIR:.lumisight/context-artifacts}

@@ -5,6 +5,7 @@ public enum AgentToolCategory {
     GRAPH,
     SOURCE,
     MCP,
+    BROWSER,
     LOCAL,
     MEMORY,
     PLANNING,

@@ -5,6 +5,8 @@ public enum AgentToolPermission {
     KG_ONE_HOP_READ,
     METHOD_SOURCE_READ,
     MCP_CAPABILITY_CALL,
+    BROWSER_READ,
+    BROWSER_WRITE,
     LOCAL_FS_READ,
     LOCAL_FS_WRITE,
     MEMORY_READ,

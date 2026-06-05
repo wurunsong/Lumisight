@@ -8,6 +8,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - macOS 客户端壳：原生 SwiftUI 会话界面
 - 本地代码工具：文件、Git、Java 编译、Lint、LSP、长期记忆
 - 知识增强：向量检索、知识图谱、方法源码补全
+- 浏览器自动化：网页打开、DOM 摘要、点击输入、截图
 - 安全执行：sandbox、快照、回滚、人工门控
 - 上下文管理：结构化账本、artifact 落盘、投影与压缩
 - 定时触发：cron job 调用 Agent 执行固定任务
@@ -47,6 +48,12 @@ mvn -pl lumisight-api -am spring-boot:run
 ```
 
 这种模式下，不依赖 NebulaGraph 或 Milvus，也能调试会话编排、工具调用、上下文管理和流式协议。
+
+如果要使用浏览器 / DOM 工具，还需要预先安装 Playwright 浏览器：
+
+```bash
+mvn -pl lumisight-core -am exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install chromium"
+```
 
 ### 2. 验证完整知识增强链路
 
@@ -177,6 +184,29 @@ Lumisight 现在同时有两套“任务”能力：
 - `POST /api/lumisight/vector/code-chunk/ingest`
 - `POST /api/lumisight/vector/symbol-doc/ingest`
 
+## 浏览器 / DOM 能力
+
+当前 Agent 已接入一组会话级浏览器工具，适合本地页面联调、DOM 识别、表单操作与截图验证：
+
+- `browser_open`
+- `browser_snapshot`
+- `browser_click`
+- `browser_type`
+- `browser_screenshot`
+- `browser_close`
+
+行为模型：
+
+- 每个 Agent `sessionId` 会复用一页浏览器上下文
+- `browser_snapshot` 会返回标题、URL、可见文本和一组可操作 DOM 元素摘要
+- 截图默认保存在 `.lumisight/browser-artifacts/<sessionId>/`
+
+当前更适合：
+
+- 本地 `localhost` / 管理后台 / 调试页验证
+- 改完前端后做最小行为闭环
+- 让 Agent 自己识别按钮、输入框、链接并继续操作
+
 ## 上下文管理
 
 Lumisight 当前不是简单把历史消息堆成一个字符串列表，而是走结构化上下文账本：
@@ -213,6 +243,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - GRAPH：`fetchOneHopByKgNodeId`
 - SOURCE：`fetchMethodSourceByLocation`
 - MCP：`callMcpCapability`
+- BROWSER：`browser_open / browser_snapshot / browser_click / browser_type / browser_screenshot / browser_close`
 - MEMORY：`memory_list / memory_write`
 - PLANNING：`todo_write / task_create / task_list / task_get / task_claim / task_complete`
 
@@ -237,6 +268,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - `lumisight.agent.context.*`
 - `lumisight.agent.conversation.*`
 - `lumisight.agent.cron.*`
+- `lumisight.browser.*`
 - `lumisight.task.*`
 
 ## 目录速览

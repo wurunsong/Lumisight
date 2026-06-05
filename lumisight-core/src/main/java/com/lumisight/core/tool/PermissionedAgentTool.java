@@ -36,7 +36,7 @@ public interface PermissionedAgentTool<T> {
 
     default boolean isReadOnly() {
         return switch (permission()) {
-            case HYBRID_VECTOR_READ, KG_ONE_HOP_READ, METHOD_SOURCE_READ, LOCAL_FS_READ, MEMORY_READ, TASK_READ, LSP_JAVA_READ, GIT_READ -> true;
+            case HYBRID_VECTOR_READ, KG_ONE_HOP_READ, METHOD_SOURCE_READ, BROWSER_READ, LOCAL_FS_READ, MEMORY_READ, TASK_READ, LSP_JAVA_READ, GIT_READ -> true;
             default -> false;
         };
     }
