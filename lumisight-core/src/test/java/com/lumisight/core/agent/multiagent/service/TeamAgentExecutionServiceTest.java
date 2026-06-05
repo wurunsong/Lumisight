@@ -19,6 +19,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 
@@ -180,6 +182,42 @@ class TeamAgentExecutionServiceTest {
         assertEquals(2, executionCount.get());
         assertEquals(TaskExecutionStatus.SUCCEEDED, resumed.executionState().taskStates().get("task-summary"));
         assertFalse(Boolean.TRUE.equals(resumed.executionState().fallbackState().get("paused")));
+    }
+
+    @Test
+    void shouldExecuteFanOutWaveInParallel() {
+        AtomicInteger inFlight = new AtomicInteger();
+        AtomicInteger maxInFlight = new AtomicInteger();
+        CountDownLatch started = new CountDownLatch(2);
+        ExecutingSubAgent subAgent = stubSubAgent((task, agentId) -> {
+            int current = inFlight.incrementAndGet();
+            maxInFlight.updateAndGet(previous -> Math.max(previous, current));
+            started.countDown();
+            try {
+                started.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                inFlight.decrementAndGet();
+            }
+            return new SubAgentResult(
+                    task.taskId(),
+                    agentId,
+                    true,
+                    task.title() + " parallel",
+                    List.of("ok"),
+                    List.of(),
+                    List.of(),
+                    0.9d,
+                    Map.of()
+            );
+        });
+        TeamAgentExecutionService service = service(subAgent);
+
+        TeamAgentExecutionService.ExecutionResult result = service.executePlan(plan(TopologyType.FAN_OUT_FAN_IN, false), context());
+
+        assertEquals(2, result.results().size());
+        assertTrue(maxInFlight.get() >= 2);
     }
 
     private TeamAgentExecutionService service(ExecutingSubAgent subAgent) {

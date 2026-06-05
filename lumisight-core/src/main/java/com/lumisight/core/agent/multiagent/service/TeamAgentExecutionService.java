@@ -1,6 +1,7 @@
 package com.lumisight.core.agent.multiagent.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumisight.common.concurrent.NamedExecutors;
 import com.lumisight.core.agent.multiagent.model.MultiAgentExecutionState;
 import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
@@ -15,6 +16,7 @@ import com.lumisight.core.tool.AgentToolPermission;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -23,6 +25,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
@@ -64,10 +70,10 @@ public class TeamAgentExecutionService {
         List<SubAgentTask> tasks = effectivePlan.tasks() == null ? List.of() : effectivePlan.tasks();
         List<String> workerIds = allocateWorkers(tasks, effectivePlan.topology());
         Map<String, TaskExecutionStatus> taskStates = initTaskStates(tasks, resumeState);
-        Map<String, Long> inboxOffsets = initInboxOffsets(resumeState);
+        Map<String, Long> inboxOffsets = new ConcurrentHashMap<>(initInboxOffsets(resumeState));
         Map<String, SubAgentResult> completed = initCompleted(resumeState);
         Map<String, List<String>> permissionsByTask = initPermissionsByTask(resumeState);
-        List<String> lifecycleEvents = initLifecycleEvents(resumeState);
+        List<String> lifecycleEvents = Collections.synchronizedList(initLifecycleEvents(resumeState));
 
         List<List<SubAgentTask>> waves = buildExecutionWaves(tasks, effectivePlan.topology());
         int currentRound = resumeState == null ? 0 : Math.max(0, resumeState.currentRound());
@@ -91,16 +97,13 @@ public class TeamAgentExecutionService {
             }
             currentRound++;
             dispatchTasks(repoRoot, teamId, runnable, workerIds, completed, inboxOffsets, lifecycleEvents, permissionsByTask, taskStates);
-            Map<String, WorkerPendingTask> pendingByWorker = new LinkedHashMap<>();
-            for (String workerId : workerIds) {
-                pollWorkerInbox(context, teamId, workerId, inboxOffsets, pendingByWorker, lifecycleEvents);
-            }
+            Map<String, WorkerPendingTask> pendingByWorker = new ConcurrentHashMap<>();
+            runWorkerActions(workerIds, workerId -> pollWorkerInbox(context, teamId, workerId, inboxOffsets, pendingByWorker, lifecycleEvents));
             List<TeamAgentMessage> bufferedLeadMessages = List.of();
             if (!pendingByWorker.isEmpty()) {
                 bufferedLeadMessages = handleLeadPermissionRequests(repoRoot, teamId, inboxOffsets, lifecycleEvents);
-                for (String workerId : new ArrayList<>(pendingByWorker.keySet())) {
-                    pollWorkerPermissionResponses(context, teamId, workerId, pendingByWorker, inboxOffsets, lifecycleEvents);
-                }
+                runWorkerActions(new ArrayList<>(pendingByWorker.keySet()), workerId ->
+                        pollWorkerPermissionResponses(context, teamId, workerId, pendingByWorker, inboxOffsets, lifecycleEvents));
             }
             List<TeamAgentMessage> leadMessages = new ArrayList<>(bufferedLeadMessages);
             leadMessages.addAll(readLeadInbox(repoRoot, teamId, inboxOffsets));
@@ -244,6 +247,29 @@ public class TeamAgentExecutionService {
 
     private boolean shouldExecute(TaskExecutionStatus status) {
         return status == null || status == TaskExecutionStatus.PENDING || status == TaskExecutionStatus.RUNNING;
+    }
+
+    private void runWorkerActions(List<String> workerIds, WorkerAction action) {
+        if (workerIds == null || workerIds.isEmpty()) {
+            return;
+        }
+        ExecutorService executor = NamedExecutors.newFixedPool("team-agent-wave", Math.min(properties.getMaxParallelAgents(), Math.max(1, workerIds.size())));
+        try {
+            List<Callable<Void>> tasks = workerIds.stream()
+                    .<Callable<Void>>map(workerId -> () -> {
+                        action.run(workerId);
+                        return null;
+                    })
+                    .toList();
+            List<Future<Void>> futures = executor.invokeAll(tasks);
+            for (Future<Void> future : futures) {
+                future.get();
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to execute team-agent wave in parallel", e);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private boolean shouldStop(OrchestrationContext context) {
@@ -669,5 +695,10 @@ public class TeamAgentExecutionService {
     }
 
     private record WorkerPendingTask(SubAgentTask task, List<String> requestedPermissions) {
+    }
+
+    @FunctionalInterface
+    private interface WorkerAction {
+        void run(String workerId);
     }
 }

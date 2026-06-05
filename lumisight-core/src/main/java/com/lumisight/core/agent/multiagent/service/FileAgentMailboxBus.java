@@ -23,7 +23,7 @@ public class FileAgentMailboxBus implements AgentMailboxBus {
     }
 
     @Override
-    public void send(String repoRoot, TeamAgentMessage message) {
+    public synchronized void send(String repoRoot, TeamAgentMessage message) {
         try {
             Path inbox = inboxPath(repoRoot, message.teamId(), message.toAgentId());
             Files.createDirectories(inbox.getParent());
@@ -37,7 +37,7 @@ public class FileAgentMailboxBus implements AgentMailboxBus {
     }
 
     @Override
-    public List<TeamAgentMessage> readInbox(String repoRoot, String teamId, String agentId, boolean consume) {
+    public synchronized List<TeamAgentMessage> readInbox(String repoRoot, String teamId, String agentId, boolean consume) {
         try {
             Path inbox = inboxPath(repoRoot, teamId, agentId);
             if (!Files.exists(inbox)) {
