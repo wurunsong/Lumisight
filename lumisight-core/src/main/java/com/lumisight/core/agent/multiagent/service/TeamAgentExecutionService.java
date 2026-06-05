@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
 @Component
@@ -74,7 +75,13 @@ public class TeamAgentExecutionService {
             lifecycleEvents.add("lead:resume_loaded:" + effectivePlan.planId());
         }
         executionStateStore.save(repoRoot, teamId, snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask));
+        boolean paused = false;
         for (List<SubAgentTask> wave : waves) {
+            if (shouldStop(context)) {
+                paused = true;
+                lifecycleEvents.add("lead:paused_before_wave:" + effectivePlan.planId());
+                break;
+            }
             List<SubAgentTask> waveCandidates = filterRunnableTasks(wave, effectivePlan.topology(), completed, taskStates, lifecycleEvents);
             List<SubAgentTask> runnable = waveCandidates.stream()
                     .filter(task -> shouldExecute(taskStates.get(task.taskId())))
@@ -101,9 +108,16 @@ public class TeamAgentExecutionService {
             runnable.forEach(task -> taskStates.computeIfAbsent(task.taskId(), ignored -> TaskExecutionStatus.PENDING));
             markWaveCompletions(runnable, completed, taskStates);
             executionStateStore.save(repoRoot, teamId, snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask));
+            if (shouldStop(context)) {
+                paused = true;
+                lifecycleEvents.add("lead:paused_after_wave:" + effectivePlan.planId());
+                break;
+            }
         }
 
-        lifecycleEvents.addAll(shutdownWorkers(repoRoot, teamId, workerIds, inboxOffsets));
+        if (!paused) {
+            lifecycleEvents.addAll(shutdownWorkers(repoRoot, teamId, workerIds, inboxOffsets));
+        }
         MultiAgentExecutionState state = snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask);
         executionStateStore.save(repoRoot, teamId, state);
         return new ExecutionResult(teamId, state.childSummaries(), lifecycleEvents, state);
@@ -230,6 +244,21 @@ public class TeamAgentExecutionService {
 
     private boolean shouldExecute(TaskExecutionStatus status) {
         return status == null || status == TaskExecutionStatus.PENDING || status == TaskExecutionStatus.RUNNING;
+    }
+
+    private boolean shouldStop(OrchestrationContext context) {
+        if (context == null || context.runtimeAttributes() == null) {
+            return false;
+        }
+        Object raw = context.runtimeAttributes().get("shouldStop");
+        if (raw instanceof BooleanSupplier supplier) {
+            return supplier.getAsBoolean();
+        }
+        if (raw instanceof java.util.function.Supplier<?> supplier) {
+            Object supplied = supplier.get();
+            return supplied instanceof Boolean value && value;
+        }
+        return raw instanceof Boolean value && value;
     }
 
     private void dispatchTasks(
@@ -612,10 +641,15 @@ public class TeamAgentExecutionService {
                 currentRound,
                 Map.of(
                         "teamId", teamId,
+                        "paused", hasPendingTasks(taskStates),
                         "lifecycleEvents", List.copyOf(lifecycleEvents),
                         "permissionsByTask", Map.copyOf(permissionsByTask)
                 )
         );
+    }
+
+    private boolean hasPendingTasks(Map<String, TaskExecutionStatus> taskStates) {
+        return taskStates.values().stream().anyMatch(status -> status == TaskExecutionStatus.PENDING || status == TaskExecutionStatus.RUNNING);
     }
 
     private String stableTeamId(OrchestrationContext context) {

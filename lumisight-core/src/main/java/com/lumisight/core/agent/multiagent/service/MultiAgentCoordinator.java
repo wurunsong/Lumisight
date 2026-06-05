@@ -31,10 +31,19 @@ public class MultiAgentCoordinator {
     }
 
     public CoordinationResult coordinate(AgentRequest request) {
+        return coordinate(request, Map.of());
+    }
+
+    public CoordinationResult coordinate(AgentRequest request, Map<String, Object> runtimeAttributes) {
+        Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        if (runtimeAttributes != null && !runtimeAttributes.isEmpty()) {
+            attributes.putAll(runtimeAttributes);
+        }
+        attributes.put("source", "multi-agent-coordinator");
         OrchestrationContext context = new OrchestrationContext(
                 UUID.randomUUID().toString(),
                 request,
-                Map.of("source", "multi-agent-coordinator")
+                Map.copyOf(attributes)
         );
         OrchestrationPlan plan = orchestratorAgent.createPlan(context);
         boolean useTeamAgent = shouldUseTeamAgent(plan);

@@ -140,6 +140,48 @@ class TeamAgentExecutionServiceTest {
         assertFalse(result.lifecycleEvents().stream().anyMatch(event -> event.contains("task_assigned:task-scan")));
     }
 
+    @Test
+    void shouldPauseAtWaveBoundaryAndResumePendingTasks() {
+        AtomicInteger stopChecks = new AtomicInteger();
+        AtomicInteger executionCount = new AtomicInteger();
+        ExecutingSubAgent subAgent = stubSubAgent((task, agentId) -> {
+            executionCount.incrementAndGet();
+            return new SubAgentResult(
+                    task.taskId(),
+                    agentId,
+                    true,
+                    task.title() + " done",
+                    List.of("ok"),
+                    List.of(),
+                    List.of(),
+                    0.9d,
+                    Map.of()
+            );
+        });
+        TeamAgentExecutionService service = service(subAgent);
+
+        TeamAgentExecutionService.ExecutionResult paused = service.executePlan(
+                plan(TopologyType.FAN_OUT_FAN_IN, true),
+                orchestrationContext(false, () -> stopChecks.incrementAndGet() >= 2)
+        );
+
+        assertEquals(1, executionCount.get());
+        assertEquals(TaskExecutionStatus.SUCCEEDED, paused.executionState().taskStates().get("task-scan"));
+        assertEquals(TaskExecutionStatus.PENDING, paused.executionState().taskStates().get("task-summary"));
+        assertTrue(Boolean.TRUE.equals(paused.executionState().fallbackState().get("paused")));
+        assertTrue(paused.lifecycleEvents().stream().anyMatch(event -> event.contains("paused_after_wave")));
+        assertFalse(paused.lifecycleEvents().stream().anyMatch(event -> event.contains("shutdown_approved")));
+
+        TeamAgentExecutionService.ExecutionResult resumed = service.executePlan(
+                plan(TopologyType.FAN_OUT_FAN_IN, true),
+                resumeContext()
+        );
+
+        assertEquals(2, executionCount.get());
+        assertEquals(TaskExecutionStatus.SUCCEEDED, resumed.executionState().taskStates().get("task-summary"));
+        assertFalse(Boolean.TRUE.equals(resumed.executionState().fallbackState().get("paused")));
+    }
+
     private TeamAgentExecutionService service(ExecutingSubAgent subAgent) {
         MultiAgentProperties properties = new MultiAgentProperties();
         properties.setMaxParallelAgents(3);
@@ -209,14 +251,14 @@ class TeamAgentExecutionServiceTest {
     }
 
     private OrchestrationContext context() {
-        return orchestrationContext(false);
+        return orchestrationContext(false, null);
     }
 
     private OrchestrationContext resumeContext() {
-        return orchestrationContext(true);
+        return orchestrationContext(true, null);
     }
 
-    private OrchestrationContext orchestrationContext(boolean resume) {
+    private OrchestrationContext orchestrationContext(boolean resume, java.util.function.BooleanSupplier shouldStop) {
         return new OrchestrationContext(
                 "orch-test",
                 new AgentRequest(
@@ -235,7 +277,7 @@ class TeamAgentExecutionServiceTest {
                         AgentRunMode.MULTI_AGENT,
                         AgentDialogueMode.FOLLOW
                 ),
-                Map.of()
+                shouldStop == null ? Map.of() : Map.of("shouldStop", shouldStop)
         );
     }
 }

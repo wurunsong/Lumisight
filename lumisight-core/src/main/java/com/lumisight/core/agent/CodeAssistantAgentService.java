@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class CodeAssistantAgentService implements AgentExecutionEngine {
@@ -153,6 +154,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     return;
                 }
                 context = resumeHandling.context();
+
+                if (shouldInterruptExecution(context.sessionId(), context.runEpoch())) {
+                    appendInterruptedEvents(traceId, context.sessionId(), 0, context.effectiveQuestion(), context.contextSession(), publisher);
+                    sink.complete();
+                    return;
+                }
 
                 if (effectiveRequest.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(effectiveRequest, context, skillPlan, traceId, publisher, relevantMemoryContext)) {
                     sink.complete();
@@ -338,7 +345,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 request.runMode(),
                 request.dialogueMode()
         );
-        MultiAgentCoordinator.CoordinationResult coordinationResult = multiAgentCoordinator.coordinate(orchestrationRequest);
+        MultiAgentCoordinator.CoordinationResult coordinationResult = multiAgentCoordinator.coordinate(
+                orchestrationRequest,
+                Map.of("shouldStop", (BooleanSupplier) () -> shouldInterruptExecution(context.sessionId(), context.runEpoch()))
+        );
         publisher.emit(AgentEvent.orchestrationPlan(
                 traceId,
                 context.sessionId(),
