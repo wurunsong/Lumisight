@@ -6,233 +6,351 @@
   <title>Lumisight Multi-Agent Flow</title>
   <style>
     :root {
-      --bg: #eef3f8;
+      --bg: #edf2f7;
+      --ink: #13263f;
+      --muted: #5d6f87;
+      --line: rgba(24, 50, 84, 0.12);
       --paper: rgba(255, 255, 255, 0.84);
-      --line: #cfd9e6;
-      --text: #132338;
-      --muted: #5a6d84;
-      --navy: #12345d;
-      --blue: #2b6ff2;
-      --cyan: #e4f1ff;
-      --mint: #e6f7f2;
-      --warm: #fff2df;
-      --rose: #f6ebff;
-      --shadow: 0 20px 44px rgba(26, 53, 90, 0.08);
+      --navy: #0f2745;
+      --blue: #2d74ff;
+      --sky: #dbe9ff;
+      --mint: #ddf5ec;
+      --gold: #fff0d9;
+      --rose: #f4e9ff;
+      --teal: #0f8a74;
+      --shadow: 0 24px 60px rgba(18, 42, 72, 0.09);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      color: var(--text);
+      color: var(--ink);
       font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
       background:
-        radial-gradient(circle at top right, rgba(101, 155, 255, 0.22), transparent 28%),
-        radial-gradient(circle at left 20%, rgba(54, 180, 151, 0.16), transparent 24%),
-        linear-gradient(180deg, #f6f9fc 0%, #edf2f7 100%);
+        radial-gradient(circle at 12% 12%, rgba(45, 116, 255, 0.15), transparent 24%),
+        radial-gradient(circle at 88% 10%, rgba(15, 138, 116, 0.12), transparent 20%),
+        linear-gradient(180deg, #f6f9fc 0%, #edf2f7 48%, #e9eff6 100%);
     }
     .wrap {
-      max-width: 1200px;
+      max-width: 1280px;
       margin: 0 auto;
-      padding: 28px 20px 44px;
+      padding: 28px 20px 54px;
     }
     .hero {
-      padding: 28px 30px;
-      border-radius: 28px;
-      background: linear-gradient(135deg, #0f2747 0%, #174d86 58%, #2b77c6 100%);
+      position: relative;
+      overflow: hidden;
+      border-radius: 32px;
+      padding: 34px 36px 36px;
       color: #f4f8ff;
+      background:
+        radial-gradient(circle at top right, rgba(127, 182, 255, 0.34), transparent 24%),
+        linear-gradient(135deg, #0b203a 0%, #143b68 54%, #2465b0 100%);
       box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      bottom: -70px;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 68%);
+      pointer-events: none;
     }
     .hero h1 {
       margin: 0 0 10px;
-      font-size: 34px;
-      line-height: 1.12;
-      letter-spacing: -0.02em;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
     }
     .hero p {
-      max-width: 860px;
+      max-width: 840px;
       margin: 0;
-      color: rgba(236, 245, 255, 0.88);
+      color: rgba(236, 244, 255, 0.9);
       font-size: 15px;
-      line-height: 1.7;
+      line-height: 1.8;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .badge {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: #eef5ff;
+      font-size: 12px;
+      letter-spacing: 0.01em;
     }
     .section {
       margin-top: 24px;
-      padding: 22px;
-      border: 1px solid rgba(207, 217, 230, 0.9);
-      border-radius: 24px;
+      padding: 24px;
+      border-radius: 28px;
+      border: 1px solid var(--line);
       background: var(--paper);
       backdrop-filter: blur(10px);
       box-shadow: var(--shadow);
     }
-    .section h2 {
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .section-head h2 {
       margin: 0 0 8px;
-      font-size: 22px;
+      font-size: 24px;
       color: var(--navy);
     }
-    .section > p {
-      margin: 0 0 18px;
+    .section-head p {
+      margin: 0;
       color: var(--muted);
-      line-height: 1.7;
       font-size: 14px;
+      line-height: 1.75;
+      max-width: 760px;
     }
-    .flow {
-      display: grid;
-      grid-template-columns: repeat(11, 1fr);
-      gap: 10px;
-      align-items: center;
-    }
-    .arrow {
-      text-align: center;
-      color: #7890ac;
-      font-size: 20px;
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: var(--blue);
+      font-size: 12px;
       font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
-    .step {
-      min-height: 116px;
-      padding: 16px 14px;
-      border-radius: 20px;
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      position: relative;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 3%;
+      right: 3%;
+      top: 58px;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(45, 116, 255, 0.1), rgba(45, 116, 255, 0.45), rgba(15, 138, 116, 0.22));
+      z-index: 0;
+    }
+    .flow-card {
+      position: relative;
+      z-index: 1;
+      min-height: 186px;
+      padding: 18px 16px 16px;
+      border-radius: 24px;
       border: 1px solid var(--line);
-      background: #fff;
+      background: rgba(255,255,255,0.92);
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      box-shadow: 0 12px 28px rgba(22, 45, 76, 0.06);
     }
-    .step strong {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 15px;
-      line-height: 1.35;
-    }
-    .step span {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.55;
-    }
-    .step.blue { background: var(--cyan); }
-    .step.green { background: var(--mint); }
-    .step.warm { background: var(--warm); }
-    .step.rose { background: var(--rose); }
-    .multi-grid {
-      display: grid;
-      grid-template-columns: 1.25fr 0.95fr;
-      gap: 18px;
-    }
-    .board {
-      padding: 18px;
-      border-radius: 22px;
-      border: 1px solid var(--line);
+    .flow-card.sky { background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); }
+    .flow-card.mint { background: linear-gradient(180deg, #ebfaf4 0%, #ffffff 100%); }
+    .flow-card.gold { background: linear-gradient(180deg, #fff5e7 0%, #ffffff 100%); }
+    .flow-card.rose { background: linear-gradient(180deg, #f7f0ff 0%, #ffffff 100%); }
+    .index {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       background: #fff;
+      border: 1px solid rgba(20, 51, 89, 0.12);
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 18px;
     }
-    .board h3 {
-      margin: 0 0 12px;
+    .flow-card h3 {
+      margin: 0 0 10px;
       font-size: 17px;
+      line-height: 1.3;
       color: var(--navy);
     }
-    .lane {
+    .flow-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .dual {
       display: grid;
-      grid-template-columns: 118px 1fr;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.82fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .diagram {
+      border-radius: 26px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,248,253,0.96));
+    }
+    .diagram h3 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: var(--navy);
+    }
+    .swimlane {
+      display: grid;
+      grid-template-columns: 120px 1fr;
       gap: 14px;
       align-items: stretch;
-      margin-top: 12px;
+      margin-top: 14px;
     }
-    .lane:first-of-type { margin-top: 0; }
-    .lane-label {
-      padding: 14px 12px;
-      border-radius: 18px;
-      background: #f3f7fb;
-      border: 1px solid var(--line);
-      font-weight: 700;
-      color: var(--navy);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
-    .lane-track {
-      display: grid;
-      grid-template-columns: repeat(9, 1fr);
-      gap: 8px;
-      align-items: center;
-    }
-    .chip {
-      padding: 12px 10px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: #fff;
-      min-height: 84px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      text-align: center;
-    }
-    .chip b {
-      font-size: 13px;
-      line-height: 1.35;
-      margin-bottom: 6px;
-    }
-    .chip small {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-    }
-    .side-card {
-      padding: 18px;
+    .swimlane:first-of-type { margin-top: 0; }
+    .swimlane-label {
+      padding: 16px 14px;
       border-radius: 22px;
       border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,248,253,0.96));
+      background: #f3f7fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--navy);
     }
-    .side-card h3 {
-      margin: 0 0 12px;
+    .swimlane-track {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      position: relative;
+    }
+    .swimlane-track::before {
+      content: "";
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 46px;
+      height: 1px;
+      background: rgba(34, 74, 123, 0.14);
+      z-index: 0;
+    }
+    .lane-step {
+      position: relative;
+      z-index: 1;
+      min-height: 122px;
+      padding: 16px 14px 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.05);
+    }
+    .lane-step .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 6px rgba(45, 116, 255, 0.12);
+      margin-bottom: 16px;
+    }
+    .lane-step.worker .dot { background: var(--teal); box-shadow: 0 0 0 6px rgba(15, 138, 116, 0.12); }
+    .lane-step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--navy);
+    }
+    .lane-step span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .side-panel {
+      display: grid;
+      gap: 14px;
+    }
+    .note-card {
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(245,249,255,0.98), rgba(255,255,255,0.96));
+    }
+    .note-card h3 {
+      margin: 0 0 10px;
       font-size: 17px;
       color: var(--navy);
     }
-    .side-card ul {
+    .note-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .signal {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .signal h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: var(--navy);
+    }
+    .signal p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    .highlights {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .highlight {
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 12px 28px rgba(20, 44, 72, 0.05);
+    }
+    .highlight h3 {
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 17px;
+    }
+    .highlight ul {
       margin: 0;
       padding-left: 18px;
       color: var(--muted);
+      font-size: 13px;
       line-height: 1.75;
-      font-size: 14px;
     }
-    .side-card li + li { margin-top: 8px; }
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-top: 18px;
-    }
-    .summary-card {
-      padding: 16px;
-      border-radius: 20px;
-      border: 1px solid var(--line);
-      background: #fff;
-    }
-    .summary-card h3 {
-      margin: 0 0 8px;
-      color: var(--navy);
-      font-size: 16px;
-    }
-    .summary-card p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.7;
-      font-size: 14px;
-    }
-    @media (max-width: 1080px) {
-      .flow {
+    .highlight li + li { margin-top: 6px; }
+    @media (max-width: 1120px) {
+      .timeline,
+      .signal-grid,
+      .highlights,
+      .swimlane-track {
         grid-template-columns: 1fr;
       }
-      .arrow {
-        transform: rotate(90deg);
+      .timeline::before,
+      .swimlane-track::before {
+        display: none;
       }
-      .multi-grid,
-      .summary,
-      .lane {
+      .dual,
+      .swimlane {
         grid-template-columns: 1fr;
       }
-      .lane-track {
-        grid-template-columns: 1fr;
-      }
-      .lane-label {
-        justify-content: flex-start;
+      .section-head {
+        display: block;
       }
     }
   </style>
@@ -241,134 +359,222 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 多 Agent 主流程</h1>
-      <p>这张图只讲一件事：用户的信息如何进入系统，什么时候保持单 Agent，什么时候升级成多 Agent，Lead 如何拆任务，worker 如何回传，最后又怎样收敛回同一个最终回答。</p>
-    </section>
-
-    <section class="section">
-      <h2>端到端主流程</h2>
-      <p>这是用户视角下的主信息流。重点不是工具细节，而是请求从进入到产出结果，中间经过了哪些关键决策点。</p>
-      <div class="flow">
-        <div class="step blue">
-          <strong>1. 请求进入</strong>
-          <span>用户问题、session、控制指令进入统一会话入口。</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="step">
-          <strong>2. 会话调度</strong>
-          <span>系统决定这是继续当前会话、打断重定向，还是恢复上次执行。</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="step green">
-          <strong>3. 模式判断</strong>
-          <span>简单任务留在单 Agent，复杂任务才升级到多 Agent。</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="step warm">
-          <strong>4. 计划生成</strong>
-          <span>Lead 把问题拆成一个或多个可执行任务，并决定拓扑。</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="step rose">
-          <strong>5. 执行与汇总</strong>
-          <span>单 Agent 直接执行，多 Agent 则分发给 worker，再回到 Lead 汇总。</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="step blue">
-          <strong>6. 最终回答</strong>
-          <span>所有结果重新回到主会话，统一输出事件流和最终答案。</span>
-        </div>
+      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。也就是说，先让人一眼看懂“请求怎么进来、什么时候升级、任务怎么分发、结果怎么回收”，再补工程层的关键能力，不把两件事混成同一张说明书。</p>
+      <div class="hero-badges">
+        <span class="badge">Single Agent by Default</span>
+        <span class="badge">Lead Orchestration</span>
+        <span class="badge">Worker Parallel Waves</span>
+        <span class="badge">Resume from Saved State</span>
       </div>
     </section>
 
     <section class="section">
-      <h2>多 Agent 信息流</h2>
-      <p>只有在第 3 步判断需要升级时，主流程才会进入这条分支。这里的重点是 Lead 和 worker 之间的信息怎样来回流动，以及恢复点在哪里。</p>
-      <div class="multi-grid">
-        <div class="board">
-          <h3>Lead 与 Worker 的流向</h3>
-          <div class="lane">
-            <div class="lane-label">Lead</div>
-            <div class="lane-track">
-              <div class="chip">
-                <b>收到复杂请求</b>
-                <small>进入 MULTI_AGENT</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>拆成任务</b>
-                <small>生成 plan 与依赖</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>按 wave 派发</b>
-                <small>把 task 发给 worker</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>汇总结果</b>
-                <small>收 task state 和结论</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>收敛回主会话</b>
-                <small>继续最终回答</small>
-              </div>
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Main Flow</span>
+          <h2>端到端主流程</h2>
+        </div>
+        <p>这是用户视角下的总流程图。重点不是工具名，而是一个请求从进入系统，到决定是否升级成多 Agent，再到收敛为同一个最终回答，中间的信息如何流动。</p>
+      </div>
+      <div class="timeline">
+        <article class="flow-card sky">
+          <span class="index">01</span>
+          <h3>请求进入</h3>
+          <p>用户问题、会话上下文和控制动作一起进入统一入口，先归到同一个 session 视角里。</p>
+        </article>
+        <article class="flow-card">
+          <span class="index">02</span>
+          <h3>会话调度</h3>
+          <p>系统先决定这是继续当前执行、打断改道，还是恢复上次停住的会话。</p>
+        </article>
+        <article class="flow-card mint">
+          <span class="index">03</span>
+          <h3>模式判断</h3>
+          <p>简单任务留在单 Agent；只有明显需要拆分、并行或分角色处理时，才升级到多 Agent。</p>
+        </article>
+        <article class="flow-card gold">
+          <span class="index">04</span>
+          <h3>Lead 制定计划</h3>
+          <p>Lead 把请求拆成任务、依赖和执行顺序，决定是单个子任务还是多 worker 协作。</p>
+        </article>
+        <article class="flow-card rose">
+          <span class="index">05</span>
+          <h3>执行与回流</h3>
+          <p>任务被执行后，结果、状态和证据重新汇回 Lead，而不是散落成多个独立对话。</p>
+        </article>
+        <article class="flow-card sky">
+          <span class="index">06</span>
+          <h3>统一最终回答</h3>
+          <p>所有中间结果都收敛回主会话，再由主 Agent / Lead 产出事件流和最终答案。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Multi-Agent Branch</span>
+          <h2>多 Agent 信息流</h2>
+        </div>
+        <p>只有在第 3 步确定需要升级时，请求才会进入这条支线。这里强调的是 Lead 和 worker 之间的信息交换关系，以及中断后从哪里继续。</p>
+      </div>
+
+      <div class="dual">
+        <div class="diagram">
+          <h3>Lead / Worker 泳道图</h3>
+
+          <div class="swimlane">
+            <div class="swimlane-label">Lead</div>
+            <div class="swimlane-track">
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>收到复杂请求</strong>
+                <span>确认进入 MULTI_AGENT 路径。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>拆出任务与依赖</strong>
+                <span>把一个问题变成可分发的 plan。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>按 wave 派发</strong>
+                <span>把 task 写给对应 worker。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>汇总结果与状态</strong>
+                <span>收 summary、task state、lifecycle。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>收敛回主会话</strong>
+                <span>继续最后的回答或下一轮动作。</span>
+              </article>
             </div>
           </div>
-          <div class="lane">
-            <div class="lane-label">Workers</div>
-            <div class="lane-track">
-              <div class="chip">
-                <b>等待任务</b>
-                <small>读取 assignment</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>必要时申请权限</b>
-                <small>先问 Lead 再继续</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>执行子任务</b>
-                <small>并发分析或修复</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>回传结果</b>
-                <small>summary、state、idle</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="chip">
-                <b>等待下一波</b>
-                <small>或结束本次协作</small>
-              </div>
+
+          <div class="swimlane">
+            <div class="swimlane-label">Workers</div>
+            <div class="swimlane-track">
+              <article class="lane-step worker">
+                <div class="dot"></div>
+                <strong>等待 assignment</strong>
+                <span>从 team inbox 读取自己的任务。</span>
+              </article>
+              <article class="lane-step worker">
+                <div class="dot"></div>
+                <strong>必要时先申请权限</strong>
+                <span>不是所有动作都能直接执行。</span>
+              </article>
+              <article class="lane-step worker">
+                <div class="dot"></div>
+                <strong>并发执行子任务</strong>
+                <span>同一 wave 内多个 worker 可以并行推进。</span>
+              </article>
+              <article class="lane-step worker">
+                <div class="dot"></div>
+                <strong>回传结果</strong>
+                <span>把结论、状态和 idle 通知交回 Lead。</span>
+              </article>
+              <article class="lane-step worker">
+                <div class="dot"></div>
+                <strong>等待下一波或结束</strong>
+                <span>继续协作，直到本次请求收口。</span>
+              </article>
             </div>
           </div>
         </div>
 
-        <aside class="side-card">
-          <h3>恢复点在哪里</h3>
-          <ul>
-            <li>Lead 每完成一波任务，都会保存当前执行状态。</li>
-            <li>如果用户中断，会在 wave 边界停下来，而不是把半波状态写乱。</li>
-            <li>下一次 `resume` 不会从头再来，而是只继续剩下的 pending 任务。</li>
-            <li>所以多 Agent 最终仍然服务于同一个主会话，而不是散成几个独立对话。</li>
-          </ul>
-        </aside>
+        <div class="side-panel">
+          <article class="note-card">
+            <h3>恢复点</h3>
+            <p>Lead 不会等全部结束才记状态，而是每完成一波就保存当前进度。所以如果中途 interrupt，系统会在 wave 边界停住；下一次 `resume` 继续剩余任务，而不是从头再跑整套流程。</p>
+          </article>
+          <article class="note-card">
+            <h3>升级边界</h3>
+            <p>多 Agent 不是默认行为。只有当请求天然带有“分别分析”“并行看多个模块”“前后端协同”“修复和验证分工”等信号时，系统才认为拆分比单 Agent 更值得。</p>
+          </article>
+          <article class="note-card">
+            <h3>最终收口</h3>
+            <p>无论拆成多少 worker，最后负责写入、验证、事件输出和回答用户的仍然是主 Agent / Lead。worker 提供的是局部结果，不是最终对话主体。</p>
+          </article>
+        </div>
       </div>
 
-      <div class="summary">
-        <article class="summary-card">
+      <div class="signal-grid" style="margin-top: 18px;">
+        <article class="signal">
           <h3>什么时候不升级</h3>
-          <p>如果一个请求本身很直接，或者虽然复杂但不值得拆分，系统就继续走单 Agent，避免为了多 Agent 而多 Agent。</p>
+          <p>如果一个请求虽然长，但并不需要真正拆分，系统会保持单 Agent，避免把简单事做复杂。</p>
         </article>
-        <article class="summary-card">
+        <article class="signal">
           <h3>什么时候升级</h3>
-          <p>当问题天然需要“分别分析”“并行看多个模块”“前后端协同”“修复加验证分工”时，Lead 才会拆计划并拉起 worker。</p>
+          <p>当请求需要多个局部视角、依赖收敛或者并发扫描时，Lead 才会拉起多 Agent 流程。</p>
         </article>
-        <article class="summary-card">
-          <h3>最后谁负责收口</h3>
-          <p>无论中间拆成多少任务，最终写入、验证、事件输出和回答用户的始终是主 Agent / Lead，而不是某个 worker。</p>
+        <article class="signal">
+          <h3>为什么能恢复</h3>
+          <p>因为执行状态不是临时留在内存里，而是随着 wave 推进被持续保存下来。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Technical Highlights</span>
+          <h2>技术亮点</h2>
+        </div>
+        <p>上面先解决“怎么看懂流程”，下面再保留工程实现里真正有区分度的能力点。这里仍然保留技术亮点，但它们现在是补充说明，不再抢主流程的视觉重心。</p>
+      </div>
+
+      <div class="highlights">
+        <article class="highlight">
+          <h3>默认单 Agent，谨慎升级</h3>
+          <ul>
+            <li>系统不会因为具备 `task_subagent` 就默认走多 Agent。</li>
+            <li>只有显式 `MULTI_AGENT` 或 auto-upgrade 信号足够强时，才进入 orchestration。</li>
+            <li>这样能避免把简单请求过度工程化。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>Lead 负责拆分与收口</h3>
+          <ul>
+            <li>Lead 负责生成 plan、管理依赖、派发任务和汇总结果。</li>
+            <li>worker 只是局部执行者，不持有最终回答权。</li>
+            <li>主会话始终保持唯一的结果收敛点。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>Worker 支持并发 wave</h3>
+          <ul>
+            <li>同一波任务可以并发执行，而不是逐个串行处理。</li>
+            <li>并发后仍由 Lead 统一收集 task state 和结论。</li>
+            <li>这让多模块扫描和分工分析真正产生收益。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>权限不是默认放开</h3>
+          <ul>
+            <li>worker 碰到需要额外能力的动作时，会先向 Lead 申请。</li>
+            <li>批准后再继续，不批准则返回被阻断的结果。</li>
+            <li>多 Agent 协作仍然服从同一套可控边界。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>执行状态可持久化</h3>
+          <ul>
+            <li>Lead 会把执行进度持续写入状态文件。</li>
+            <li>保存的不只是最终结论，还有 task state 和恢复位置。</li>
+            <li>所以 interrupt 后可以从已知边界继续，而不是完全重来。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>恢复仍回到同一会话</h3>
+          <ul>
+            <li>`resume` 不是新开一个独立多 Agent 流，而是恢复原会话的未完成部分。</li>
+            <li>这让用户体验保持“同一个任务持续推进”的连续感。</li>
+            <li>多 Agent 最终仍然服务于主会话，而不是替代主会话。</li>
+          </ul>
         </article>
       </div>
     </section>
