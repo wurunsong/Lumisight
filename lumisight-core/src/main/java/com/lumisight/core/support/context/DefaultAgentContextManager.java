@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
 public class DefaultAgentContextManager implements AgentContextManager {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultAgentContextManager.class);
+    private static final String COMPACTED_TOOL_RESULT_MARKER = "[Old tool result content cleared. Re-run the tool to restore details.]";
     private static final Set<String> COMPACTABLE_TOOLS = Set.of(
             "cat",
             "ls",
@@ -43,9 +44,9 @@ public class DefaultAgentContextManager implements AgentContextManager {
             "writeRepoFile",
             "rollbackRepoFile",
             "callMcpCapability",
-            "HYBRID_VECTOR_READ",
-            "KG_ONE_HOP_READ",
-            "METHOD_SOURCE_READ"
+            "searchHybridVector",
+            "fetchOneHopByKgNodeId",
+            "fetchMethodSourceByLocation"
     );
 
     private final AgentContextManagementProperties properties;
@@ -80,7 +81,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
             AgentContextItem item = contexts.get(i);
             migrated.add(buildEntry(sessionId, inferKind(item), item, inferCompactable(item), inferRetriable(item), inferToolName(item), inferPriority(item), now + i));
         }
-        return new AgentContextSession(migrated, "", 0, 0L, 0L, 0);
+        return new AgentContextSession(migrated, new ArrayList<>(), "", 0, 0L, 0L, 0);
     }
 
     @Override
@@ -97,7 +98,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 now
         );
         AgentContextSession nextSession = appendEntries(session, List.of(entry));
-        return applyWriteTimeCompaction(sessionId, nextSession);
+        return applyWriteTimeCompaction(sessionId, nextSession).session();
     }
 
     @Override
@@ -108,7 +109,16 @@ public class DefaultAgentContextManager implements AgentContextManager {
         boolean compactable = isCompactableTool(result.toolName());
         if (result.items() != null) {
             for (AgentContextItem item : result.items()) {
-                AgentContextEntry entry = buildEntry(sessionId, AgentContextEntryKind.TOOL_RESULT, item, compactable, compactable, result.toolName(), toolPriority(item), now + resultEntries.size());
+                AgentContextEntry entry = buildEntry(
+                        sessionId,
+                        AgentContextEntryKind.TOOL_RESULT,
+                        item,
+                        compactable,
+                        compactable,
+                        result.toolName(),
+                        toolPriority(item),
+                        now + resultEntries.size()
+                );
                 resultEntries.add(entry);
                 totalBytes += entry.byteSize();
             }
@@ -116,6 +126,8 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (totalBytes > properties.getToolMessageBytes()) {
             resultEntries = artifactizeLargestEntries(sessionId, resultEntries, totalBytes);
         }
+        resultEntries = resultEntries.stream().map(this::decorateToolEntry).toList();
+
         List<AgentContextItem> itemViews = resultEntries.stream().map(AgentContextEntry::item).toList();
         AgentContextItem summaryItem = new AgentContextItem(
                 "conversation",
@@ -138,11 +150,13 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 70,
                 now - 1
         );
+
         List<AgentContextEntry> allEntries = new ArrayList<>();
         allEntries.add(summaryEntry);
         allEntries.addAll(resultEntries);
         AgentContextSession nextSession = appendEntries(session, allEntries);
-        nextSession = applyWriteTimeCompaction(sessionId, nextSession);
+        nextSession = mergeHotCacheEntries(nextSession, buildHotCacheEntries(resultEntries));
+        nextSession = applyWriteTimeCompaction(sessionId, nextSession).session();
         return new ToolAppendResult(nextSession, result.items() != null && !result.items().isEmpty());
     }
 
@@ -176,25 +190,43 @@ public class DefaultAgentContextManager implements AgentContextManager {
             SkillPlan skillPlan,
             ProjectionPurpose purpose
     ) {
-        AgentContextSession session = applyWriteTimeCompaction(sessionId, input);
+        WriteTimeCompactionResult writeResult = applyWriteTimeCompaction(sessionId, input);
+        AgentContextSession session = writeResult.session();
+        List<AgentContextCompressionStage> stages = new ArrayList<>(writeResult.stages());
+        Map<String, Object> metrics = new LinkedHashMap<>(writeResult.metrics());
+
         int estimatedTokens = estimateTokens(session.entries());
         boolean autoCompacted = false;
         int autoCompactThreshold = properties.getEffectiveContextWindow()
                 - properties.getResponseReserveTokens()
                 - properties.getAutoCompactBufferTokens();
         if (estimatedTokens > autoCompactThreshold && session.autoCompactFailureCount() < properties.getMaxAutoCompactFailures()) {
-            session = autoCompact(sessionId, session, request, skillPlan, purpose);
+            CompactionStepResult autoCompactResult = autoCompact(sessionId, session, request, skillPlan, purpose);
+            session = autoCompactResult.session();
             estimatedTokens = estimateTokens(session.entries());
-            autoCompacted = true;
+            autoCompacted = autoCompactResult.applied();
+            appendStage(stages, metrics, autoCompactResult);
         }
+
         ProjectionResult collapseResult = collapseForProjection(session, purpose);
         AgentContextSession touched = touch(session, collapseResult.projectedEntries());
         touched = touched.withLastProjectionAt(System.currentTimeMillis());
+
+        stages.addAll(collapseResult.stages());
+        metrics.putAll(collapseResult.metrics());
         List<AgentContextItem> contexts = collapseResult.projectedEntries().stream().map(AgentContextEntry::item).toList();
-        return new AgentContextProjection(touched, contexts, collapseResult.estimatedTokens(), collapseResult.collapsed(), autoCompacted);
+        return new AgentContextProjection(
+                touched,
+                contexts,
+                collapseResult.estimatedTokens(),
+                collapseResult.collapsed(),
+                autoCompacted,
+                List.copyOf(stages),
+                Map.copyOf(metrics)
+        );
     }
 
-    private AgentContextSession autoCompact(
+    private CompactionStepResult autoCompact(
             String sessionId,
             AgentContextSession session,
             AgentRequest request,
@@ -204,20 +236,27 @@ public class DefaultAgentContextManager implements AgentContextManager {
         try {
             List<AgentContextEntry> entries = session.entries();
             if (entries.size() < 6) {
-                return session;
+                return CompactionStepResult.noop(session);
             }
+
             int keepTail = Math.min(8, entries.size());
             List<AgentContextEntry> compactedSegment = new ArrayList<>(entries.subList(0, entries.size() - keepTail));
             List<AgentContextEntry> recentTail = new ArrayList<>(entries.subList(entries.size() - keepTail, entries.size()));
             String summary = summarizeForCompaction(compactedSegment, request, skillPlan, purpose, session.snipTokensFreed());
             long now = System.currentTimeMillis();
+
             List<AgentContextEntry> rebuilt = new ArrayList<>();
             rebuilt.add(AgentContextEntry.marker(
                     newEntryId("auto-compact-boundary"),
                     AgentContextEntryKind.SUMMARY,
                     "auto_compact_boundary",
                     "更早的上下文已被自动压缩为摘要，以下为恢复后的继续工作视图。",
-                    Map.of("entriesCompacted", compactedSegment.size(), "purpose", purpose.name()),
+                    Map.of(
+                            "entriesCompacted", compactedSegment.size(),
+                            "purpose", purpose.name(),
+                            "snipTokensFreed", session.snipTokensFreed(),
+                            "trigger", "context_threshold"
+                    ),
                     now,
                     95
             ));
@@ -231,55 +270,195 @@ public class DefaultAgentContextManager implements AgentContextManager {
                     100,
                     now + 1
             ));
-            rebuilt.addAll(restoreHotEntries(compactedSegment));
+
+            RestoreBundle hotRestore = restoreHotEntries(session, recentTail, now + 2);
+            rebuilt.addAll(hotRestore.entries());
+
+            RestoreBundle skillRestore = restoreSkillEntries(sessionId, skillPlan, hotRestore.remainingTokenBudget(), now + 100);
+            rebuilt.addAll(skillRestore.entries());
+
+            RestoreBundle planRestore = restorePlanEntries(session, compactedSegment, recentTail, skillRestore.remainingTokenBudget(), now + 200);
+            rebuilt.addAll(planRestore.entries());
+
             rebuilt.addAll(recentTail);
-            return new AgentContextSession(rebuilt, summary, session.snipTokensFreed(), session.lastProjectionAt(), now, 0);
+            AgentContextSession nextSession = new AgentContextSession(
+                    rebuilt,
+                    session.hotCacheEntries(),
+                    summary,
+                    session.snipTokensFreed(),
+                    session.lastProjectionAt(),
+                    now,
+                    0
+            );
+            Map<String, Object> metrics = new LinkedHashMap<>();
+            metrics.put("entriesCompacted", compactedSegment.size());
+            metrics.put("restoredHotEntries", hotRestore.entries().size());
+            metrics.put("restoredSkillEntries", skillRestore.entries().size());
+            metrics.put("restoredPlanEntries", planRestore.entries().size());
+            metrics.put("summaryTokens", estimateTokens(summary));
+            return new CompactionStepResult(
+                    nextSession,
+                    true,
+                    List.of(
+                            AgentContextCompressionStage.AUTO_COMPACT,
+                            AgentContextCompressionStage.RESTORE_HOT_CACHE,
+                            AgentContextCompressionStage.RESTORE_SKILL,
+                            AgentContextCompressionStage.RESTORE_PLAN
+                    ),
+                    metrics
+            );
         } catch (Exception e) {
             log.warn("auto compact failed, sessionId={}, error={}", sessionId, e.getMessage(), e);
-            return session.withCompactionState(System.currentTimeMillis(), session.autoCompactFailureCount() + 1);
+            return new CompactionStepResult(
+                    session.withCompactionState(System.currentTimeMillis(), session.autoCompactFailureCount() + 1),
+                    false,
+                    List.of(),
+                    Map.of("autoCompactFailureCount", session.autoCompactFailureCount() + 1, "error", e.getMessage())
+            );
         }
     }
 
-    private List<AgentContextEntry> restoreHotEntries(List<AgentContextEntry> compactedSegment) {
-        List<AgentContextEntry> restorable = compactedSegment.stream()
-                .filter(this::isRestorableHotEntry)
-                .sorted(Comparator.comparingLong(AgentContextEntry::lastAccessedAt).reversed())
+    private RestoreBundle restoreHotEntries(AgentContextSession session, List<AgentContextEntry> recentTail, long now) {
+        List<AgentContextHotCacheEntry> hotCacheEntries = session.hotCacheEntries() == null ? List.of() : session.hotCacheEntries();
+        if (hotCacheEntries.isEmpty()) {
+            return new RestoreBundle(List.of(), properties.getPostCompactTokenBudget());
+        }
+        Set<String> existingResources = collectLogicalResourceIds(recentTail);
+        List<AgentContextHotCacheEntry> restorable = hotCacheEntries.stream()
+                .filter(AgentContextHotCacheEntry::restorable)
+                .sorted(Comparator.comparingLong(AgentContextHotCacheEntry::lastAccessedAt).reversed())
                 .toList();
         List<AgentContextEntry> restored = new ArrayList<>();
         int tokenBudget = properties.getPostCompactTokenBudget();
         Set<String> seen = new LinkedHashSet<>();
-        for (AgentContextEntry entry : restorable) {
+        for (AgentContextHotCacheEntry entry : restorable) {
             if (restored.size() >= properties.getPostCompactMaxRestoreEntries()) {
                 break;
             }
             if (entry.tokenEstimate() > properties.getPostCompactMaxTokensPerEntry()) {
                 continue;
             }
-            String dedupeKey = entry.item().sourceId();
-            if (!seen.add(dedupeKey)) {
+            String logicalResourceId = entry.logicalResourceId();
+            if (StringUtils.hasText(logicalResourceId) && (existingResources.contains(logicalResourceId) || !seen.add(logicalResourceId))) {
                 continue;
             }
             if (tokenBudget - entry.tokenEstimate() < 0) {
-                break;
+                continue;
             }
-            restored.add(entry);
+            AgentContextItem restoredItem = restoreHotCacheItem(entry);
+            AgentContextEntry restoredEntry = entry.toRestoredEntry(
+                    newEntryId("restore_hot_" + safeId(entry.logicalResourceId())),
+                    now + restored.size(),
+                    87,
+                    restoredItem
+            );
+            restoredEntry = decorateRestoredEntry(restoredEntry, "hot_cache_restore");
+            restored.add(restoredEntry);
             tokenBudget -= entry.tokenEstimate();
         }
-        return restored;
+        return new RestoreBundle(restored, tokenBudget);
     }
 
-    private boolean isRestorableHotEntry(AgentContextEntry entry) {
-        if (entry == null || entry.item() == null) {
-            return false;
+    private RestoreBundle restoreSkillEntries(String sessionId, SkillPlan skillPlan, int remainingBudget, long now) {
+        if (skillPlan == null || remainingBudget <= 0) {
+            return new RestoreBundle(List.of(), remainingBudget);
         }
-        if (entry.kind() != AgentContextEntryKind.TOOL_RESULT) {
-            return false;
+        int skillBudget = Math.min(properties.getPostCompactSkillTokenBudget(), remainingBudget);
+        if (skillBudget <= 0) {
+            return new RestoreBundle(List.of(), remainingBudget);
         }
-        if ("todo_reminder".equals(entry.item().sourceType()) || "tool_error".equals(entry.item().sourceType())) {
-            return false;
+
+        StringBuilder content = new StringBuilder();
+        if (StringUtils.hasText(skillPlan.summary())) {
+            content.append("当前活跃技能摘要: ").append(skillPlan.summary()).append("\n");
         }
-        String sourceId = entry.item().sourceId();
-        return StringUtils.hasText(sourceId) && (sourceId.endsWith(".java") || sourceId.endsWith(".xml") || sourceId.endsWith(".md") || sourceId.contains("/"));
+        if (skillPlan.executionSteps() != null && !skillPlan.executionSteps().isEmpty()) {
+            content.append("技能步骤:\n");
+            for (String step : skillPlan.executionSteps()) {
+                content.append("- ").append(step).append("\n");
+            }
+        }
+        if (StringUtils.hasText(skillPlan.outputContract())) {
+            content.append("技能输出约束: ").append(skillPlan.outputContract()).append("\n");
+        }
+        if (StringUtils.hasText(skillPlan.rawSkillContent())) {
+            content.append("技能原文:\n");
+            content.append(trimToTokenBudget(skillPlan.rawSkillContent(), skillBudget - estimateTokens(content.toString())));
+        }
+        String rendered = content.toString().trim();
+        if (!StringUtils.hasText(rendered)) {
+            return new RestoreBundle(List.of(), remainingBudget);
+        }
+        AgentContextEntry entry = buildEntry(
+                sessionId,
+                AgentContextEntryKind.SYSTEM,
+                new AgentContextItem("skill_restore", "active_skill_restore", rendered, Map.of("restored", true)),
+                false,
+                false,
+                null,
+                89,
+                now
+        );
+        int consumed = Math.min(skillBudget, entry.tokenEstimate());
+        return new RestoreBundle(List.of(entry), Math.max(0, remainingBudget - consumed));
+    }
+
+    private RestoreBundle restorePlanEntries(
+            AgentContextSession session,
+            List<AgentContextEntry> compactedSegment,
+            List<AgentContextEntry> recentTail,
+            int remainingBudget,
+            long now
+    ) {
+        if (remainingBudget <= 0) {
+            return new RestoreBundle(List.of(), remainingBudget);
+        }
+        boolean alreadyPresent = recentTail.stream().anyMatch(this::isPlanOrTodoEntry);
+        if (alreadyPresent) {
+            return new RestoreBundle(List.of(), remainingBudget);
+        }
+        AgentContextEntry latestPlan = latestPlanEntry(session, compactedSegment);
+        if (latestPlan == null || latestPlan.tokenEstimate() > Math.min(remainingBudget, properties.getPostCompactMaxTokensPerEntry())) {
+            return new RestoreBundle(List.of(), remainingBudget);
+        }
+        AgentContextEntry restored = decorateRestoredEntry(
+                AgentContextEntry.of(
+                        newEntryId("restore_plan"),
+                        AgentContextEntryKind.TODO,
+                        new AgentContextItem(
+                                latestPlan.item().sourceType(),
+                                latestPlan.item().sourceId(),
+                                latestPlan.item().content(),
+                                mergeMetadata(latestPlan.item().metadata(), Map.of("restored", true, "restoredFrom", "plan_restore"))
+                        ),
+                        false,
+                        false,
+                        latestPlan.toolName(),
+                        latestPlan.artifactRef(),
+                        latestPlan.byteSize(),
+                        latestPlan.tokenEstimate(),
+                        now,
+                        90
+                ),
+                "plan_restore"
+        );
+        return new RestoreBundle(List.of(restored), remainingBudget - restored.tokenEstimate());
+    }
+
+    private AgentContextEntry latestPlanEntry(AgentContextSession session, List<AgentContextEntry> compactedSegment) {
+        List<AgentContextEntry> candidates = new ArrayList<>();
+        if (session.hotCacheEntries() != null) {
+            session.hotCacheEntries().stream()
+                    .filter(cache -> "todo_write".equals(cache.toolName()) || "todo_write".equals(cache.item().sourceType()))
+                    .sorted(Comparator.comparingLong(AgentContextHotCacheEntry::lastAccessedAt).reversed())
+                    .findFirst()
+                    .ifPresent(cache -> candidates.add(cache.toRestoredEntry(newEntryId("plan_cache"), System.currentTimeMillis(), 90)));
+        }
+        compactedSegment.stream()
+                .filter(this::isPlanOrTodoEntry)
+                .max(Comparator.comparingLong(AgentContextEntry::lastAccessedAt))
+                .ifPresent(candidates::add);
+        return candidates.stream().max(Comparator.comparingLong(AgentContextEntry::lastAccessedAt)).orElse(null);
     }
 
     private String summarizeForCompaction(
@@ -296,13 +475,17 @@ public class DefaultAgentContextManager implements AgentContextManager {
             return "无可压缩的历史上下文。";
         }
         String systemPrompt = """
-                你是一个代码代理的上下文压缩器。请把历史工作整理成结构化摘要，必须覆盖：
-                1. 用户主要目标
-                2. 已查看/修改的重要文件
-                3. 已执行的关键工具和结论
-                4. 遇到的问题与修复尝试
-                5. 待完成事项与当前状态
-                输出简洁但不要遗漏关键信息。
+                你是一个代码代理的上下文压缩器。请输出结构化摘要，必须包含以下小节且不能遗漏任何一类关键信息：
+                1. 用户主要请求与意图（覆盖历史关键用户要求）
+                2. 关键文件与代码位置
+                3. 关键命令/工具调用及结论
+                4. 遇到的错误、失败尝试与修复进展
+                5. 当前状态、未完成事项与下一步
+                规则：
+                - 不要输出寒暄。
+                - 优先保留对继续完成任务有决定作用的事实。
+                - 对“用户提出过但尚未完成”的要求必须显式写出。
+                - 若历史里出现多个候选方案，写清当前采用哪个以及为何。
                 """;
         StringBuilder userPrompt = new StringBuilder();
         userPrompt.append("任务类型: ").append(request.taskType()).append("\n");
@@ -322,18 +505,20 @@ public class DefaultAgentContextManager implements AgentContextManager {
 
     private String heuristicSummary(List<AgentContextEntry> entries, AgentRequest request) {
         StringBuilder builder = new StringBuilder();
-        builder.append("用户目标: ").append(safeText(request.question())).append("\n");
-        Map<String, Long> byType = entries.stream()
-                .collect(Collectors.groupingBy(entry -> entry.item().sourceType(), LinkedHashMap::new, Collectors.counting()));
-        builder.append("历史上下文分布: ").append(byType).append("\n");
-        builder.append("最近重要条目:\n");
+        builder.append("## 用户主要请求与意图\n");
+        builder.append("- ").append(safeText(request.question())).append("\n");
+        builder.append("## 关键文件与代码位置\n");
         entries.stream()
-                .sorted(Comparator.comparingLong(AgentContextEntry::createdAt).reversed())
-                .limit(8)
-                .forEach(entry -> builder.append("- [")
-                        .append(entry.kind()).append("] ")
-                        .append(entry.item().sourceId()).append(": ")
-                        .append(safeText(entry.item().content())).append("\n"));
+                .filter(entry -> StringUtils.hasText(entry.item().sourceId()) && entry.item().sourceId().contains("."))
+                .limit(5)
+                .forEach(entry -> builder.append("- ").append(entry.item().sourceId()).append("\n"));
+        builder.append("## 关键命令/工具调用及结论\n");
+        entries.stream()
+                .filter(entry -> StringUtils.hasText(entry.toolName()))
+                .limit(5)
+                .forEach(entry -> builder.append("- ").append(entry.toolName()).append(": ").append(safeText(entry.item().content())).append("\n"));
+        builder.append("## 当前状态、未完成事项与下一步\n");
+        builder.append("- 需要根据最近摘要和恢复内容继续推进。\n");
         return builder.toString().trim();
     }
 
@@ -341,60 +526,108 @@ public class DefaultAgentContextManager implements AgentContextManager {
         List<AgentContextEntry> entries = new ArrayList<>(session.entries());
         int estimatedTokens = estimateTokens(entries);
         if (estimatedTokens <= properties.getProjectionSoftTokens()) {
-            return new ProjectionResult(entries, estimatedTokens, false);
+            return new ProjectionResult(entries, estimatedTokens, false, List.of(), Map.of());
         }
-        List<AgentContextEntry> projected = new ArrayList<>();
-        List<AgentContextEntry> olderConversation = new ArrayList<>();
-        List<AgentContextEntry> recent = new ArrayList<>();
+
         int recentConversationBudget = purpose == ProjectionPurpose.DECISION ? 10 : 14;
-        List<AgentContextEntry> conversationEntries = entries.stream()
-                .filter(entry -> entry.kind() == AgentContextEntryKind.CONVERSATION)
-                .toList();
-        Set<String> recentIds = conversationEntries.stream()
-                .skip(Math.max(0, conversationEntries.size() - recentConversationBudget))
-                .map(AgentContextEntry::id)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> recentConversationIds = recentConversationIds(entries, recentConversationBudget);
+        LinkedHashSet<String> requiredIds = new LinkedHashSet<>();
         for (AgentContextEntry entry : entries) {
-            if (entry.kind() == AgentContextEntryKind.CONVERSATION && !recentIds.contains(entry.id()) && entry.priority() <= 60) {
-                olderConversation.add(entry);
-            } else {
-                recent.add(entry);
+            if (isAlwaysProjected(entry) || recentConversationIds.contains(entry.id())) {
+                requiredIds.add(entry.id());
             }
         }
-        if (!olderConversation.isEmpty()) {
-            long now = System.currentTimeMillis();
+
+        int targetBudget = estimatedTokens > properties.getProjectionHardTokens()
+                ? properties.getProjectionHardTokens()
+                : properties.getProjectionSoftTokens();
+        List<AgentContextEntry> selected = new ArrayList<>();
+        int usedTokens = 0;
+        for (AgentContextEntry entry : entries) {
+            if (requiredIds.contains(entry.id())) {
+                selected.add(entry);
+                usedTokens += entry.tokenEstimate();
+            }
+        }
+
+        List<AgentContextEntry> optional = entries.stream()
+                .filter(entry -> !requiredIds.contains(entry.id()))
+                .sorted(this::compareProjectionPriority)
+                .toList();
+        for (AgentContextEntry entry : optional) {
+            if (usedTokens >= targetBudget && entry.priority() < 88) {
+                continue;
+            }
+            if (usedTokens + entry.tokenEstimate() > targetBudget && entry.priority() < 92) {
+                continue;
+            }
+            selected.add(entry);
+            usedTokens += entry.tokenEstimate();
+        }
+
+        selected = selected.stream()
+                .sorted(Comparator.comparingLong(AgentContextEntry::createdAt))
+                .toList();
+        List<AgentContextEntry> finalSelected = selected;
+        int collapsedCount = Math.max(0, entries.size() - selected.size());
+        Map<String, Long> hiddenByKind = entries.stream()
+                .filter(entry -> finalSelected.stream().noneMatch(kept -> kept.id().equals(entry.id())))
+                .collect(Collectors.groupingBy(entry -> entry.kind().name(), LinkedHashMap::new, Collectors.counting()));
+
+        List<AgentContextEntry> projected = new ArrayList<>();
+        if (collapsedCount > 0) {
             projected.add(AgentContextEntry.marker(
                     newEntryId("projection-collapse"),
                     AgentContextEntryKind.ARTIFACT_MARKER,
                     "projection_collapse",
-                    "更早的对话轮次在本次调用中被折叠隐藏；如确有需要，可依据后续摘要或重新读取工具结果恢复。",
-                    Map.of("collapsedCount", olderConversation.size()),
-                    now,
+                    "本轮仅投影最重要的上下文视图；更早或可重取的条目已隐藏，必要时可重新读取。",
+                    Map.of(
+                            "collapsedCount", collapsedCount,
+                            "hiddenByKind", hiddenByKind,
+                            "targetBudget", targetBudget,
+                            "purpose", purpose.name()
+                    ),
+                    System.currentTimeMillis(),
                     92
             ));
         }
-        projected.addAll(recent);
+        projected.addAll(selected);
+
         int projectedTokens = estimateTokens(projected);
         if (projectedTokens > properties.getProjectionHardTokens()) {
-            projected = trimToHardLimit(projected);
+            projected = trimToHardLimit(projected, recentConversationIds);
             projectedTokens = estimateTokens(projected);
         }
-        return new ProjectionResult(projected, projectedTokens, true);
+        return new ProjectionResult(
+                projected,
+                projectedTokens,
+                collapsedCount > 0,
+                collapsedCount > 0 ? List.of(AgentContextCompressionStage.CONTEXT_COLLAPSE) : List.of(),
+                collapsedCount > 0 ? Map.of("collapsedCount", collapsedCount, "hiddenByKind", hiddenByKind, "projectedTokens", projectedTokens) : Map.of("projectedTokens", projectedTokens)
+        );
     }
 
-    private List<AgentContextEntry> trimToHardLimit(List<AgentContextEntry> entries) {
-        List<AgentContextEntry> sorted = new ArrayList<>(entries);
-        sorted.sort(Comparator.comparingInt(AgentContextEntry::priority).reversed().thenComparingLong(AgentContextEntry::createdAt));
-        List<AgentContextEntry> kept = new ArrayList<>();
-        int budget = properties.getProjectionHardTokens();
-        for (int i = sorted.size() - 1; i >= 0; i--) {
-            AgentContextEntry entry = sorted.get(i);
-            if (entry.tokenEstimate() > budget && entry.priority() < 85) {
+    private List<AgentContextEntry> trimToHardLimit(List<AgentContextEntry> entries, Set<String> recentConversationIds) {
+        List<AgentContextEntry> required = entries.stream()
+                .filter(entry -> isAlwaysProjected(entry) || recentConversationIds.contains(entry.id()))
+                .sorted(Comparator.comparingLong(AgentContextEntry::createdAt))
+                .toList();
+        int used = estimateTokens(required);
+        List<AgentContextEntry> kept = new ArrayList<>(required);
+        if (used >= properties.getProjectionHardTokens()) {
+            return kept;
+        }
+        List<AgentContextEntry> optional = entries.stream()
+                .filter(entry -> required.stream().noneMatch(requiredEntry -> requiredEntry.id().equals(entry.id())))
+                .sorted(this::compareProjectionPriority)
+                .toList();
+        for (AgentContextEntry entry : optional) {
+            if (used + entry.tokenEstimate() > properties.getProjectionHardTokens() && entry.priority() < 90) {
                 continue;
             }
             kept.add(entry);
-            budget -= entry.tokenEstimate();
-            if (budget <= 0) {
+            used += entry.tokenEstimate();
+            if (used >= properties.getProjectionHardTokens()) {
                 break;
             }
         }
@@ -402,61 +635,93 @@ public class DefaultAgentContextManager implements AgentContextManager {
         return kept;
     }
 
-    private AgentContextSession applyWriteTimeCompaction(String sessionId, AgentContextSession session) {
-        AgentContextSession compacted = applySnip(session);
-        compacted = applyMicroCompact(compacted);
-        return compacted;
+    private WriteTimeCompactionResult applyWriteTimeCompaction(String sessionId, AgentContextSession session) {
+        CompactionStepResult snipResult = applySnip(session);
+        AgentContextSession compacted = snipResult.session();
+        CompactionStepResult microResult = applyMicroCompact(compacted);
+        compacted = microResult.session();
+
+        List<AgentContextCompressionStage> stages = new ArrayList<>();
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        appendStage(stages, metrics, snipResult);
+        appendStage(stages, metrics, microResult);
+        return new WriteTimeCompactionResult(compacted, List.copyOf(stages), Map.copyOf(metrics));
     }
 
-    private AgentContextSession applySnip(AgentContextSession session) {
+    private CompactionStepResult applySnip(AgentContextSession session) {
         int estimatedTokens = estimateTokens(session.entries());
         if (estimatedTokens <= properties.getSnipTriggerTokens()) {
-            return session;
+            return CompactionStepResult.noop(session);
         }
         List<AgentContextEntry> entries = new ArrayList<>(session.entries());
         List<Integer> removableIndexes = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             AgentContextEntry entry = entries.get(i);
-            if (entry.kind() == AgentContextEntryKind.CONVERSATION && entry.priority() <= 60) {
+            if (entry.kind() == AgentContextEntryKind.CONVERSATION
+                    && entry.priority() <= 60
+                    && !isAlwaysProjected(entry)
+                    && !"context_marker".equals(entry.item().sourceType())) {
                 removableIndexes.add(i);
             }
         }
         int keepRecent = properties.getSnipKeepRecentConversation();
         if (removableIndexes.size() <= keepRecent) {
-            return session;
+            return CompactionStepResult.noop(session);
         }
         List<Integer> toRemove = removableIndexes.subList(0, removableIndexes.size() - keepRecent);
         List<AgentContextEntry> next = new ArrayList<>();
         int freed = 0;
+        int removedCount = 0;
         Set<Integer> removeSet = new LinkedHashSet<>(toRemove);
         for (int i = 0; i < entries.size(); i++) {
             if (removeSet.contains(i) && estimatedTokens - freed > properties.getSnipTargetTokens()) {
                 freed += entries.get(i).tokenEstimate();
+                removedCount++;
                 continue;
             }
             next.add(entries.get(i));
         }
-        if (freed > 0) {
-            next.add(0, AgentContextEntry.marker(
-                    newEntryId("snip-boundary"),
-                    AgentContextEntryKind.ARTIFACT_MARKER,
-                    "snip_boundary",
-                    "更早的一批对话上下文已被直接清理，以释放上下文空间。",
-                    Map.of("snipTokensFreed", freed),
-                    System.currentTimeMillis(),
-                    91
-            ));
-            return new AgentContextSession(next, session.compactedSummary(), session.snipTokensFreed() + freed, session.lastProjectionAt(), session.lastCompactionAt(), session.autoCompactFailureCount());
+        if (freed <= 0) {
+            return CompactionStepResult.noop(session);
         }
-        return session;
+        next.add(0, AgentContextEntry.marker(
+                newEntryId("snip-boundary"),
+                AgentContextEntryKind.ARTIFACT_MARKER,
+                "snip_boundary",
+                "更早的对话轮次已被直接清理，以释放上下文空间。",
+                Map.of(
+                        "snipTokensFreed", freed,
+                        "removedConversationEntries", removedCount,
+                        "trigger", "snip_trigger_tokens",
+                        "beforeTokens", estimatedTokens
+                ),
+                System.currentTimeMillis(),
+                91
+        ));
+        AgentContextSession nextSession = new AgentContextSession(
+                next,
+                session.hotCacheEntries(),
+                session.compactedSummary(),
+                session.snipTokensFreed() + freed,
+                session.lastProjectionAt(),
+                session.lastCompactionAt(),
+                session.autoCompactFailureCount()
+        );
+        return new CompactionStepResult(
+                nextSession,
+                true,
+                List.of(AgentContextCompressionStage.SNIP),
+                Map.of("snipTokensFreed", freed, "removedConversationEntries", removedCount)
+        );
     }
 
-    private AgentContextSession applyMicroCompact(AgentContextSession session) {
+    private CompactionStepResult applyMicroCompact(AgentContextSession session) {
         long now = System.currentTimeMillis();
         long staleMillis = Duration.ofMinutes(properties.getMicroCompactStaleMinutes()).toMillis();
         boolean stale = session.lastProjectionAt() > 0 && now - session.lastProjectionAt() >= staleMillis;
-        if (!stale && estimateTokens(session.entries()) <= properties.getProjectionSoftTokens()) {
-            return session;
+        boolean oversized = estimateTokens(session.entries()) > properties.getProjectionSoftTokens();
+        if (!stale && !oversized) {
+            return CompactionStepResult.noop(session);
         }
         List<AgentContextEntry> entries = new ArrayList<>(session.entries());
         List<Integer> compactableIndexes = new ArrayList<>();
@@ -467,10 +732,14 @@ public class DefaultAgentContextManager implements AgentContextManager {
         }
         int keepRecent = properties.getMicroCompactKeepRecent();
         if (compactableIndexes.size() <= keepRecent) {
-            return session;
+            return CompactionStepResult.noop(session);
         }
-        Set<Integer> keepSet = new LinkedHashSet<>(compactableIndexes.subList(Math.max(0, compactableIndexes.size() - keepRecent), compactableIndexes.size()));
+        Set<Integer> keepSet = new LinkedHashSet<>(compactableIndexes.subList(
+                Math.max(0, compactableIndexes.size() - keepRecent),
+                compactableIndexes.size()
+        ));
         List<AgentContextEntry> next = new ArrayList<>();
+        int compactedCount = 0;
         for (int i = 0; i < entries.size(); i++) {
             AgentContextEntry entry = entries.get(i);
             if (!entry.compactable() || keepSet.contains(i) || entry.compacted()) {
@@ -478,26 +747,31 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 continue;
             }
             next.add(compactEntry(entry));
+            compactedCount++;
         }
-        return session.withEntries(next);
+        if (compactedCount == 0) {
+            return CompactionStepResult.noop(session);
+        }
+        return new CompactionStepResult(
+                session.withEntries(next),
+                true,
+                List.of(AgentContextCompressionStage.MICRO_COMPACT),
+                Map.of("microCompactedEntries", compactedCount, "staleTriggered", stale, "oversizedTriggered", oversized)
+        );
     }
 
     private AgentContextEntry compactEntry(AgentContextEntry entry) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        if (entry.item().metadata() != null) {
-            metadata.putAll(entry.item().metadata());
-        }
+        Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of(
+                "compacted", true,
+                "retriable", entry.retriable()
+        ));
         if (entry.artifactRef() != null) {
-            metadata.put("artifactPath", entry.artifactRef().relativePath());
-            metadata.put("artifactId", entry.artifactRef().artifactId());
+            metadata = mergeMetadata(metadata, Map.of(
+                    "artifactPath", entry.artifactRef().relativePath(),
+                    "artifactId", entry.artifactRef().artifactId()
+            ));
         }
-        metadata.put("compacted", true);
-        metadata.put("retriable", entry.retriable());
-        String marker = "该工具结果已被裁剪。tool=" + safeText(entry.toolName())
-                + ", sourceId=" + safeText(entry.item().sourceId())
-                + (entry.artifactRef() == null ? "" : ", artifact=" + entry.artifactRef().relativePath())
-                + "。如果后续需要，可重新执行工具获取完整内容。";
-        AgentContextItem item = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), marker, metadata);
+        AgentContextItem item = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), COMPACTED_TOOL_RESULT_MARKER, metadata);
         return entry.withCompactedItem(item, bytes(item.content()), estimateTokens(item.content()));
     }
 
@@ -537,14 +811,28 @@ public class DefaultAgentContextManager implements AgentContextManager {
     ) {
         int byteSize = bytes(item.content());
         int tokenEstimate = estimateTokens(item.content());
-        AgentContextEntry entry = AgentContextEntry.of(newEntryId(item.sourceId()), kind, item, compactable, retriable, toolName, null, byteSize, tokenEstimate, now, priority);
+        AgentContextEntry seed = AgentContextEntry.of(
+                newEntryId(item.sourceId()),
+                kind,
+                item,
+                compactable,
+                retriable,
+                toolName,
+                null,
+                byteSize,
+                tokenEstimate,
+                now,
+                priority
+        );
+        AgentContextEntry entry = decorateToolEntry(seed);
         if (byteSize > properties.getSingleArtifactBytes()) {
-            return artifactizeEntry(sessionId, entry);
+            entry = artifactizeEntry(sessionId, entry);
         }
         return entry;
     }
 
     private AgentContextEntry artifactizeEntry(String sessionId, AgentContextEntry entry) {
+        int fullTokens = estimateTokens(entry.item().content());
         AgentContextArtifactRef artifactRef = artifactStore.persist(
                 sessionId,
                 entry.id(),
@@ -552,16 +840,37 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 entry.item().metadata() == null ? Map.of() : entry.item().metadata()
         );
         String preview = preview(entry.item().content());
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        if (entry.item().metadata() != null) {
-            metadata.putAll(entry.item().metadata());
-        }
-        metadata.put("artifactPath", artifactRef.relativePath());
-        metadata.put("artifactId", artifactRef.artifactId());
-        metadata.put("artifactized", true);
-        metadata.put("fullBytes", artifactRef.fullBytes());
+        Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of(
+                "artifactPath", artifactRef.relativePath(),
+                "artifactId", artifactRef.artifactId(),
+                "artifactized", true,
+                "fullBytes", artifactRef.fullBytes(),
+                "fullTokens", fullTokens
+        ));
         AgentContextItem previewItem = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), preview, metadata);
         return entry.withArtifact(previewItem, artifactRef, bytes(preview), estimateTokens(preview));
+    }
+
+    private AgentContextEntry decorateToolEntry(AgentContextEntry entry) {
+        if (!StringUtils.hasText(entry.toolName()) && entry.kind() != AgentContextEntryKind.TOOL_RESULT) {
+            return entry;
+        }
+        String logicalResourceId = logicalResourceId(entry.toolName(), entry.item());
+        boolean restorable = isRestorableToolResult(entry.toolName(), entry.item());
+        Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of(
+                "toolName", entry.toolName() == null ? "" : entry.toolName(),
+                "logicalResourceId", logicalResourceId,
+                "retriable", entry.retriable(),
+                "restorable", restorable
+        ));
+        AgentContextItem decorated = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), entry.item().content(), metadata);
+        return entry.withItem(decorated, bytes(decorated.content()), estimateTokens(decorated.content()));
+    }
+
+    private AgentContextEntry decorateRestoredEntry(AgentContextEntry entry, String restoredFrom) {
+        Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of("restored", true, "restoredFrom", restoredFrom));
+        AgentContextItem item = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), entry.item().content(), metadata);
+        return entry.withItem(item, bytes(item.content()), estimateTokens(item.content()));
     }
 
     private AgentContextSession appendEntries(AgentContextSession session, Collection<AgentContextEntry> entries) {
@@ -573,20 +882,102 @@ public class DefaultAgentContextManager implements AgentContextManager {
         return session.withEntries(next);
     }
 
+    private AgentContextSession mergeHotCacheEntries(AgentContextSession session, List<AgentContextHotCacheEntry> newEntries) {
+        if (newEntries == null || newEntries.isEmpty()) {
+            return session;
+        }
+        Map<String, AgentContextHotCacheEntry> merged = new LinkedHashMap<>();
+        List<AgentContextHotCacheEntry> existing = session.hotCacheEntries() == null ? List.of() : session.hotCacheEntries();
+        for (AgentContextHotCacheEntry entry : existing) {
+            merged.put(cacheKey(entry), entry);
+        }
+        for (AgentContextHotCacheEntry entry : newEntries) {
+            merged.put(cacheKey(entry), entry);
+        }
+        List<AgentContextHotCacheEntry> ordered = merged.values().stream()
+                .sorted(Comparator.comparingLong(AgentContextHotCacheEntry::lastAccessedAt).reversed())
+                .limit(64)
+                .toList();
+        return session.withHotCacheEntries(ordered);
+    }
+
+    private List<AgentContextHotCacheEntry> buildHotCacheEntries(List<AgentContextEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+        List<AgentContextHotCacheEntry> hotCacheEntries = new ArrayList<>();
+        for (AgentContextEntry entry : entries) {
+            if (!shouldCache(entry)) {
+                continue;
+            }
+            String logicalResourceId = logicalResourceId(entry.toolName(), entry.item());
+            hotCacheEntries.add(new AgentContextHotCacheEntry(
+                    entry.id(),
+                    entry.toolName(),
+                    logicalResourceId,
+                    entry.item(),
+                    entry.artifactRef(),
+                    isRestorableToolResult(entry.toolName(), entry.item()),
+                    entry.retriable(),
+                    fullTokenEstimate(entry),
+                    entry.createdAt(),
+                    entry.lastAccessedAt(),
+                    entry.priority()
+            ));
+        }
+        return hotCacheEntries;
+    }
+
+    private AgentContextItem restoreHotCacheItem(AgentContextHotCacheEntry entry) {
+        if (entry == null || entry.item() == null) {
+            return new AgentContextItem("tool_restore", "unknown", "", Map.of("restored", true));
+        }
+        if (entry.artifactRef() == null) {
+            return entry.item();
+        }
+        String fullContent = artifactStore.load(entry.artifactRef());
+        if (!StringUtils.hasText(fullContent)) {
+            return entry.item();
+        }
+        Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of(
+                "restoredFromArtifact", true,
+                "artifactPath", entry.artifactRef().relativePath(),
+                "artifactId", entry.artifactRef().artifactId()
+        ));
+        return new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), fullContent, metadata);
+    }
+
+    private int fullTokenEstimate(AgentContextEntry entry) {
+        if (entry == null) {
+            return 0;
+        }
+        if (entry.item() != null && entry.item().metadata() != null) {
+            Object fullTokens = entry.item().metadata().get("fullTokens");
+            if (fullTokens instanceof Number number) {
+                return number.intValue();
+            }
+        }
+        return entry.tokenEstimate();
+    }
+
     private AgentContextSession touch(AgentContextSession session, List<AgentContextEntry> projectedEntries) {
         Set<String> ids = projectedEntries.stream().map(AgentContextEntry::id).collect(Collectors.toSet());
+        Set<String> logicalResourceIds = collectLogicalResourceIds(projectedEntries);
         long now = System.currentTimeMillis();
-        List<AgentContextEntry> next = session.entries().stream()
+        List<AgentContextEntry> nextEntries = session.entries().stream()
                 .map(entry -> ids.contains(entry.id()) ? entry.touch(now) : entry)
                 .toList();
-        return session.withEntries(next);
+        List<AgentContextHotCacheEntry> nextCache = (session.hotCacheEntries() == null ? List.<AgentContextHotCacheEntry>of() : session.hotCacheEntries()).stream()
+                .map(entry -> ids.contains(entry.sourceEntryId()) || logicalResourceIds.contains(entry.logicalResourceId()) ? entry.touch(now) : entry)
+                .toList();
+        return session.withEntries(nextEntries).withHotCacheEntries(nextCache);
     }
 
     private AgentContextEntryKind inferKind(AgentContextItem item) {
         if (item == null) {
             return AgentContextEntryKind.SYSTEM;
         }
-        if ("todo_reminder".equals(item.sourceType())) {
+        if ("todo_reminder".equals(item.sourceType()) || "todo_write".equals(item.sourceType())) {
             return AgentContextEntryKind.TODO;
         }
         if ("verifier".equals(item.sourceType())) {
@@ -605,7 +996,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (item == null) {
             return false;
         }
-        if ("tool_error".equals(item.sourceType()) || "todo_reminder".equals(item.sourceType()) || "verifier".equals(item.sourceType())) {
+        if ("tool_error".equals(item.sourceType()) || "todo_reminder".equals(item.sourceType()) || "verifier".equals(item.sourceType()) || "todo_write".equals(item.sourceType())) {
             return false;
         }
         Object toolName = item.metadata() == null ? null : item.metadata().get("toolName");
@@ -628,7 +1019,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (item == null) {
             return 50;
         }
-        if ("todo_reminder".equals(item.sourceType())) {
+        if ("todo_reminder".equals(item.sourceType()) || "todo_write".equals(item.sourceType())) {
             return 90;
         }
         if ("verifier".equals(item.sourceType())) {
@@ -639,6 +1030,9 @@ public class DefaultAgentContextManager implements AgentContextManager {
         }
         if ("tool_error".equals(item.sourceType())) {
             return 88;
+        }
+        if ("summary".equals(item.sourceType())) {
+            return 95;
         }
         return toolPriority(item);
     }
@@ -653,11 +1047,104 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if ("build".equals(item.sourceType()) || "lsp_java".equals(item.sourceType())) {
             return 80;
         }
+        if ("todo_write".equals(item.sourceType())) {
+            return 90;
+        }
         return 72;
     }
 
     private boolean isCompactableTool(String toolName) {
         return StringUtils.hasText(toolName) && COMPACTABLE_TOOLS.contains(toolName);
+    }
+
+    private boolean shouldCache(AgentContextEntry entry) {
+        if (entry == null || entry.item() == null) {
+            return false;
+        }
+        if ("tool_error".equals(entry.item().sourceType()) || "verifier".equals(entry.item().sourceType())) {
+            return false;
+        }
+        return entry.kind() == AgentContextEntryKind.TOOL_RESULT || "todo_write".equals(entry.item().sourceType());
+    }
+
+    private boolean isRestorableToolResult(String toolName, AgentContextItem item) {
+        if ("todo_write".equals(toolName) || "todo_write".equals(item.sourceType())) {
+            return true;
+        }
+        if (!StringUtils.hasText(toolName)) {
+            return false;
+        }
+        return isCompactableTool(toolName) || StringUtils.hasText(logicalResourceId(toolName, item));
+    }
+
+    private boolean isAlwaysProjected(AgentContextEntry entry) {
+        return switch (entry.kind()) {
+            case TODO, VERIFIER, SUMMARY, SYSTEM, ARTIFACT_MARKER -> true;
+            case CONVERSATION -> "tool_error".equals(entry.item().sourceType()) || "todo_write".equals(entry.item().sourceType());
+            default -> false;
+        };
+    }
+
+    private boolean isPlanOrTodoEntry(AgentContextEntry entry) {
+        return entry != null && entry.item() != null
+                && ("todo_write".equals(entry.item().sourceType()) || entry.kind() == AgentContextEntryKind.TODO);
+    }
+
+    private int compareProjectionPriority(AgentContextEntry left, AgentContextEntry right) {
+        int priorityCompare = Integer.compare(right.priority(), left.priority());
+        if (priorityCompare != 0) {
+            return priorityCompare;
+        }
+        int accessCompare = Long.compare(right.lastAccessedAt(), left.lastAccessedAt());
+        if (accessCompare != 0) {
+            return accessCompare;
+        }
+        if (left.retriable() != right.retriable()) {
+            return Boolean.compare(left.retriable(), right.retriable());
+        }
+        return Long.compare(right.createdAt(), left.createdAt());
+    }
+
+    private Set<String> recentConversationIds(List<AgentContextEntry> entries, int budget) {
+        List<AgentContextEntry> conversationEntries = entries.stream()
+                .filter(entry -> entry.kind() == AgentContextEntryKind.CONVERSATION)
+                .toList();
+        return conversationEntries.stream()
+                .skip(Math.max(0, conversationEntries.size() - budget))
+                .map(AgentContextEntry::id)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<String> collectLogicalResourceIds(Collection<AgentContextEntry> entries) {
+        Set<String> ids = new LinkedHashSet<>();
+        if (entries == null) {
+            return ids;
+        }
+        for (AgentContextEntry entry : entries) {
+            if (entry == null || entry.item() == null || entry.item().metadata() == null) {
+                continue;
+            }
+            Object logicalResourceId = entry.item().metadata().get("logicalResourceId");
+            if (logicalResourceId instanceof String text && !text.isBlank()) {
+                ids.add(text);
+            }
+        }
+        return ids;
+    }
+
+    private String logicalResourceId(String toolName, AgentContextItem item) {
+        if (item != null && item.metadata() != null) {
+            for (String key : List.of("logicalResourceId", "sourceFile", "path", "kgNodeId", "capability")) {
+                Object value = item.metadata().get(key);
+                if (value instanceof String text && !text.isBlank()) {
+                    return toolName == null ? text.trim() : toolName + ":" + text.trim();
+                }
+            }
+        }
+        if (item != null && StringUtils.hasText(item.sourceId())) {
+            return (toolName == null ? "context" : toolName) + ":" + item.sourceId().trim();
+        }
+        return (toolName == null ? "context" : toolName) + ":" + (item == null ? "unknown" : item.sourceType());
     }
 
     private int estimateTokens(List<AgentContextEntry> entries) {
@@ -696,6 +1183,18 @@ public class DefaultAgentContextManager implements AgentContextManager {
         return content.trim();
     }
 
+    private String trimToTokenBudget(String raw, int tokenBudget) {
+        if (!StringUtils.hasText(raw) || tokenBudget <= 0) {
+            return "";
+        }
+        int charBudget = Math.max(0, tokenBudget * 4);
+        String normalized = raw.trim();
+        if (normalized.length() <= charBudget) {
+            return normalized;
+        }
+        return normalized.substring(0, charBudget) + "\n...(技能内容已按恢复预算截断)";
+    }
+
     private String renderToolResultContext(
             String toolName,
             String status,
@@ -723,7 +1222,34 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private String newEntryId(String sourceId) {
-        return (StringUtils.hasText(sourceId) ? sourceId.replaceAll("[^A-Za-z0-9_.-]", "_") : "context") + "_" + UUID.randomUUID();
+        return safeId(sourceId) + "_" + UUID.randomUUID();
+    }
+
+    private String safeId(String value) {
+        return StringUtils.hasText(value) ? value.replaceAll("[^A-Za-z0-9_.-]", "_") : "context";
+    }
+
+    private Map<String, Object> mergeMetadata(Map<String, Object> base, Map<String, Object> extra) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (base != null) {
+            merged.putAll(base);
+        }
+        if (extra != null) {
+            merged.putAll(extra);
+        }
+        return merged;
+    }
+
+    private void appendStage(List<AgentContextCompressionStage> stages, Map<String, Object> metrics, CompactionStepResult result) {
+        if (result == null || !result.applied()) {
+            return;
+        }
+        stages.addAll(result.stages());
+        metrics.putAll(result.metrics());
+    }
+
+    private String cacheKey(AgentContextHotCacheEntry entry) {
+        return entry.toolName() + "|" + entry.logicalResourceId();
     }
 
     private enum ProjectionPurpose {
@@ -732,6 +1258,33 @@ public class DefaultAgentContextManager implements AgentContextManager {
         VERIFY
     }
 
-    private record ProjectionResult(List<AgentContextEntry> projectedEntries, int estimatedTokens, boolean collapsed) {
+    private record WriteTimeCompactionResult(
+            AgentContextSession session,
+            List<AgentContextCompressionStage> stages,
+            Map<String, Object> metrics
+    ) {
+    }
+
+    private record CompactionStepResult(
+            AgentContextSession session,
+            boolean applied,
+            List<AgentContextCompressionStage> stages,
+            Map<String, Object> metrics
+    ) {
+        static CompactionStepResult noop(AgentContextSession session) {
+            return new CompactionStepResult(session, false, List.of(), Map.of());
+        }
+    }
+
+    private record RestoreBundle(List<AgentContextEntry> entries, int remainingTokenBudget) {
+    }
+
+    private record ProjectionResult(
+            List<AgentContextEntry> projectedEntries,
+            int estimatedTokens,
+            boolean collapsed,
+            List<AgentContextCompressionStage> stages,
+            Map<String, Object> metrics
+    ) {
     }
 }

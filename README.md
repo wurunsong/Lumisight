@@ -154,9 +154,11 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 Lumisight 当前不是简单把历史消息堆成一个字符串列表，而是走结构化上下文账本：
 
 - 会话恢复时保留 `AgentContextSession`
-- 大结果可以落盘到 `.lumisight/context-artifacts`
+- 大结果可以落盘到 `.lumisight/context-artifacts`，账本里只保留 preview 与 artifact 引用
+- 会额外维护一层“最近访问热缓存”，用于 Auto-Compact 后优先恢复最近文件/工具证据
 - 调模型前先做读时投影，而不是每轮都塞入全量历史
-- 必要时会触发 Snip、Micro-Compact 和 Auto-Compact
+- 必要时会按顺序触发大结果落盘、Snip、Micro-Compact、读时投影和 Auto-Compact
+- Auto-Compact 后会按预算恢复热文件/热结果、活跃 skill，以及必要的 todo/plan 视图
 
 这套机制的目的，是让 Agent 在保留执行证据的同时，尽量适配不同模型的上下文窗口。
 

@@ -32,6 +32,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -116,6 +117,7 @@ class AgentLoopOrchestrator {
                     skillPlan
             );
             contextSession = decisionProjection.session();
+            emitContextProjection(traceId, sessionId, round, "DECISION", decisionProjection, publisher);
             List<AgentContextItem> decisionContexts = new ArrayList<>(decisionProjection.contexts());
             int currentRound = round;
             conversationManager.todoReminderContext(sessionId, currentRound).ifPresent(reminder -> {
@@ -323,11 +325,13 @@ class AgentLoopOrchestrator {
         if (!"final".equalsIgnoreCase(decision.action()) || !StringUtils.hasText(decision.finalAnswer())) {
             return new FinalDecisionOutcome(null, null);
         }
-        List<AgentContextItem> verifyContexts = agentContextManager.projectForVerification(
+        AgentContextProjection verifyProjection = agentContextManager.projectForVerification(
                 sessionId,
                 contextSession,
                 agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId)
-        ).contexts();
+        );
+        emitContextProjection(traceId, sessionId, round, "VERIFY", verifyProjection, publisher);
+        List<AgentContextItem> verifyContexts = verifyProjection.contexts();
         boolean shouldVerify = agentFlowSupport.shouldVerifyFinalAnswer(request, effectiveQuestion, decision.finalAnswer(), verifyContexts);
         AgentFinalAnswerVerifier.VerifyResult verifyResult = shouldVerify
                 ? finalAnswerVerifier.verifyFinalAnswer(agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId), decision.finalAnswer(), verifyContexts)
@@ -406,6 +410,28 @@ class AgentLoopOrchestrator {
             fireHook(AgentHookPoint.ON_ERROR, "", 0, "", null, Map.of("stage", "parseDecision", "error", e.getMessage()));
             return decisionParser.fallbackDecision(e.getMessage());
         }
+    }
+
+    private void emitContextProjection(
+            String traceId,
+            String sessionId,
+            int round,
+            String purpose,
+            AgentContextProjection projection,
+            AgentEventPublisher publisher
+    ) {
+        if (projection == null || projection.stages() == null || projection.stages().isEmpty()) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("stages", projection.stages().stream().map(Enum::name).toList());
+        payload.put("estimatedTokens", projection.estimatedTokens());
+        payload.put("collapsed", projection.collapsed());
+        payload.put("autoCompacted", projection.autoCompacted());
+        if (projection.metrics() != null && !projection.metrics().isEmpty()) {
+            payload.put("metrics", projection.metrics());
+        }
+        publisher.emit(AgentEvent.contextCompression(traceId, sessionId, round, purpose, payload));
     }
 
     private List<ToolDecision> expandToolCalls(ToolDecision decision) {

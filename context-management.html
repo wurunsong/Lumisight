@@ -142,16 +142,17 @@
         <h3>2.2 上下文账本层</h3>
         <ul>
           <li><code>AgentContextSession</code> 是会话级账本，内部持有多条 <code>AgentContextEntry</code>。</li>
-          <li>每条 entry 会标记 kind、priority、tokenEstimate、artifactRef、compactable、retriable。</li>
-          <li>作用：后续 Snip、Micro-Compact、Projection 都有统一抓手。</li>
+          <li>每条 entry 会标记 kind、priority、tokenEstimate、artifactRef、compactable、retriable，以及逻辑资源标识。</li>
+          <li>会话旁边还维护一层轻量热缓存，单独保存最近访问、可恢复的文件/工具结果。</li>
+          <li>作用：后续 Snip、Micro-Compact、Projection 与 Auto-Compact 恢复都有统一抓手。</li>
         </ul>
       </article>
       <article class="card">
         <h3>2.3 Artifact 层</h3>
         <ul>
           <li>大结果通过 <code>FileAgentContextArtifactStore</code> 写入 <code>.lumisight/context-artifacts</code>。</li>
-          <li>prompt 中只保留 preview、artifact path、artifact id 和元数据。</li>
-          <li>作用：完整正文不丢，但不再直接撑满模型上下文。</li>
+          <li>prompt 中只保留 preview、artifact path、artifact id，以及 <code>logicalResourceId / restorable / retriable / fullTokens</code> 等恢复元数据。</li>
+          <li>作用：完整正文不丢，但不再直接撑满模型上下文；后续恢复也不用再靠弱字符串猜测资源身份。</li>
         </ul>
       </article>
       <article class="card">
@@ -159,7 +160,7 @@
         <ul>
           <li>模型调用前不直接拿完整账本，而是由 <code>DefaultAgentContextManager</code> 动态生成“本轮视图”。</li>
           <li>决策、复核、最终回答三种 prompt 都各自走投影。</li>
-          <li>作用：保留真实历史，同时避免每轮都把所有旧上下文原样塞进去。</li>
+          <li>作用：保留真实历史，同时按优先级、最近访问度和可重取性挑选“当前最值钱的一份上下文视图”。</li>
         </ul>
       </article>
     </section>
@@ -235,14 +236,14 @@
         <ul>
           <li>触发：历史对话累计 token 达到 <code>snip-trigger-tokens</code>。</li>
           <li>处理：较早、低优先级 conversation entry 被直接移除，并写入 boundary marker。</li>
-          <li>输出：释放空间，且记录本轮释放了多少 token。</li>
+          <li>输出：释放空间，同时记录本轮释放 token、切断前 token 和移除消息数，供后续压缩决策参考。</li>
         </ul>
       </article>
       <article class="card">
         <h3>5.3 Micro-Compact 工具结果</h3>
         <ul>
           <li>触发：账本过大，或距离上次有效投影已过 <code>micro-compact-stale-minutes</code>。</li>
-          <li>处理：只裁剪可重取工具结果，保留最近 N 条原文和更老条目的 compact marker。</li>
+          <li>处理：只裁剪可重取工具结果，当前覆盖 <code>searchHybridVector</code>、<code>fetchOneHopByKgNodeId</code>、<code>fetchMethodSourceByLocation</code> 等真实工具名；保留最近 N 条原文和更老条目的 compact marker。</li>
           <li>输出：模型知道“这里有内容被裁掉了”，需要时可重跑工具。</li>
         </ul>
       </article>
@@ -258,7 +259,8 @@
         <h3>5.5 Auto-Compact 全量摘要</h3>
         <ul>
           <li>触发：读时投影后仍然超过 <code>effective-context-window - response-reserve-tokens - auto-compact-buffer-tokens</code>。</li>
-          <li>处理：把更早历史压成结构化摘要，再恢复最近访问的热文件/热证据；连续失败次数超过上限后不再无限重试。</li>
+          <li>处理：把更早历史压成强结构化摘要，显式覆盖用户请求、关键文件、关键工具、错误与修复、当前状态、未完成事项和下一步。</li>
+          <li>恢复：先按预算恢复热文件/热结果，再恢复活跃 skill，最后补最小必要的 todo/plan 视图；连续失败次数超过上限后不再无限重试。</li>
           <li>输出：在上下文已经明显超限时，用一次更重的压缩换回可继续工作的 prompt 空间。</li>
         </ul>
       </article>

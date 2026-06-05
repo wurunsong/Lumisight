@@ -79,6 +79,7 @@ class AgentFinalResponseEmitter {
         );
         AgentContextProjection finalProjection = agentContextManager.projectForFinal(sessionId, nextSession, finalRequest, skillPlan);
         nextSession = finalProjection.session();
+        emitContextProjection(traceId, sessionId, orchestrationResult.finalRound(), "FINAL", finalProjection, publisher);
         String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, finalProjection.contexts(), limit, skillPlan, memoryContext);
         beforeFinalHook.run();
         if (shouldInterruptExecution.getAsBoolean()) {
@@ -130,5 +131,27 @@ class AgentFinalResponseEmitter {
                 publisher.emit(AgentEvent.finalText(traceId, sessionId, finalRound, finalAnswer));
             }
         }
+    }
+
+    private void emitContextProjection(
+            String traceId,
+            String sessionId,
+            int round,
+            String purpose,
+            AgentContextProjection projection,
+            AgentEventPublisher publisher
+    ) {
+        if (projection == null || projection.stages() == null || projection.stages().isEmpty()) {
+            return;
+        }
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("stages", projection.stages().stream().map(Enum::name).toList());
+        payload.put("estimatedTokens", projection.estimatedTokens());
+        payload.put("collapsed", projection.collapsed());
+        payload.put("autoCompacted", projection.autoCompacted());
+        if (projection.metrics() != null && !projection.metrics().isEmpty()) {
+            payload.put("metrics", projection.metrics());
+        }
+        publisher.emit(AgentEvent.contextCompression(traceId, sessionId, round, purpose, payload));
     }
 }

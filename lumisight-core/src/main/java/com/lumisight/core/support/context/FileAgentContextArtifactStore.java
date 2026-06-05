@@ -58,6 +58,23 @@ public class FileAgentContextArtifactStore implements AgentContextArtifactStore 
         }
     }
 
+    @Override
+    public String load(AgentContextArtifactRef artifactRef) {
+        if (artifactRef == null || !StringUtils.hasText(artifactRef.relativePath())) {
+            return "";
+        }
+        try {
+            Path root = Path.of("").toAbsolutePath().normalize();
+            Path artifactPath = root.resolve(artifactRef.relativePath()).normalize();
+            if (!Files.exists(artifactPath)) {
+                return "";
+            }
+            return Files.readString(artifactPath, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("读取上下文 artifact 失败: " + e.getMessage(), e);
+        }
+    }
+
     private String preview(String content, int maxBytes) {
         if (content == null || content.isEmpty()) {
             return "";

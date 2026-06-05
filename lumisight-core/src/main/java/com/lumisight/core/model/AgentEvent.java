@@ -128,6 +128,26 @@ public record AgentEvent(
         return base("VERIFY_RESULT", pass ? "复核通过" : "复核未通过", null, Map.of("pass", pass, "reason", reason), traceId, sessionId, round, "VERIFY", pass ? "ok" : "retry");
     }
 
+    public static AgentEvent contextCompression(
+            String traceId,
+            String sessionId,
+            Integer round,
+            String purpose,
+            Map<String, Object> payload
+    ) {
+        return base(
+                "CONTEXT_COMPRESSION",
+                "上下文已执行压缩/投影",
+                null,
+                payload == null ? Map.of("purpose", purpose) : mergePayload(payload, purpose),
+                traceId,
+                sessionId,
+                round,
+                "CONTEXT_COMPRESSION",
+                "ok"
+        );
+    }
+
     public static AgentEvent token(String content) {
         return base("TOKEN", content, null, Map.of(), "", "", 0, "FINAL_STREAM", "streaming");
     }
@@ -184,5 +204,12 @@ public record AgentEvent(
             String status
     ) {
         return new AgentEvent(type, message, toolName, payload, traceId, sessionId, round, step, status, Instant.now().toEpochMilli());
+    }
+
+    private static Map<String, Object> mergePayload(Map<String, Object> payload, String purpose) {
+        Map<String, Object> merged = new java.util.LinkedHashMap<>();
+        merged.put("purpose", purpose);
+        merged.putAll(payload);
+        return merged;
     }
 }
