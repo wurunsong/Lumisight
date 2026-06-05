@@ -52,6 +52,9 @@
 | 前端产品体验 | 有调试页、SSE/WS 基础 | 缺 job/session/history/cron/tool trace/context 可视化产品界面 | P2 | L |
 | 模型适配层 | 已有上下文阈值可配置 | 缺按不同模型自动适配窗口、压缩策略、输出预算的策略模板 | P2 | S |
 | Prompt/策略治理 | 有 Skill、Verifier、决策主链 | 缺更系统的 prompt versioning、A/B 验证、回归基线 | P2 | M |
+| 梦境 / 离线反思 | 目前只有在线执行链路 | 缺低峰期自动复盘、失败归因、经验蒸馏、候选任务回灌等离线“梦境”能力 | P2 | M |
+| 自进化 | 当前主要靠人工调 prompt / tool / workflow | 缺基于观测、评测和历史结果的自适应策略优化、技能提案与执行方式迭代 | P2 | L |
+| 提示词缓存 | 已有上下文压缩、技能按需注入基础 | 缺系统 prompt / 子任务 prompt / fan-in 模板的缓存复用与命中策略 | P2 | S |
 
 ## Deferred But Important
 
@@ -92,6 +95,9 @@
 - 前端产品体验
 - 模型适配层
 - Prompt/策略治理
+- 梦境 / 离线反思
+- 自进化
+- 提示词缓存
 
 ## Recommended Build Order
 
@@ -107,6 +113,9 @@
 8. 多 Agent 真正落地
 9. 前端产品化体验
 10. 长期记忆系统
+11. 提示词缓存
+12. 梦境 / 离线反思
+13. 自进化
 
 ## Why This Order
 
