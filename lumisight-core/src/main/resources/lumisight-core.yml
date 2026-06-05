@@ -64,6 +64,9 @@ lumisight:
     max-scanned-files: ${LUMISIGHT_MEMORY_MAX_SCANNED_FILES:200}
     max-relevant-entries: ${LUMISIGHT_MEMORY_MAX_RELEVANT_ENTRIES:5}
     stale-after-days: ${LUMISIGHT_MEMORY_STALE_AFTER_DAYS:1}
+  task:
+    root-dir: ${LUMISIGHT_TASK_ROOT_DIR:.tasks}
+    max-list-limit: ${LUMISIGHT_TASK_MAX_LIST_LIMIT:200}
   agent:
     context:
       artifact-dir: ${LUMISIGHT_AGENT_CONTEXT_ARTIFACT_DIR:.lumisight/context-artifacts}

@@ -11,6 +11,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 安全执行：sandbox、快照、回滚、人工门控
 - 上下文管理：结构化账本、artifact 落盘、投影与压缩
 - 定时触发：cron job 调用 Agent 执行固定任务
+- 持久化任务系统：`.tasks/` 下的跨会话任务图、依赖与认领状态
 
 ## 环境要求
 
@@ -139,6 +140,33 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 - 每条记忆单独保存为 Markdown 文件，`MEMORY.md` 作为轻量索引
 - `GET /api/lumisight/memory/relevant` 会按当前问题挑选最相关的记忆，并附带陈旧度提醒
 
+## 任务系统
+
+Lumisight 现在同时有两套“任务”能力：
+
+- `todo_write`：当前会话内的轻量 checklist，只负责本轮执行步骤
+- `task_*`：跨会话持久化任务系统，任务保存在 `repoRoot/.tasks/*.json`
+
+持久化任务系统当前支持：
+
+- `task_create`：创建任务
+- `task_list`：查看任务列表
+- `task_get`：查看单个任务完整 JSON
+- `task_claim`：认领已解锁任务
+- `task_complete`：完成任务并返回因此解锁的下游任务
+
+任务字段当前包括：
+
+- `id / subject / description / status / owner`
+- `blockedBy`：上游依赖
+- `blocks`：下游任务
+
+状态流转：
+
+- `pending -> in_progress -> completed`
+
+当前先实现了 `blockedBy` 依赖检查和跨会话持久化，还没有做环检测、release 回退和任务看板 UI。
+
 ### KG / Vector
 
 仅在开启对应开关后可用：
@@ -186,7 +214,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - SOURCE：`fetchMethodSourceByLocation`
 - MCP：`callMcpCapability`
 - MEMORY：`memory_list / memory_write`
-- PLANNING：`todo_write`
+- PLANNING：`todo_write / task_create / task_list / task_get / task_claim / task_complete`
 
 ## 线程与会话治理
 
@@ -209,6 +237,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - `lumisight.agent.context.*`
 - `lumisight.agent.conversation.*`
 - `lumisight.agent.cron.*`
+- `lumisight.task.*`
 
 ## 目录速览
 
