@@ -51,6 +51,13 @@
       gap: 8px;
       align-items: center;
     }
+    .lane-flow {
+      display: grid;
+      grid-template-columns: repeat(13, 1fr);
+      gap: 8px;
+      align-items: center;
+      margin-top: 14px;
+    }
     .node {
       border-radius: 999px;
       text-align: center;
@@ -59,6 +66,12 @@
       font-weight: 650;
       border: 1px solid;
       white-space: nowrap;
+    }
+    .node.block {
+      border-radius: 16px;
+      white-space: normal;
+      line-height: 1.35;
+      padding: 12px 10px;
     }
     .off { background: #edf3ff; border-color: #bad0fb; color: #1e4690; }
     .on { background: #e9fbf7; border-color: #9fe1d2; color: #0a6c64; }
@@ -98,7 +111,7 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight：Agent 主流程与技术亮点（详细链路版）</h1>
-      <p>统一展示“会话接入 -> 技能约束 -> 决策编排 -> 工具执行 -> 事件回传”的在线主链路；浏览器调试页与 macOS 客户端壳都消费同一套运行时能力，外挂知识库与安全执行能力作为可插拔增强层接入，不和核心编排耦死。</p>
+      <p>统一展示“会话接入 -> 技能约束 -> 决策编排 -> 工具执行 -> 事件回传”的在线主链路；当前主链已经吸收多 Agent 编排、team 协议、并发 wave、执行状态持久化与 resume 恢复，浏览器调试页与 macOS 客户端壳都消费同一套运行时能力。</p>
     </section>
 
     <h2 class="title">1. 端到端主流程（离线构建 + 在线执行）</h2>
@@ -114,6 +127,17 @@
     </section>
 
     <h2 class="title">2. Agent 详细执行链路（完整分段）</h2>
+    <section class="panel" style="margin-bottom: 14px;">
+      <div class="lane-flow">
+        <div class="node off block">ModeDecider<br />单 Agent / 自动升级 / 显式 MULTI_AGENT</div><div class="arrow">→</div>
+        <div class="node on block">Orchestrator<br />生成 plan 与 topology</div><div class="arrow">→</div>
+        <div class="node on block">Lead<br />按 wave 派发 task</div><div class="arrow">→</div>
+        <div class="node on block">Team Workers<br />并发执行或申请权限</div><div class="arrow">→</div>
+        <div class="node hi block">Lead 汇总<br />task state / lifecycle / subagent result</div><div class="arrow">→</div>
+        <div class="node off block">State Store<br />execution-state.json / resume</div><div class="arrow">→</div>
+        <div class="node hi block">主 Agent<br />继续最终回答或下一轮动作</div>
+      </div>
+    </section>
     <section class="grid4">
       <article class="card">
         <h3>2.1 入口归一化链路</h3>
@@ -190,10 +214,19 @@
       <article class="card">
         <h3>2.5d 多 Agent 子任务链路</h3>
         <ul>
-          <li>触发：主 Agent 判断某个局部分析会显著污染上下文，或显式进入 `MULTI_AGENT` 路径。</li>
-          <li>处理：Lead 先构造最小 `TaskContextEnvelope`，再通过 `task_subagent` 拉起一次性子 Agent；子 Agent 使用独立会话、独立上下文和最小只读权限完成分析，只回结构化结论与证据引用。</li>
-          <li>保护：子 Agent 不继承完整主会话历史，不共享主账本，默认禁止写仓库、写记忆、写 todo 和递归 spawn；最终写入、编译验证和最终回答仍由主 Agent 负责。</li>
-          <li>输出：系统先落“单 Agent 默认 + 干净子任务工具”的轻量模式，再为后续 team mailbox 长期协作保留演进接口。</li>
+          <li>触发：`MultiAgentModeDecider` 看到显式 `MULTI_AGENT`，或问题中出现“同时/分别/并行/多个模块/前后端/测试修复”等信号触发自动升级。</li>
+          <li>处理：Lead 先生成 `OrchestrationPlan`；若只有单任务则走 `task_subagent`，把最小 `TaskContextEnvelope` 交给一次性 child session，由 child 在独立上下文里完成局部分析并回结构化结果。</li>
+          <li>保护：child session 带最大深度、最大轮次和 deadline；默认禁止写仓库、写记忆、写 todo 和递归 spawn，最终写入、编译验证和最终回答仍由主 Agent 负责。</li>
+          <li>输出：得到“主 Agent 仍掌控收敛、child 只做局部分析”的轻量多 Agent 模式，并把 `SUBAGENT_RESULT` 回灌到主账本和事件流。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.5e Team 编排与恢复链路</h3>
+        <ul>
+          <li>触发：plan 中存在多 task，或拓扑为 `FAN_OUT_FAN_IN / HYBRID`，Lead 升级到 team execution。</li>
+          <li>处理：Lead 为同一 `sessionId` 生成稳定 `teamId`，把 task 写入 `.lumisight/teams/{teamId}/inboxes/`；worker 并发读取 assignment，必要时先发 `PERMISSION_REQUEST`，获批后执行子任务，再把 `RESULT / IDLE` 回送给 Lead。</li>
+          <li>保护：Lead 维护 `PENDING/RUNNING/SUCCEEDED/FAILED/BLOCKED/SKIPPED` 状态；依赖失败时非 `HYBRID` 任务会被阻断；每轮 wave 后把 `execution-state.json` 落盘，若收到 interrupt 则在 wave 边界暂停，后续 `resume` 只继续剩余 task。</li>
+          <li>输出：主链路获得 task state、lifecycle event、subagent result 和 resume 能力，形成“请求内 team 协议 + 并发 wave + 持久化恢复”的基础版多 Agent 闭环。</li>
         </ul>
       </article>
       <article class="card">
@@ -347,8 +380,9 @@
         <h3>亮点 I：多 Agent 默认保守升级</h3>
         <ul>
           <li>系统不会因为有 `task_subagent` 就默认多 Agent；大多数请求仍优先走单 Agent。</li>
-          <li>只有当 orchestrator 判断局部分析显著污染上下文或显式进入 `MULTI_AGENT`，才会拉起子 Agent；team agent 仍停留在 mailbox 骨架阶段。</li>
-          <li>这样先把父子上下文隔离、权限收紧和 fan-in 结果合同做稳，再逐步扩大协作拓扑。</li>
+          <li>只有当显式进入 `MULTI_AGENT`，或 auto-upgrade 信号足够强时，才会进入 orchestration；单任务走隔离 subagent，多任务再升级成 Lead + team protocol。</li>
+          <li>当前已经具备 topology 调度、permission 协议、并发 wave、状态持久化和 wave 级 resume，但 team 仍是“请求内编排系统”，不是长期自治后台团队。</li>
+          <li>这样先把父子上下文隔离、权限收紧、结果合同、恢复链路做稳，再逐步扩大角色长期化和异步协作能力。</li>
         </ul>
       </article>
     </section>
