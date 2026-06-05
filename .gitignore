@@ -22,3 +22,4 @@ target/
 # Local hook test outputs
 .lumisight/*.log
 
+lumisight-desktop-macos/.build/
