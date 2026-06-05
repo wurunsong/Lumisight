@@ -253,4 +253,4 @@
 - 验证：
   - `git log --since="2026-06-05 00:00:00" --until="2026-06-05 23:59:59"`：识别 10 条提交（`470bec9` 至 `bad2737`）。
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：今天针对长期记忆、上下文压缩、自修复、多 Agent、浏览器工具与任务系统多次跑通，结果均为 `BUILD SUCCESS`。
-  - 文档同步后复查：`README.md`、`agent-architecture.html`、`context-management.html` 与 `AGENT_CAPABILITY_GAP.md` 已统一到“长期记忆 + 持久化任务 + 浏览器工具 + BUG_FIX 自修复 + 多 Agent Phase 1”口径，不再沿用旧的缺失表述。
+  - 文档同步后复查：`README.md`、`agent-architecture.html`、`memory-context-management.html` 与 `AGENT_CAPABILITY_GAP.md` 已统一到“长期记忆 + 持久化任务 + 浏览器工具 + BUG_FIX 自修复 + 多 Agent Phase 1”口径，不再沿用旧的缺失表述。
