@@ -21,7 +21,12 @@ public class NoopSubAgent implements SubAgent {
 
     @Override
     public Set<SubAgentCapability> capabilities() {
-        return EnumSet.allOf(SubAgentCapability.class);
+        return EnumSet.noneOf(SubAgentCapability.class);
+    }
+
+    @Override
+    public boolean supports(SubAgentTask task) {
+        return false;
     }
 
     @Override

@@ -11,7 +11,7 @@ public class MultiAgentProperties {
     private boolean autoUpgradeEnabled = true;
     private double autoUpgradeThreshold = 0.9d;
     private boolean allowSubagent = true;
-    private boolean allowTeamAgent = false;
+    private boolean allowTeamAgent = true;
     private int maxSubagentDepth = 1;
     private int maxTasksPerPlan = 8;
     private int maxParallelAgents = 3;

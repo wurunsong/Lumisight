@@ -1,5 +1,6 @@
 package com.lumisight.core.agent;
 
+import com.lumisight.core.agent.multiagent.service.MultiAgentExecutionContext;
 import com.lumisight.core.hooks.runtime.HookedToolExecutor;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
@@ -102,8 +103,17 @@ class AgentLoopOrchestrator {
             RelevantMemoryContext memoryContext
     ) {
         int lastRound = Math.max(0, startRound - 1);
-        for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
+        MultiAgentExecutionContext.Context executionContext = MultiAgentExecutionContext.current();
+        int maxRounds = MAX_TOOL_ROUNDS;
+        if (executionContext != null && executionContext.maxRounds() > 0) {
+            maxRounds = Math.min(MAX_TOOL_ROUNDS, executionContext.maxRounds());
+        }
+        for (int round = startRound; round <= maxRounds; round++) {
             lastRound = round;
+            if (executionContext != null && executionContext.isDeadlineExceeded()) {
+                publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "timeout", "达到本次子任务的安全时间上限"));
+                return new OrchestrationResult("已达到当前子任务的安全时间上限，请基于已收集证据收敛结论。", false, false, Math.max(0, round - 1), contextSession);
+            }
             OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;
@@ -149,10 +159,11 @@ class AgentLoopOrchestrator {
                             decisionContexts,
                             limit,
                             round,
-                            MAX_TOOL_ROUNDS,
+                            maxRounds,
                             skillPlan
                     ),
-                    () -> !shouldInterruptExecution(sessionId, runEpoch),
+                    () -> !shouldInterruptExecution(sessionId, runEpoch)
+                            && (executionContext == null || !executionContext.isDeadlineExceeded()),
                     null
             );
             interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);

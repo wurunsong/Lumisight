@@ -13,6 +13,7 @@ import com.lumisight.core.support.AgentSessionContextStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +38,26 @@ public class SubAgentExecutionService {
     }
 
     public SubAgentResult execute(TaskContextEnvelope envelope, String parentSessionId) {
+        return execute(envelope, parentSessionId, MultiAgentExecutionContext.Role.SUB_AGENT, "subagent", null, null);
+    }
+
+    public SubAgentResult executeAsTeamAgent(
+            TaskContextEnvelope envelope,
+            String parentSessionId,
+            String teamId,
+            String agentId
+    ) {
+        return execute(envelope, parentSessionId, MultiAgentExecutionContext.Role.TEAM_AGENT, agentId, teamId, agentId);
+    }
+
+    private SubAgentResult execute(
+            TaskContextEnvelope envelope,
+            String parentSessionId,
+            MultiAgentExecutionContext.Role role,
+            String agentName,
+            String teamId,
+            String agentId
+    ) {
         String childSessionId = "subagent-" + envelope.taskId() + "-" + UUID.randomUUID().toString().substring(0, 8);
         String orchestrationId = "orch-" + UUID.randomUUID();
         MultiAgentExecutionContext.Context parent = MultiAgentExecutionContext.current();
@@ -72,27 +93,49 @@ public class SubAgentExecutionService {
                 AgentRunMode.NORMAL,
                 AgentDialogueMode.FOLLOW
         );
+        long deadlineEpochMs = System.currentTimeMillis() + Math.max(1, properties.getChildTimeoutMs());
         try (MultiAgentExecutionContext.Scope ignored = MultiAgentExecutionContext.open(
                 new MultiAgentExecutionContext.Context(
-                        MultiAgentExecutionContext.Role.SUB_AGENT,
+                        role,
                         orchestrationId,
                         parentSessionId,
                         envelope.taskId(),
                         depth,
-                        false
+                        false,
+                        properties.getSubagentMaxRounds(),
+                        deadlineEpochMs,
+                        teamId,
+                        agentId
                 )
         )) {
             List<AgentEvent> events = codeAssistantAgentServiceProvider.getObject()
                     .run(childRequest)
                     .collectList()
+                    .timeout(Duration.ofMillis(Math.max(1, properties.getChildTimeoutMs())))
                     .block();
-            return summarize(envelope, events == null ? List.of() : events);
+            return summarize(envelope, agentName, events == null ? List.of() : events);
+        } catch (Exception e) {
+            return new SubAgentResult(
+                    envelope.taskId(),
+                    agentName,
+                    false,
+                    "子 Agent 执行失败或超时: " + e.getMessage(),
+                    List.of("subagent execution failed"),
+                    List.of(),
+                    List.of("Lead 继续接管，或缩小子任务范围后重试"),
+                    0.15d,
+                    Map.of(
+                            "taskId", envelope.taskId(),
+                            "capability", envelope.capability().name(),
+                            "error", e.getClass().getSimpleName()
+                    )
+            );
         } finally {
             sessionContextStore.clear(childSessionId);
         }
     }
 
-    private SubAgentResult summarize(TaskContextEnvelope envelope, List<AgentEvent> events) {
+    private SubAgentResult summarize(TaskContextEnvelope envelope, String agentName, List<AgentEvent> events) {
         String finalAnswer = events.stream()
                 .filter(event -> "FINAL".equals(event.type()))
                 .map(AgentEvent::message)
@@ -126,7 +169,7 @@ public class SubAgentExecutionService {
         double confidence = success ? 0.72d : 0.25d;
         return new SubAgentResult(
                 envelope.taskId(),
-                "subagent",
+                agentName,
                 success,
                 finalAnswer.isBlank() ? "子 Agent 未产出最终文本结论" : finalAnswer,
                 List.copyOf(findings),

@@ -1,7 +1,9 @@
 package com.lumisight.core.agent;
 
+import com.lumisight.core.agent.multiagent.service.MultiAgentCoordinator;
 import com.lumisight.core.agent.multiagent.service.MultiAgentModeDecider;
 import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
 import com.lumisight.core.model.AgentRequest;
@@ -55,6 +57,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     private final AgentFinalResponseEmitter agentFinalResponseEmitter;
     private final RelevantMemoryService relevantMemoryService;
     private final MultiAgentModeDecider multiAgentModeDecider;
+    private final MultiAgentCoordinator multiAgentCoordinator;
 
     @Autowired
     public CodeAssistantAgentService(
@@ -70,7 +73,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             AgentLoopOrchestrator agentLoopOrchestrator,
             AgentFinalResponseEmitter agentFinalResponseEmitter,
             RelevantMemoryService relevantMemoryService,
-            MultiAgentModeDecider multiAgentModeDecider
+            MultiAgentModeDecider multiAgentModeDecider,
+            MultiAgentCoordinator multiAgentCoordinator
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.conversationManager = conversationManager;
@@ -85,6 +89,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         this.agentFinalResponseEmitter = agentFinalResponseEmitter;
         this.relevantMemoryService = relevantMemoryService;
         this.multiAgentModeDecider = multiAgentModeDecider;
+        this.multiAgentCoordinator = multiAgentCoordinator;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -134,6 +139,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest, skillPlan);
                 RelevantMemoryContext relevantMemoryContext = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
+                context = orchestrateMultiAgentIfNeeded(effectiveRequest, context, traceId, publisher);
 
                 ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
                         effectiveRequest,
@@ -305,6 +311,124 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         if (!skillPlan.executionSteps().isEmpty()) {
             publisher.emit(AgentEvent.plan(traceId, sessionId, "Skill steps: " + String.join(" | ", skillPlan.executionSteps())));
         }
+    }
+
+    private ExecutionContext orchestrateMultiAgentIfNeeded(
+            AgentRequest request,
+            ExecutionContext context,
+            String traceId,
+            AgentEventPublisher publisher
+    ) {
+        if (request.runMode() != AgentRunMode.MULTI_AGENT || context.startRound() > 1) {
+            return context;
+        }
+        AgentRequest orchestrationRequest = new AgentRequest(
+                request.taskType(),
+                context.resolvedRepoRoot(),
+                context.effectiveQuestion(),
+                request.skillPath(),
+                request.userId(),
+                context.sessionId(),
+                request.approveRiskyToolCall(),
+                request.interrupt(),
+                request.resume(),
+                request.includeRagContext(),
+                request.includeKnowledgeGraphContext(),
+                request.contextLimit(),
+                request.runMode(),
+                request.dialogueMode()
+        );
+        MultiAgentCoordinator.CoordinationResult coordinationResult = multiAgentCoordinator.coordinate(orchestrationRequest);
+        publisher.emit(AgentEvent.orchestrationPlan(
+                traceId,
+                context.sessionId(),
+                0,
+                Map.of(
+                        "planId", coordinationResult.plan().planId(),
+                        "topology", coordinationResult.plan().topology().name(),
+                        "taskCount", coordinationResult.plan().tasks() == null ? 0 : coordinationResult.plan().tasks().size(),
+                        "executionMode", coordinationResult.executionMode(),
+                        "lifecycleEvents", coordinationResult.lifecycleEvents(),
+                        "taskStates", coordinationResult.executionState().taskStates(),
+                        "inboxOffsets", coordinationResult.executionState().inboxOffsets(),
+                        "currentRound", coordinationResult.executionState().currentRound()
+                )
+        ));
+        AgentContextSession nextSession = agentContextManager.append(
+                context.sessionId(),
+                context.contextSession(),
+                new AgentContextItem(
+                        "multi_agent",
+                        "orchestration_plan_" + coordinationResult.plan().planId(),
+                        coordinationResult.summary(),
+                        Map.of(
+                                "planId", coordinationResult.plan().planId(),
+                                "topology", coordinationResult.plan().topology().name(),
+                                "executionMode", coordinationResult.executionMode(),
+                                "taskStates", coordinationResult.executionState().taskStates(),
+                                "inboxOffsets", coordinationResult.executionState().inboxOffsets(),
+                                "fallbackState", coordinationResult.executionState().fallbackState()
+                        )
+                ),
+                com.lumisight.core.support.context.AgentContextAppendOptions.system()
+        );
+        coordinationResult.executionState().taskStates().forEach((taskId, status) -> publisher.emit(
+                AgentEvent.multiAgentTaskStatus(
+                        traceId,
+                        context.sessionId(),
+                        0,
+                        taskId,
+                        status.name(),
+                        Map.of("executionMode", coordinationResult.executionMode())
+                )
+        ));
+        coordinationResult.lifecycleEvents().forEach(event -> {
+            String[] parts = event.split(":", 3);
+            String agentId = parts.length > 0 ? parts[0] : "";
+            String action = parts.length > 1 ? parts[1] : event;
+            String taskId = parts.length > 2 ? parts[2] : "";
+            publisher.emit(AgentEvent.teamAgentLifecycle(
+                    traceId,
+                    context.sessionId(),
+                    0,
+                    agentId,
+                    action,
+                    taskId.isBlank() ? Map.of("raw", event) : Map.of("raw", event, "taskId", taskId)
+            ));
+        });
+        for (var result : coordinationResult.results()) {
+            publisher.emit(AgentEvent.subagentResult(
+                    traceId,
+                    context.sessionId(),
+                    0,
+                    result.taskId(),
+                    result.success(),
+                    result.summary()
+            ));
+            nextSession = agentContextManager.append(
+                    context.sessionId(),
+                    nextSession,
+                    new AgentContextItem(
+                            "subagent",
+                            result.taskId(),
+                            result.summary(),
+                            Map.of(
+                                    "agentName", result.agentName(),
+                                    "success", result.success(),
+                                    "findings", result.findings(),
+                                    "evidenceRefs", result.evidenceRefs(),
+                                    "suggestedActions", result.suggestedActions(),
+                                    "confidence", result.confidence(),
+                                    "payload", result.payload()
+                            )
+                    ),
+                    com.lumisight.core.support.context.AgentContextAppendOptions.system()
+            );
+        }
+        if (coordinationResult.results().isEmpty()) {
+            publisher.emit(AgentEvent.multiAgentFallback(traceId, context.sessionId(), 0, "未获得可用的子任务结果，回退主 Agent 直跑"));
+        }
+        return context.withContextSession(nextSession);
     }
 
     private ResumeHandlingResult handlePendingResumeDecision(

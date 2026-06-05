@@ -204,6 +204,48 @@ public record AgentEvent(
         );
     }
 
+    public static AgentEvent multiAgentTaskStatus(
+            String traceId,
+            String sessionId,
+            Integer round,
+            String taskId,
+            String status,
+            Map<String, Object> payload
+    ) {
+        return base(
+                "MULTI_AGENT_TASK_STATUS",
+                "多 Agent 任务状态更新",
+                null,
+                payload == null ? mergeTaskPayload(Map.of(), taskId, status) : mergeTaskPayload(payload, taskId, status),
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                status == null ? "ok" : status.toLowerCase()
+        );
+    }
+
+    public static AgentEvent teamAgentLifecycle(
+            String traceId,
+            String sessionId,
+            Integer round,
+            String agentId,
+            String action,
+            Map<String, Object> payload
+    ) {
+        return base(
+                "TEAM_AGENT_LIFECYCLE",
+                "Team Agent 生命周期事件",
+                null,
+                payload == null ? mergeLifecyclePayload(Map.of(), agentId, action) : mergeLifecyclePayload(payload, agentId, action),
+                traceId,
+                sessionId,
+                round,
+                "MULTI_AGENT",
+                "ok"
+        );
+    }
+
     public static AgentEvent multiAgentFallback(String traceId, String sessionId, Integer round, String reason) {
         return base(
                 "MULTI_AGENT_FALLBACK",
@@ -279,6 +321,22 @@ public record AgentEvent(
     private static Map<String, Object> mergePayload(Map<String, Object> payload, String purpose) {
         Map<String, Object> merged = new java.util.LinkedHashMap<>();
         merged.put("purpose", purpose);
+        merged.putAll(payload);
+        return merged;
+    }
+
+    private static Map<String, Object> mergeTaskPayload(Map<String, Object> payload, String taskId, String status) {
+        Map<String, Object> merged = new java.util.LinkedHashMap<>();
+        merged.put("taskId", taskId == null ? "" : taskId);
+        merged.put("status", status == null ? "" : status);
+        merged.putAll(payload);
+        return merged;
+    }
+
+    private static Map<String, Object> mergeLifecyclePayload(Map<String, Object> payload, String agentId, String action) {
+        Map<String, Object> merged = new java.util.LinkedHashMap<>();
+        merged.put("agentId", agentId == null ? "" : agentId);
+        merged.put("action", action == null ? "" : action);
         merged.putAll(payload);
         return merged;
     }

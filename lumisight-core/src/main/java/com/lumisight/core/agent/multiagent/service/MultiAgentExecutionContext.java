@@ -35,7 +35,18 @@ public final class MultiAgentExecutionContext {
             String parentSessionId,
             String taskId,
             int depth,
-            boolean allowSpawn
+            boolean allowSpawn,
+            int maxRounds,
+            long deadlineEpochMs,
+            String teamId,
+            String agentId
     ) {
+        public boolean hasDeadline() {
+            return deadlineEpochMs > 0L;
+        }
+
+        public boolean isDeadlineExceeded() {
+            return hasDeadline() && System.currentTimeMillis() >= deadlineEpochMs;
+        }
     }
 }
