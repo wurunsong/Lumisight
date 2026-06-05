@@ -184,7 +184,7 @@ Lumisight 现在同时有两套“任务”能力：
 
 - 默认仍是单 Agent 路径
 - 当局部分析会显著污染上下文时，主 Agent 可调用 `task_subagent`
-- `.lumisight/teams/` 下已预留 team mailbox 骨架，用于后续长期协作 agent
+- 当请求天然需要拆分、依赖收敛或并发扫描时，可升级到 Lead + team workers 的请求内编排路径
 
 `task_subagent` 的当前约束：
 
@@ -192,6 +192,19 @@ Lumisight 现在同时有两套“任务”能力：
 - 子 Agent 默认最小只读权限
 - 子 Agent 不能递归创建新的 agent
 - 子 Agent 只返回结构化结论，最终写仓库和最终回答仍由主 Agent 负责
+
+Lead + team workers 的当前能力：
+
+- 支持 `SERIAL_DAG`、`FAN_OUT_FAN_IN`、`HYBRID` 三种任务拓扑
+- Lead 负责拆解 plan、管理依赖、派发 task、汇总结果与最终收口
+- worker 通过 `.lumisight/teams/{teamId}/inboxes/*.jsonl` 收发 assignment、result、idle、permission 等生命周期消息
+- 同一 wave 内多个 worker 可以并发执行，结果和 task state 会统一回流给 Lead
+- 执行状态会持续保存到 `.lumisight/teams/.../execution-state.json`，`resume` 会从已完成 wave 之后继续，而不是整轮重跑
+
+当前边界：
+
+- 这还是“请求内 Lead 编排系统”，不是长期自治的常驻多角色团队
+- planner 和任务拆解质量仍在继续增强，跨请求共享工作记忆也还没有完整成型
 
 ### KG / Vector
 

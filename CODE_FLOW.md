@@ -254,3 +254,23 @@
   - `git log --since="2026-06-05 00:00:00" --until="2026-06-05 23:59:59"`：识别 10 条提交（`470bec9` 至 `bad2737`）。
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：今天针对长期记忆、上下文压缩、自修复、多 Agent、浏览器工具与任务系统多次跑通，结果均为 `BUILD SUCCESS`。
   - 文档同步后复查：`README.md`、`agent-architecture.html`、`memory-context-management.html` 与 `AGENT_CAPABILITY_GAP.md` 已统一到“长期记忆 + 持久化任务 + 浏览器工具 + BUG_FIX 自修复 + 多 Agent Phase 1”口径，不再沿用旧的缺失表述。
+- 今日提交补记（新增 14 commits，总计 24 commits）：
+  - `d88c82f`：多 Agent 主链路第一次真正接入运行态：Lead/team 协议、拓扑编排、子任务调度和最终收口不再停留在计划文档里。
+  - `9c20cbe`：补上第一批多 Agent 聚焦测试，开始覆盖 team 协议、依赖、恢复和并发行为。
+  - `4b3afdf`：team 执行状态开始持久化到 `.lumisight/teams/.../execution-state.json`，`resume` 不再整轮重跑，而是复用已有 plan 继续剩余任务。
+  - `402be35`：中断感知和波次级恢复接入主链路，team execution 可以在 wave 边界安全暂停并在下一次恢复时延续 pending 任务。
+  - `e2db96b`：同一 wave 的 worker 改为真实并发执行，并为 mailbox 文件读写补了同步保护，避免并发 append / read 破坏状态文件。
+  - `cef1d1e`：`AGENT_CAPABILITY_GAP.md`、`MULTI_AGENT_PLAN.md` 与架构页同步到“多 Agent 基础版已实现”口径，不再把当前状态描述成纯骨架。
+  - `d1dc8a4`、`99be901`、`afe3773`：`agent-architecture.html` 重画为信息流主流程，保留技术亮点区，并把记忆系统、上下文管理和外挂 RAG / 图谱的存在性并回端到端主链路。
+  - `e9d5d7d`：上下文专项架构页按同样视觉语言重写成“记忆与上下文主流程”，把会话账本、长期记忆和外挂检索整理成双层信息流。
+  - `a7c62a2`：上下文专项架构页文件名统一改为 `memory-context-management.html`，仓库文档引用一并收口。
+  - `20479be`：把这套“信息流优先、技术亮点后置”的 HTML 绘制方法沉淀成 `.codex/skills/architecture-flow-html-designer/SKILL.md`，方便后续架构页持续复用。
+- 关键修复补记：
+  - “多 Agent 只有 Phase 1 能力，没有完整请求内 team 编排” -> 接入 Lead/team mailbox 协议、拓扑调度、并发 wave、任务状态事件和最终收口，让多 Agent 真正进入可执行主流程。
+  - “interrupt / resume 对多 Agent 只是概念，不是可恢复执行状态” -> 把 execution state、task status 和 wave 边界一起持久化，恢复时只继续未完成部分。
+  - “同一波 worker 虽然逻辑上分工，但仍接近串行执行” -> 改为真实并发 wave，并对 inbox / state 文件加锁，避免并发读写破坏 jsonl 和快照。
+  - “文档仍把多 Agent 写成骨架或把架构图画成细节堆叠” -> 统一改成信息流叙事：先讲请求、决策、拆分、回流、恢复，再把技术亮点下沉到补充层。
+- 验证补记：
+  - `git log --since="2026-06-05 00:00:00" --until="2026-06-05 23:59:59"`：复查识别 24 条提交（`470bec9` 至 `20479be`），当天功能提交与文档提交保持分离。
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-core -am -Dtest=TeamAgentExecutionServiceTest -Dsurefire.failIfNoSpecifiedTests=false test`：通过，覆盖 team lifecycle、权限流、依赖阻断、持久化恢复、波次暂停恢复和 fan-out 并发执行。
+  - 文档同步复查：`README.md`、`agent-architecture.html`、`memory-context-management.html`、`MULTI_AGENT_PLAN.md` 与 `AGENT_CAPABILITY_GAP.md` 已统一到“长期记忆 + 五层上下文管理 + 持久化任务 + 浏览器工具 + BUG_FIX + 多 Agent 基础版已实现”口径。

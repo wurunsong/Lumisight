@@ -579,6 +579,7 @@
           <ul>
             <li>模型看到的是读时投影后的视图，而不是原样账本。</li>
             <li>不同阶段可以共享同一账本，但拿到不同视图。</li>
+            <li>Artifact、Snip、Micro-Compact 和 Auto-Compact 会在投影前后协同工作。</li>
             <li>这让预算管理发生在模型调用前，而不是调用失败后。</li>
           </ul>
         </article>
@@ -596,6 +597,14 @@
             <li>会话层追求完整可恢复，记忆层追求长期有效和克制写入。</li>
             <li>两层都服务当前请求，但保留粒度和生命周期不同。</li>
             <li>这避免了把短期噪音直接变成永久知识。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>Hot Cache 让恢复更像连续工作</h3>
+          <ul>
+            <li>Auto-Compact 后系统会优先记住最近访问的文件、工具证据和活跃工作面。</li>
+            <li>下一轮恢复时不必把所有老内容重新展开，而是先把最热的上下文片段捞回来。</li>
+            <li>这让压缩后的会话仍然保留“工作连续性”，而不是只剩一段冷摘要。</li>
           </ul>
         </article>
         <article class="highlight">
