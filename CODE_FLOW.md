@@ -230,3 +230,27 @@
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：通过，覆盖 SSE controller、session dispatcher、WebSocket handler 与调试页协议改造。
   - 文档同步：`README.md`、`AGENT_PROTOCOL.md`、`agent-architecture.html` 已同步改为“会话级单长连接 + 命令投递”口径。
   - 同一编译命令也覆盖了上下文账本、上下文投影/压缩、cron 调度接口和 `CodeAssistantAgentService` 拆分后的主链路，结果仍为 `BUILD SUCCESS`。
+
+## 2026-06-05
+- 今日提交摘要（10 commits）：
+  - `470bec9`：长期记忆系统正式落地，记忆类型固定为 `user / feedback / project / reference` 四类；新增 `lumisight-memory` 文件化存储、`MEMORY.md` 轻量索引、相关记忆挑选与陈旧度提醒，并接入 `memory_write / memory_list` 工具与 `/api/lumisight/memory/*` 接口。
+  - `1bf899e`：桌面端构建产物忽略规则收口到根 `.gitignore`，`lumisight-desktop-macos/.build/` 不再误入工作区。
+  - `7478a5a`：上下文管理补齐为完整五层压缩与恢复链路：新增独立 hot cache、artifact 读回、真实工具名驱动的 micro-compact、读时投影视图、强结构化 auto-compact 摘要，以及压缩阶段事件回传。
+  - `16b3702`：跨会话持久化任务系统落地，任务保存在 `repoRoot/.tasks/*.json`；新增 `task_create / task_list / task_get / task_claim / task_complete`，支持 `blockedBy / blocks`、认领与完成解锁后续任务。
+  - `de278c3`：`CODE_FLOW.md` 流水账结构整理，保留按日期追加的主线，删除了中段临时噪音记录。
+  - `93788cc`：浏览器 / DOM 能力接入，新增会话级 Playwright 服务与 `browser_open / browser_snapshot / browser_click / browser_type / browser_screenshot / browser_close` 工具，浏览器调试不再局限于代码和命令行。
+  - `9cf36e8`：BUG_FIX 模式补上最小自修复闭环；当 Agent 通过 `writeRepoFile` 修改 Java 文件后，会自动执行 `compileJava` 和 `lintJavaByJdtls`，失败结果回灌上下文继续修复，最近一次验证失败时不允许直接给最终答案。
+  - `dacd857`：macOS 原生客户端壳改为统一深色主题，SwiftUI 主界面与会话容器都切到深色外观，原生壳和浏览器调试页的视觉基线不再割裂。
+  - `411f81e`：多 Agent Phase 1 进入可用闭环：新增 `MULTI_AGENT` 运行模式、自动升级判定、`task_subagent` 工具、子 Agent 上下文隔离、最小只读权限、禁止递归 spawn，以及 `.lumisight/teams/` mailbox 骨架与 `MULTI_AGENT_PLAN.md`。
+  - `bad2737`：能力差距清单新增“梦境 / 离线反思”“自进化”“提示词缓存”三项后续目标，作为下一阶段产品化能力锚点。
+- 关键修复：
+  - “长期记忆只能停留在单 session 上下文账本” -> 改为独立文件化记忆层，显式区分用户画像、行为反馈、项目动态和外部指针，避免把可从代码推导的信息固化成过时权威。
+  - “上下文压缩虽然有五层框架，但恢复与裁剪仍不够像 Claude 风格” -> 补齐 hot cache、artifact 恢复元数据、真实工具名 micro-compact 和读时投影，压缩后可恢复性明显提升。
+  - “任务系统只有会话内 todo，没有跨会话依赖与认领” -> 新增 `.tasks/` 持久化任务图，让阻塞关系、认领和完成后的解锁链路真正可追踪。
+  - “Agent 只能看代码和跑命令，缺页面级闭环” -> 接入 Playwright 浏览器工具，让打开页面、识别 DOM、点击输入和截图验证进入同一执行内核。
+  - “BUG_FIX 改完代码后不会自己验证，容易把明显失败结果直接说成完成” -> 在写 Java 文件后强制进入编译/lint 自验证路径，失败继续修直到通过或达到上限。
+  - “多 Agent 只有骨架，没有真正可调用的干净子任务执行面” -> 先收敛成“单 Agent 默认 + 按需 `task_subagent`”模式，把父子上下文隔离和权限收紧做成硬约束，再为 team agent 留长期收件箱骨架。
+- 验证：
+  - `git log --since="2026-06-05 00:00:00" --until="2026-06-05 23:59:59"`：识别 10 条提交（`470bec9` 至 `bad2737`）。
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：今天针对长期记忆、上下文压缩、自修复、多 Agent、浏览器工具与任务系统多次跑通，结果均为 `BUILD SUCCESS`。
+  - 文档同步后复查：`README.md`、`agent-architecture.html`、`context-management.html` 与 `AGENT_CAPABILITY_GAP.md` 已统一到“长期记忆 + 持久化任务 + 浏览器工具 + BUG_FIX 自修复 + 多 Agent Phase 1”口径，不再沿用旧的缺失表述。

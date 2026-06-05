@@ -163,6 +163,14 @@
           <li>作用：保留真实历史，同时按优先级、最近访问度和可重取性挑选“当前最值钱的一份上下文视图”。</li>
         </ul>
       </article>
+      <article class="card">
+        <h3>2.5 Child 隔离层</h3>
+        <ul>
+          <li><code>task_subagent</code> 不会直接复用父会话账本，而是新建 child <code>AgentContextSession</code>。</li>
+          <li>父 Agent 只下发最小 <code>TaskContextEnvelope</code>：目标、指令、能力、预算与精选证据，不透传完整 messages 和 sibling 推理历史。</li>
+          <li>作用：把“干净子任务上下文”和“主会话上下文”真正隔离，避免多 Agent 试验先把主账本污染掉。</li>
+        </ul>
+      </article>
     </section>
 
     <h2 class="title">3. 怎么判断“上下文太多了”</h2>
@@ -266,7 +274,35 @@
       </article>
     </section>
 
-    <h2 class="title">6. 当前可调参数</h2>
+    <h2 class="title">6. 父子 Agent 上下文边界</h2>
+    <section class="grid3">
+      <article class="card">
+        <h3>6.1 为什么不能直接共享账本</h3>
+        <ul>
+          <li>如果 child 直接继承父会话完整历史，局部调查的噪音、重复工具结果和中间推理会立刻膨胀主上下文。</li>
+          <li>这会让多 Agent 不是在减压，而是在更快触发压缩和更早丢细节。</li>
+          <li>所以 child 默认只拿最小任务包，而不是整段主会话 transcript。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>6.2 Child 自己也走五层压缩</h3>
+        <ul>
+          <li>子 Agent 虽然上下文更短，但仍有自己的 artifact、hot cache、projection 和 auto-compact 边界。</li>
+          <li>也就是说，child 的压缩和恢复只影响 child 自己，不影响 parent。</li>
+          <li>这保证了多 Agent 试验不会破坏当前单 Agent 主链路的上下文稳定性。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>6.3 Fan-in 只回结构化结果</h3>
+        <ul>
+          <li>child 返回的是 <code>summary / findings / evidenceRefs / suggestedNextAction / confidence</code> 这类结构化结果。</li>
+          <li>parent 只把少量 orchestration result 写回主账本，不把 child 的完整中间 transcript 原样拼回。</li>
+          <li>这样主上下文看到的是“结论和证据”，不是“另一条完整对话历史”。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2 class="title">7. 当前可调参数</h2>
     <section class="panel">
       <div class="legend">
         推荐先调这几类：

@@ -170,6 +170,33 @@
         </ul>
       </article>
       <article class="card">
+        <h3>2.5b 长期记忆与任务链路</h3>
+        <ul>
+          <li>触发：问题涉及跨会话偏好、长期项目信息，或需要把一件事拆成可持续推进的任务。</li>
+          <li>处理：长期记忆通过 `memory_write / memory_list` 和 `/api/lumisight/memory/*` 进入四分类文件化存储；跨会话任务通过 `.tasks/*.json` 与 `task_*` 工具维护依赖、认领和完成状态。</li>
+          <li>保护：记忆类型被固定为 `user / feedback / project / reference`，反馈类强调 why/how to apply；任务系统只记录结构化状态，不把临时会话噪音误沉淀成长期事实。</li>
+          <li>输出：Agent 不仅记得“这轮聊了什么”，也开始具备“跨会话知道该记什么、该续什么”的独立层。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.5c 浏览器与页面验证链路</h3>
+        <ul>
+          <li>触发：问题需要页面打开、DOM 识别、表单操作、点击导航或截图取证。</li>
+          <li>处理：决策层调用会话级浏览器工具；`browser_open` 建立页面上下文，`browser_snapshot` 提取标题、URL、可见文本和可操作元素摘要，点击、输入和截图继续复用同一 `sessionId` 绑定的页面。</li>
+          <li>保护：浏览器态能力仍走统一权限与工具执行链路，不直接绕过 Hook、日志和上下文入账；截图落到 `.lumisight/browser-artifacts/` 便于后续审计。</li>
+          <li>输出：前端验证、后台操作和 DOM 级证据开始纳入同一 Agent 工作流，不再只能靠本地命令和静态文件判断页面行为。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2.5d 多 Agent 子任务链路</h3>
+        <ul>
+          <li>触发：主 Agent 判断某个局部分析会显著污染上下文，或显式进入 `MULTI_AGENT` 路径。</li>
+          <li>处理：Lead 先构造最小 `TaskContextEnvelope`，再通过 `task_subagent` 拉起一次性子 Agent；子 Agent 使用独立会话、独立上下文和最小只读权限完成分析，只回结构化结论与证据引用。</li>
+          <li>保护：子 Agent 不继承完整主会话历史，不共享主账本，默认禁止写仓库、写记忆、写 todo 和递归 spawn；最终写入、编译验证和最终回答仍由主 Agent 负责。</li>
+          <li>输出：系统先落“单 Agent 默认 + 干净子任务工具”的轻量模式，再为后续 team mailbox 长期协作保留演进接口。</li>
+        </ul>
+      </article>
+      <article class="card">
         <h3>2.6 人工门控链路</h3>
         <ul>
           <li>触发：检测到高风险写操作。</li>
@@ -298,6 +325,30 @@
           <li>大结果会先判断字节阈值再落盘，老对话和可重取工具结果按写时压缩策略收缩，真正调用模型前再做读时投影。</li>
           <li>会话状态层继续保存等待态、中断和 todo，账本层单独保存 entry、artifact 和压缩状态，两层通过 `AgentContextSession` 衔接。</li>
           <li>这样既能保留完整执行证据，又能按不同模型窗口动态收缩 prompt 视图。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>亮点 G：跨会话记忆与任务持久化</h3>
+        <ul>
+          <li>长期记忆和持久化任务都从主会话账本旁路出去，分别走独立文件层。</li>
+          <li>记忆层只允许四分类，任务层保存依赖、认领与完成状态，二者都能按需再回灌主编排。</li>
+          <li>这样可以把“长期事实”和“当前对话历史”分层，减少把会话噪音错误固化成长期状态的风险。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>亮点 H：页面级验证与最小自修复</h3>
+        <ul>
+          <li>浏览器工具把 DOM、点击、输入、截图接回主工作流；BUG_FIX 自修复则在写 Java 后自动编译与 lint。</li>
+          <li>页面态证据和编译/lint 失败结果都会回填到上下文账本，供下一轮继续判断。</li>
+          <li>这让 Agent 从“能改代码”向“能自己做最小验证并继续修”迈出一层，但集成测试、服务启动和页面行为断言仍留作下一阶段。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>亮点 I：多 Agent 默认保守升级</h3>
+        <ul>
+          <li>系统不会因为有 `task_subagent` 就默认多 Agent；大多数请求仍优先走单 Agent。</li>
+          <li>只有当 orchestrator 判断局部分析显著污染上下文或显式进入 `MULTI_AGENT`，才会拉起子 Agent；team agent 仍停留在 mailbox 骨架阶段。</li>
+          <li>这样先把父子上下文隔离、权限收紧和 fan-in 结果合同做稳，再逐步扩大协作拓扑。</li>
         </ul>
       </article>
     </section>

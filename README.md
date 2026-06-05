@@ -114,12 +114,13 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 
 - `lumisight-desktop-macos`
 - 适合在 macOS 上以原生客户端方式连接同一套 Agent WebSocket
+- 当前界面已收敛为深色主题，作为原生壳默认视觉基线
 
 ## 主要接口
 
 ### Agent
 
-- `GET /api/lumisight/agent/stream`
+- `GET /api/lumisight/agent/stream?sessionId=...`
 - `POST /api/lumisight/agent/run`
 - `ws://<host>/ws/lumisight/agent`
 
