@@ -3,314 +3,609 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lumisight 上下文管理视图</title>
+  <title>Lumisight Memory And Context Flow</title>
   <style>
     :root {
-      --bg: #f4f8fb;
-      --surface: #ffffff;
-      --text: #13304b;
-      --muted: #5f748d;
-      --line: #d8e2ee;
-      --blue: #0d5dbc;
-      --green: #13806b;
-      --amber: #a56a11;
-      --rose: #a63b4a;
+      --bg: #edf2f7;
+      --ink: #14263c;
+      --muted: #607186;
+      --line: rgba(22, 48, 81, 0.12);
+      --paper: rgba(255, 255, 255, 0.84);
+      --navy: #0f2745;
+      --blue: #2d74ff;
+      --sky: #dbe9ff;
+      --mint: #ddf5ec;
+      --gold: #fff0d9;
+      --rose: #f4e9ff;
+      --slate: #eef3f9;
+      --teal: #0f8a74;
+      --shadow: 0 24px 60px rgba(18, 42, 72, 0.09);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      color: var(--text);
-      background:
-        radial-gradient(900px 500px at 100% 0, #e3efff 0, transparent 52%),
-        linear-gradient(180deg, #f8fbff 0, var(--bg) 100%);
+      color: var(--ink);
       font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 10% 12%, rgba(45, 116, 255, 0.15), transparent 22%),
+        radial-gradient(circle at 88% 10%, rgba(15, 138, 116, 0.12), transparent 18%),
+        linear-gradient(180deg, #f7faff 0%, #edf2f7 52%, #e8eef5 100%);
     }
-    .wrap { max-width: 1220px; margin: 0 auto; padding: 24px 20px 36px; }
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 20px 54px;
+    }
     .hero {
-      border-radius: 20px;
-      padding: 24px;
-      color: #edf6ff;
-      background: linear-gradient(140deg, #10325f, #137196);
-      box-shadow: 0 18px 36px rgba(16, 50, 95, 0.16);
+      position: relative;
+      overflow: hidden;
+      border-radius: 32px;
+      padding: 34px 36px 36px;
+      color: #f4f8ff;
+      background:
+        radial-gradient(circle at top right, rgba(135, 188, 255, 0.34), transparent 24%),
+        linear-gradient(135deg, #0b203a 0%, #17426c 54%, #2d74a6 100%);
+      box-shadow: var(--shadow);
     }
-    h1 { margin: 0 0 10px; font-size: 30px; }
-    .hero p { margin: 0; color: #d4e9ff; line-height: 1.65; }
-    .title {
-      margin: 24px 0 12px;
-      padding-left: 10px;
-      border-left: 4px solid var(--blue);
-      color: var(--blue);
-      font-size: 18px;
-      font-weight: 700;
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -70px;
+      bottom: -70px;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 68%);
+      pointer-events: none;
     }
-    .panel, .card {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      box-shadow: 0 10px 24px rgba(17, 51, 88, 0.05);
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
     }
-    .panel { padding: 16px; }
-    .flow {
-      display: grid;
-      grid-template-columns: repeat(13, 1fr);
-      gap: 8px;
-      align-items: center;
+    .hero p {
+      max-width: 860px;
+      margin: 0;
+      color: rgba(236, 244, 255, 0.9);
+      font-size: 15px;
+      line-height: 1.8;
     }
-    .node {
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .badge {
+      padding: 8px 12px;
       border-radius: 999px;
-      text-align: center;
-      padding: 10px 8px;
-      font-size: 13px;
-      font-weight: 650;
-      border: 1px solid;
-      white-space: nowrap;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: #eef5ff;
+      font-size: 12px;
+      letter-spacing: 0.01em;
     }
-    .source { background: #edf4ff; border-color: #bdd3f7; color: #1f4c9e; }
-    .control { background: #eafaf6; border-color: #99dcc8; color: #0d6a62; }
-    .collapse { background: #fff6ea; border-color: #f2cd9e; color: #8d5510; }
-    .final { background: #fff0f2; border-color: #edbac3; color: #943344; }
-    .arrow { text-align: center; color: #7a90aa; font-size: 18px; font-weight: 700; }
-    .grid3, .grid4 {
+    .section {
+      margin-top: 24px;
+      padding: 24px;
+      border-radius: 28px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .section-head h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      color: var(--navy);
+    }
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+      max-width: 780px;
+    }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .timeline {
       display: grid;
-      gap: 14px;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      position: relative;
     }
-    .grid3 { grid-template-columns: repeat(3, 1fr); }
-    .grid4 { grid-template-columns: repeat(4, 1fr); }
-    .card { padding: 14px; min-height: 210px; }
-    .card h3 { margin: 0 0 8px; color: var(--green); font-size: 16px; }
-    .card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.65; }
-    .card li + li { margin-top: 4px; }
-    .legend {
-      margin-top: 14px;
-      padding: 12px 14px;
-      border-left: 4px solid var(--amber);
-      border-radius: 10px;
-      background: #fff8ee;
-      color: #80511a;
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 3%;
+      right: 3%;
+      top: 58px;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(45, 116, 255, 0.1), rgba(45, 116, 255, 0.45), rgba(15, 138, 116, 0.22));
+      z-index: 0;
+    }
+    .flow-card {
+      position: relative;
+      z-index: 1;
+      min-height: 188px;
+      padding: 18px 16px 16px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 12px 28px rgba(22, 45, 76, 0.06);
+    }
+    .flow-card.sky { background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); }
+    .flow-card.mint { background: linear-gradient(180deg, #ebfaf4 0%, #ffffff 100%); }
+    .flow-card.gold { background: linear-gradient(180deg, #fff5e7 0%, #ffffff 100%); }
+    .flow-card.rose { background: linear-gradient(180deg, #f7f0ff 0%, #ffffff 100%); }
+    .flow-card.slate { background: linear-gradient(180deg, #f3f6fb 0%, #ffffff 100%); }
+    .index {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1px solid rgba(20, 51, 89, 0.12);
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+    .flow-card h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      line-height: 1.3;
+      color: var(--navy);
+    }
+    .flow-card p {
+      margin: 0;
+      color: var(--muted);
       font-size: 13px;
       line-height: 1.7;
     }
-    code {
-      background: #eef3f8;
-      padding: 1px 5px;
-      border-radius: 5px;
-      font-size: 12px;
+    .presence-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
     }
-    @media (max-width: 1080px) {
-      .flow { grid-template-columns: repeat(3, 1fr); }
-      .arrow { transform: rotate(90deg); }
-      .grid3, .grid4 { grid-template-columns: 1fr; }
-      .card { min-height: auto; }
+    .presence {
+      padding: 16px 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.9));
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.04);
+    }
+    .presence h3 {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 15px;
+    }
+    .presence p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .dual {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.85fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .diagram {
+      border-radius: 26px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,248,253,0.96));
+    }
+    .diagram h3 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: var(--navy);
+    }
+    .swimlane {
+      display: grid;
+      grid-template-columns: 132px 1fr;
+      gap: 14px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+    .swimlane:first-of-type { margin-top: 0; }
+    .swimlane-label {
+      padding: 16px 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #f3f7fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--navy);
+    }
+    .swimlane-track {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      position: relative;
+    }
+    .swimlane-track::before {
+      content: "";
+      position: absolute;
+      left: 6%;
+      right: 6%;
+      top: 46px;
+      height: 1px;
+      background: rgba(34, 74, 123, 0.14);
+      z-index: 0;
+    }
+    .lane-step {
+      position: relative;
+      z-index: 1;
+      min-height: 126px;
+      padding: 16px 14px 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.05);
+    }
+    .lane-step .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 6px rgba(45, 116, 255, 0.12);
+      margin-bottom: 16px;
+    }
+    .lane-step.memory .dot { background: var(--teal); box-shadow: 0 0 0 6px rgba(15, 138, 116, 0.12); }
+    .lane-step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--navy);
+    }
+    .lane-step span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .side-panel {
+      display: grid;
+      gap: 14px;
+    }
+    .note-card {
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(245,249,255,0.98), rgba(255,255,255,0.96));
+    }
+    .note-card h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      color: var(--navy);
+    }
+    .note-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .signal {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .signal h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: var(--navy);
+    }
+    .signal p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    .highlights {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .highlight {
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 12px 28px rgba(20, 44, 72, 0.05);
+    }
+    .highlight h3 {
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 17px;
+    }
+    .highlight ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    .highlight li + li { margin-top: 6px; }
+    @media (max-width: 1120px) {
+      .timeline,
+      .presence-strip,
+      .signal-grid,
+      .highlights,
+      .swimlane-track {
+        grid-template-columns: 1fr;
+      }
+      .timeline::before,
+      .swimlane-track::before {
+        display: none;
+      }
+      .dual,
+      .swimlane {
+        grid-template-columns: 1fr;
+      }
+      .section-head {
+        display: block;
+      }
     }
   </style>
 </head>
 <body>
   <main class="wrap">
     <section class="hero">
-      <h1>Lumisight：Agent 上下文管理视图</h1>
-      <p>这张图单独描述“上下文如何入账、何时判断过大、如何压缩、何时落盘、最终如何投影给模型看”。它不重复主架构页的协议与工具细节，而是专门聚焦上下文账本与 5 层压缩流水线。</p>
-    </section>
-
-    <h2 class="title">1. 上下文主链路</h2>
-    <section class="panel">
-      <div class="flow">
-        <div class="node source">用户输入 / 工具结果</div><div class="arrow">→</div>
-        <div class="node source">Session Ledger 入账</div><div class="arrow">→</div>
-        <div class="node control">大结果落盘</div><div class="arrow">→</div>
-        <div class="node collapse">Snip / Micro-Compact</div><div class="arrow">→</div>
-        <div class="node collapse">读时投影</div><div class="arrow">→</div>
-        <div class="node collapse">Auto-Compact</div><div class="arrow">→</div>
-        <div class="node final">Prompt 视图</div>
-      </div>
-      <div class="legend">
-        当前上下文链路的判断单位不是“原始字符串列表”，而是结构化账本：每条 entry 会记录来源类型、token 估算、是否可裁剪、是否可重取、是否已有磁盘 artifact。
-        <br />无论前面是浏览器调试页还是 macOS 客户端壳，最终消费的都是这条上下文主链路产出的同一套事件与答案视图，客户端外壳不会改写核心上下文决策。
+      <h1>Lumisight 记忆与上下文主流程</h1>
+      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆又怎样在旁路支持主流程，并在结束后继续沉淀。</p>
+      <div class="hero-badges">
+        <span class="badge">Session Ledger</span>
+        <span class="badge">Projection Before Prompt</span>
+        <span class="badge">Artifact And Compact</span>
+        <span class="badge">Long-Term Memory Sidecar</span>
       </div>
     </section>
 
-    <h2 class="title">2. 会话账本结构</h2>
-    <section class="grid3">
-      <article class="card">
-        <h3>2.1 会话状态层</h3>
-        <ul>
-          <li><code>AgentConversationManager</code> 继续负责会话状态机、epoch、中断、todo 与等待态 TTL。</li>
-          <li>它通过 <code>AgentSessionContextStore</code> 抽象暴露保存/恢复接口，保存的不再只是 <code>List&lt;AgentContextItem&gt;</code>，还会附带 <code>AgentContextSession</code>。</li>
-          <li>作用：让“会话状态”和“上下文账本”分层，不再所有逻辑都堆在一个列表里。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.2 上下文账本层</h3>
-        <ul>
-          <li><code>AgentContextSession</code> 是会话级账本，内部持有多条 <code>AgentContextEntry</code>。</li>
-          <li>每条 entry 会标记 kind、priority、tokenEstimate、artifactRef、compactable、retriable，以及逻辑资源标识。</li>
-          <li>会话旁边还维护一层轻量热缓存，单独保存最近访问、可恢复的文件/工具结果。</li>
-          <li>作用：后续 Snip、Micro-Compact、Projection 与 Auto-Compact 恢复都有统一抓手。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.3 Artifact 层</h3>
-        <ul>
-          <li>大结果通过 <code>FileAgentContextArtifactStore</code> 写入 <code>.lumisight/context-artifacts</code>。</li>
-          <li>prompt 中只保留 preview、artifact path、artifact id，以及 <code>logicalResourceId / restorable / retriable / fullTokens</code> 等恢复元数据。</li>
-          <li>作用：完整正文不丢，但不再直接撑满模型上下文；后续恢复也不用再靠弱字符串猜测资源身份。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.4 Projection 层</h3>
-        <ul>
-          <li>模型调用前不直接拿完整账本，而是由 <code>DefaultAgentContextManager</code> 动态生成“本轮视图”。</li>
-          <li>决策、复核、最终回答三种 prompt 都各自走投影。</li>
-          <li>作用：保留真实历史，同时按优先级、最近访问度和可重取性挑选“当前最值钱的一份上下文视图”。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>2.5 Child 隔离层</h3>
-        <ul>
-          <li><code>task_subagent</code> 不会直接复用父会话账本，而是新建 child <code>AgentContextSession</code>。</li>
-          <li>父 Agent 只下发最小 <code>TaskContextEnvelope</code>：目标、指令、能力、预算与精选证据，不透传完整 messages 和 sibling 推理历史。</li>
-          <li>作用：把“干净子任务上下文”和“主会话上下文”真正隔离，避免多 Agent 试验先把主账本污染掉。</li>
-        </ul>
-      </article>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Main Flow</span>
+          <h2>端到端主流程</h2>
+        </div>
+        <p>这是“上下文和记忆如何服务一次请求”的总流程。重点不是配置名，而是用户输入、历史上下文、相关记忆和外挂证据如何一步步变成真正给模型看的 prompt 视图。</p>
+      </div>
+      <div class="timeline">
+        <article class="flow-card sky">
+          <span class="index">01</span>
+          <h3>请求进入会话</h3>
+          <p>用户输入先回到当前 session，而不是直接裸奔给模型；这一步决定后续要恢复哪份上下文状态。</p>
+        </article>
+        <article class="flow-card slate">
+          <span class="index">02</span>
+          <h3>恢复上下文账本</h3>
+          <p>系统恢复会话账本、历史 entry、artifact 引用和当前轮次状态，建立这一轮的工作上下文基线。</p>
+        </article>
+        <article class="flow-card mint">
+          <span class="index">03</span>
+          <h3>补充相关记忆</h3>
+          <p>长期记忆系统按当前问题挑选相关事实、偏好和项目经验，作为旁路证据补进这轮推理准备阶段。</p>
+        </article>
+        <article class="flow-card gold">
+          <span class="index">04</span>
+          <h3>投影与压缩</h3>
+          <p>不是把完整历史都喂给模型，而是先做 artifact 落盘、Snip、Micro-Compact、Projection，生成一份更值钱的上下文视图。</p>
+        </article>
+        <article class="flow-card rose">
+          <span class="index">05</span>
+          <h3>模型推理与回写</h3>
+          <p>模型基于投影视图完成决策；工具结果、验证信息和新结论再回写到账本，而不是只停留在瞬时响应里。</p>
+        </article>
+        <article class="flow-card sky">
+          <span class="index">06</span>
+          <h3>沉淀与结束</h3>
+          <p>这一轮结束后，会话上下文继续保留在账本层，真正值得长期保存的事实才会被沉淀到长期记忆层。</p>
+        </article>
+      </div>
+      <div class="presence-strip">
+        <article class="presence">
+          <h3>上下文是主链路</h3>
+          <p>会话账本、artifact 和投影不是可选项，而是每一轮模型调用前都会经过的核心路径。</p>
+        </article>
+        <article class="presence">
+          <h3>长期记忆是旁路支持</h3>
+          <p>长期记忆不会替代当前会话，但会在准备阶段补充跨会话事实，并在结束后继续沉淀真正有价值的信息。</p>
+        </article>
+        <article class="presence">
+          <h3>外挂检索是增强层</h3>
+          <p>RAG、图谱和源码增强工具不是记忆系统本体，但会在需要更多证据时被接到同一套上下文准备链路里。</p>
+        </article>
+      </div>
     </section>
 
-    <h2 class="title">3. 怎么判断“上下文太多了”</h2>
-    <section class="grid3">
-      <article class="card">
-        <h3>3.1 判断基线</h3>
-        <ul>
-          <li>当前主要按 token 估算而不是按字符数判断；入口是 <code>AgentContextEntry.tokenEstimate</code>。</li>
-          <li>预算上限由 <code>lumisight.agent.context.effective-context-window</code> 决定。</li>
-          <li>这个值就应该按模型能力调，不同模型上下文窗不同，这里必须可配置。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>3.2 两级投影阈值</h3>
-        <ul>
-          <li><code>projection-soft-tokens</code>：超过后开始主动折叠旧内容。</li>
-          <li><code>projection-hard-tokens</code>：超过后继续强裁，优先保高优先级 entry。</li>
-          <li>作用：在真正触发全量摘要前，先尽量保住细节上下文。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>3.3 Auto-Compact 阈值</h3>
-        <ul>
-          <li>触发阈值不是写死常量，而是：<code>effective-context-window - response-reserve-tokens - auto-compact-buffer-tokens</code>。</li>
-          <li>也就是说，模型越大，只要把 <code>effective-context-window</code> 调大，整个压缩触发点会自然后移。</li>
-          <li>作用：为不同模型留出可配置的输出空间和安全缓冲区。</li>
-        </ul>
-      </article>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Two Layers</span>
+          <h2>会话上下文与长期记忆</h2>
+        </div>
+        <p>这两层都服务于同一次请求，但职责不同：会话上下文负责“这一轮现在要看什么”，长期记忆负责“跨会话该记住什么”。</p>
+      </div>
+
+      <div class="dual">
+        <div class="diagram">
+          <h3>双层信息流</h3>
+
+          <div class="swimlane">
+            <div class="swimlane-label">Session Context</div>
+            <div class="swimlane-track">
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>接收新输入</strong>
+                <span>用户消息、工具结果和验证结果进入会话账本。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>判断是否过大</strong>
+                <span>大结果先落盘，老内容根据预算进入压缩链。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>生成投影视图</strong>
+                <span>真正给模型看的不是全量账本，而是读时挑选后的高价值视图。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>推理后继续回写</strong>
+                <span>新决策、新工具证据和新结论重新进入账本，供下一轮继续使用。</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="swimlane">
+            <div class="swimlane-label">Long-Term Memory</div>
+            <div class="swimlane-track">
+              <article class="lane-step memory">
+                <div class="dot"></div>
+                <strong>按问题挑选</strong>
+                <span>相关记忆服务先根据当前问题预取可能有用的长期事实。</span>
+              </article>
+              <article class="lane-step memory">
+                <div class="dot"></div>
+                <strong>补进准备阶段</strong>
+                <span>相关结果作为旁路上下文参与本轮决策准备，而不是混在整段对话历史里。</span>
+              </article>
+              <article class="lane-step memory">
+                <div class="dot"></div>
+                <strong>执行后再判断沉淀</strong>
+                <span>不是每轮都写长期记忆，只有真正稳定和值得保留的事实才会进入记忆层。</span>
+              </article>
+              <article class="lane-step memory">
+                <div class="dot"></div>
+                <strong>供未来会话再用</strong>
+                <span>下一次相关请求出现时，再被挑选出来支持新的主流程。</span>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="side-panel">
+          <article class="note-card">
+            <h3>为什么要分两层</h3>
+            <p>因为“这轮会话里发生了什么”和“以后都该记住什么”不是同一类信息。前者要完整、可追溯，后者要更稳定、更克制，否则会把噪音固化成长久事实。</p>
+          </article>
+          <article class="note-card">
+            <h3>压缩不是为了删历史</h3>
+            <p>压缩的目标不是抹掉发生过的内容，而是把大结果、老内容和可重取证据转成更轻的视图，让模型上下文预算花在当前最有价值的信息上。</p>
+          </article>
+          <article class="note-card">
+            <h3>外挂检索插在哪里</h3>
+            <p>RAG、图谱和方法源码增强不直接替代记忆，也不替代会话账本。它们更像证据放大器，在准备阶段提供外部补充，再通过同一套上下文链路进入模型视图。</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="signal-grid">
+        <article class="signal">
+          <h3>什么时候落盘</h3>
+          <p>当单条结果或单轮工具输出过大时，完整正文先写 artifact，prompt 里只保留 preview 和引用。</p>
+        </article>
+        <article class="signal">
+          <h3>什么时候压缩</h3>
+          <p>当 token 预算逼近窗口边界时，系统优先折叠旧对话和可重取工具结果，而不是马上全量摘要。</p>
+        </article>
+        <article class="signal">
+          <h3>什么时候写记忆</h3>
+          <p>不是每条内容都进长期记忆，而是只有用户偏好、项目事实、稳定经验等更长期的东西才会被沉淀。</p>
+        </article>
+      </div>
     </section>
 
-    <h2 class="title">4. 怎么判断“大结果”</h2>
-    <section class="grid3">
-      <article class="card">
-        <h3>4.1 单条结果阈值</h3>
-        <ul>
-          <li><code>single-artifact-bytes</code>：单个上下文 entry 超过这个大小，就直接落盘。</li>
-          <li>默认值是 50KB。</li>
-          <li>适合控制单个 <code>cat</code> / <code>grep</code> / 大 diff 输出。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>4.2 单轮总量阈值</h3>
-        <ul>
-          <li><code>tool-message-bytes</code>：同一批工具结果累计超过这个大小，会优先把最大的几条转成 artifact。</li>
-          <li>默认值是 200KB。</li>
-          <li>适合限制“一次工具批次”整体噪音，而不只是盯单条结果。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>4.3 Preview 阈值</h3>
-        <ul>
-          <li><code>preview-bytes</code> 决定 prompt 中保留多少预览内容。</li>
-          <li>默认值是 2KB。</li>
-          <li>作用：模型仍能看到结果大意，但不会因为 artifact 回填又重新爆上下文。</li>
-        </ul>
-      </article>
-    </section>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Technical Highlights</span>
+          <h2>技术亮点</h2>
+        </div>
+        <p>上面先让人看懂记忆系统和上下文系统如何存在于主流程里，下面再保留工程层真正关键的实现亮点。</p>
+      </div>
 
-    <h2 class="title">5. Claude Code 风格 5 层压缩流水线</h2>
-    <section class="grid4">
-      <article class="card">
-        <h3>5.1 大结果存盘</h3>
-        <ul>
-          <li>触发：单条或单批工具结果超过字节阈值。</li>
-          <li>处理：全文写磁盘，账本中保留 preview 与 artifact 引用。</li>
-          <li>输出：完整结果仍可追溯，但 prompt 只看到精简视图。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>5.2 Snip 老对话</h3>
-        <ul>
-          <li>触发：历史对话累计 token 达到 <code>snip-trigger-tokens</code>。</li>
-          <li>处理：较早、低优先级 conversation entry 被直接移除，并写入 boundary marker。</li>
-          <li>输出：释放空间，同时记录本轮释放 token、切断前 token 和移除消息数，供后续压缩决策参考。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>5.3 Micro-Compact 工具结果</h3>
-        <ul>
-          <li>触发：账本过大，或距离上次有效投影已过 <code>micro-compact-stale-minutes</code>。</li>
-          <li>处理：只裁剪可重取工具结果，当前覆盖 <code>searchHybridVector</code>、<code>fetchOneHopByKgNodeId</code>、<code>fetchMethodSourceByLocation</code> 等真实工具名；保留最近 N 条原文和更老条目的 compact marker。</li>
-          <li>输出：模型知道“这里有内容被裁掉了”，需要时可重跑工具。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>5.4 读时投影</h3>
-        <ul>
-          <li>触发：本轮决策/复核/最终回答前。</li>
-          <li>处理：不改原始账本，只在调用模型的那一刻按预算动态折叠旧上下文，优先保控制态、近期对话和高优先级证据。</li>
-          <li>输出：给模型的是“当前这一轮最值钱的一份上下文视图”，尽量在不做全量摘要的前提下保住更多细节。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>5.5 Auto-Compact 全量摘要</h3>
-        <ul>
-          <li>触发：读时投影后仍然超过 <code>effective-context-window - response-reserve-tokens - auto-compact-buffer-tokens</code>。</li>
-          <li>处理：把更早历史压成强结构化摘要，显式覆盖用户请求、关键文件、关键工具、错误与修复、当前状态、未完成事项和下一步。</li>
-          <li>恢复：先按预算恢复热文件/热结果，再恢复活跃 skill，最后补最小必要的 todo/plan 视图；连续失败次数超过上限后不再无限重试。</li>
-          <li>输出：在上下文已经明显超限时，用一次更重的压缩换回可继续工作的 prompt 空间。</li>
-        </ul>
-      </article>
-    </section>
-
-    <h2 class="title">6. 父子 Agent 上下文边界</h2>
-    <section class="grid3">
-      <article class="card">
-        <h3>6.1 为什么不能直接共享账本</h3>
-        <ul>
-          <li>如果 child 直接继承父会话完整历史，局部调查的噪音、重复工具结果和中间推理会立刻膨胀主上下文。</li>
-          <li>这会让多 Agent 不是在减压，而是在更快触发压缩和更早丢细节。</li>
-          <li>所以 child 默认只拿最小任务包，而不是整段主会话 transcript。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>6.2 Child 自己也走五层压缩</h3>
-        <ul>
-          <li>子 Agent 虽然上下文更短，但仍有自己的 artifact、hot cache、projection 和 auto-compact 边界。</li>
-          <li>也就是说，child 的压缩和恢复只影响 child 自己，不影响 parent。</li>
-          <li>这保证了多 Agent 试验不会破坏当前单 Agent 主链路的上下文稳定性。</li>
-        </ul>
-      </article>
-      <article class="card">
-        <h3>6.3 Fan-in 只回结构化结果</h3>
-        <ul>
-          <li>child 返回的是 <code>summary / findings / evidenceRefs / suggestedNextAction / confidence</code> 这类结构化结果。</li>
-          <li>parent 只把少量 orchestration result 写回主账本，不把 child 的完整中间 transcript 原样拼回。</li>
-          <li>这样主上下文看到的是“结论和证据”，不是“另一条完整对话历史”。</li>
-        </ul>
-      </article>
-    </section>
-
-    <h2 class="title">7. 当前可调参数</h2>
-    <section class="panel">
-      <div class="legend">
-        推荐先调这几类：
-        <br />1. 模型窗口：<code>effective-context-window</code>、<code>response-reserve-tokens</code>、<code>auto-compact-buffer-tokens</code>
-        <br />2. 大结果策略：<code>single-artifact-bytes</code>、<code>tool-message-bytes</code>、<code>preview-bytes</code>
-        <br />3. 对话裁剪策略：<code>snip-trigger-tokens</code>、<code>snip-target-tokens</code>、<code>snip-keep-recent-conversation</code>
-        <br />4. 投影/裁剪策略：<code>projection-soft-tokens</code>、<code>projection-hard-tokens</code>、<code>micro-compact-keep-recent</code>、<code>micro-compact-stale-minutes</code>
-        <br />5. 恢复策略：<code>post-compact-token-budget</code>、<code>post-compact-max-restore-entries</code>、<code>post-compact-max-tokens-per-entry</code>、<code>post-compact-skill-token-budget</code>
+      <div class="highlights">
+        <article class="highlight">
+          <h3>会话账本不是字符串列表</h3>
+          <ul>
+            <li>系统保存的是结构化上下文 entry，而不是一串不断膨胀的消息文本。</li>
+            <li>这样后续投影、压缩、artifact 引用和恢复都有统一抓手。</li>
+            <li>上下文决策从“堆历史”升级成了“管理账本”。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>Artifact 让大结果可追溯</h3>
+          <ul>
+            <li>大结果先落盘，再在 prompt 里保留轻视图。</li>
+            <li>模型不需要吞完整正文，但系统也不会失去完整证据。</li>
+            <li>这解决了“完整保留”和“上下文预算”之间的冲突。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>Projection 先于模型调用</h3>
+          <ul>
+            <li>模型看到的是读时投影后的视图，而不是原样账本。</li>
+            <li>不同阶段可以共享同一账本，但拿到不同视图。</li>
+            <li>这让预算管理发生在模型调用前，而不是调用失败后。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>记忆检索是预取型旁路</h3>
+          <ul>
+            <li>相关记忆会在请求准备阶段提前挑选，而不是等模型临时想起再补。</li>
+            <li>这让长期经验更自然地进入一次推理，而不打乱主会话结构。</li>
+            <li>长期记忆因此更像稳定支撑层，而不是另一本对话日志。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>会话层和记忆层职责分离</h3>
+          <ul>
+            <li>会话层追求完整可恢复，记忆层追求长期有效和克制写入。</li>
+            <li>两层都服务当前请求，但保留粒度和生命周期不同。</li>
+            <li>这避免了把短期噪音直接变成永久知识。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>外挂 RAG / 图谱并入同一准备链路</h3>
+          <ul>
+            <li>向量检索、图谱和源码增强会在需要时为主流程补证据。</li>
+            <li>这些证据仍通过同一套上下文准备机制进入 prompt。</li>
+            <li>所以外挂能力是增强层，而不是与记忆系统割裂的另一条暗线。</li>
+          </ul>
+        </article>
       </div>
     </section>
   </main>
