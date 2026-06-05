@@ -15,6 +15,7 @@ import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentSessionContextStore;
 import com.lumisight.core.support.StreamingChatClientSupport;
 import com.lumisight.core.support.context.AgentContextAppendOptions;
+import com.lumisight.core.support.context.AgentContextEntry;
 import com.lumisight.core.support.context.AgentContextManager;
 import com.lumisight.core.support.context.AgentContextProjection;
 import com.lumisight.core.support.context.AgentContextSession;
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +44,7 @@ class AgentLoopOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(AgentLoopOrchestrator.class);
     private static final int MAX_TOOL_ROUNDS = 6;
+    private static final String AUTO_SELF_HEAL_SOURCE_ID = "auto_self_heal";
 
     private final ChatClient llmChatClient;
     private final AgentToolRegistry agentToolRegistry;
@@ -54,6 +57,7 @@ class AgentLoopOrchestrator {
     private final AgentFinalAnswerVerifier finalAnswerVerifier;
     private final StreamingChatClientSupport streamingChatClientSupport;
     private final AgentContextManager agentContextManager;
+    private final AgentSelfHealProperties selfHealProperties;
 
     AgentLoopOrchestrator(
             ChatClient.Builder chatClientBuilder,
@@ -66,7 +70,8 @@ class AgentLoopOrchestrator {
             AgentDecisionParser decisionParser,
             AgentFinalAnswerVerifier finalAnswerVerifier,
             StreamingChatClientSupport streamingChatClientSupport,
-            AgentContextManager agentContextManager
+            AgentContextManager agentContextManager,
+            AgentSelfHealProperties selfHealProperties
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
@@ -79,6 +84,7 @@ class AgentLoopOrchestrator {
         this.finalAnswerVerifier = finalAnswerVerifier;
         this.streamingChatClientSupport = streamingChatClientSupport;
         this.agentContextManager = agentContextManager;
+        this.selfHealProperties = selfHealProperties;
     }
 
     OrchestrationResult run(
@@ -293,6 +299,20 @@ class AgentLoopOrchestrator {
                 contextSession = appendResult.session();
                 producedContext = producedContext || appendResult.producedContext();
             }
+            AutoSelfHealOutcome autoSelfHealOutcome = runAutoSelfHealIfNeeded(
+                    request,
+                    effectiveQuestion,
+                    sessionId,
+                    traceId,
+                    round,
+                    contextSession,
+                    limit,
+                    enabledPermissions,
+                    batchResults,
+                    publisher
+            );
+            contextSession = autoSelfHealOutcome.contextSession();
+            producedContext = producedContext || autoSelfHealOutcome.producedContext();
             saveRunningState(sessionId, effectiveQuestion, contextSession, round + 1);
         }
         return new ToolBatchOutcome(contextSession, producedContext, null);
@@ -324,6 +344,11 @@ class AgentLoopOrchestrator {
         }
         if (!"final".equalsIgnoreCase(decision.action()) || !StringUtils.hasText(decision.finalAnswer())) {
             return new FinalDecisionOutcome(null, null);
+        }
+        if (requiresSelfHealPass(request) && hasPendingSelfHealFailure(contextSession)) {
+            String reason = "最近一次代码修改的自动编译/lint 验证尚未通过，请继续修复并再次验证。";
+            publisher.emit(AgentEvent.verifyResult(traceId, sessionId, round, false, reason));
+            return new FinalDecisionOutcome(null, reason);
         }
         AgentContextProjection verifyProjection = agentContextManager.projectForVerification(
                 sessionId,
@@ -361,6 +386,92 @@ class AgentLoopOrchestrator {
                 "复核未通过: " + verifyFailureReason,
                 Map.of("round", round)
         ), AgentContextAppendOptions.verifier());
+    }
+
+    private AutoSelfHealOutcome runAutoSelfHealIfNeeded(
+            AgentRequest request,
+            String effectiveQuestion,
+            String sessionId,
+            String traceId,
+            int round,
+            AgentContextSession contextSession,
+            int limit,
+            Set<AgentToolPermission> enabledPermissions,
+            List<AgentToolExecutionResult> batchResults,
+            AgentEventPublisher publisher
+    ) {
+        if (!isBugFixRequest(request) || !selfHealProperties.isEnabled()) {
+            return new AutoSelfHealOutcome(contextSession, false);
+        }
+        List<String> changedJavaFiles = collectChangedJavaFiles(batchResults);
+        if (changedJavaFiles.isEmpty()) {
+            return new AutoSelfHealOutcome(contextSession, false);
+        }
+        List<ToolDecision> validationDecisions = buildValidationDecisions(changedJavaFiles);
+        if (validationDecisions.isEmpty()) {
+            return new AutoSelfHealOutcome(contextSession, false);
+        }
+
+        publisher.emit(AgentEvent.state(
+                traceId,
+                sessionId,
+                round,
+                "SELF_HEAL",
+                "running",
+                "检测到代码修改，开始自动执行编译/lint 验证"
+        ));
+        boolean producedContext = false;
+        List<AgentToolExecutionResult> validationResults = new ArrayList<>();
+        for (ToolDecision validationDecision : validationDecisions) {
+            publisher.emit(AgentEvent.toolCall(traceId, sessionId, round, validationDecision.toolName(), validationDecision.args()));
+            AgentToolExecutionResult validationResult = executePendingDecision(
+                    validationDecision,
+                    enabledPermissions,
+                    limit,
+                    sessionId,
+                    round,
+                    effectiveQuestion
+            );
+            validationResults.add(validationResult);
+            publisher.emit(AgentEvent.toolResult(traceId, sessionId, round, validationResult));
+            if (!"ok".equals(validationResult.status()) || containsToolError(validationResult.items())) {
+                log.warn("agent_loop self_heal_validation_error, sessionId={}, round={}, toolName={}, status={}, message={}, items={}",
+                        sessionId, round, validationResult.toolName(), validationResult.status(), validationResult.message(),
+                        summarizeContextItems(validationResult.items()));
+            }
+            AgentContextManager.ToolAppendResult appendResult = agentContextManager.appendToolResult(sessionId, contextSession, round, validationResult);
+            contextSession = appendResult.session();
+            producedContext = producedContext || appendResult.producedContext();
+        }
+
+        List<String> failureReasons = collectValidationFailures(validationResults);
+        boolean passed = failureReasons.isEmpty();
+        String verifyReason = passed
+                ? "自动验证通过，最近代码修改已通过编译/lint 检查。"
+                : String.join("；", failureReasons);
+        publisher.emit(AgentEvent.verifyResult(traceId, sessionId, round, passed, verifyReason));
+        publisher.emit(AgentEvent.state(
+                traceId,
+                sessionId,
+                round,
+                "SELF_HEAL",
+                passed ? "ok" : "retry",
+                passed ? "自动验证通过，允许进入最终收尾" : "自动验证未通过，继续迭代修复"
+        ));
+        contextSession = agentContextManager.append(sessionId, contextSession, new AgentContextItem(
+                "verifier",
+                AUTO_SELF_HEAL_SOURCE_ID,
+                passed
+                        ? "自动验证通过: 最近代码修改已通过编译/lint 检查。"
+                        : "自动验证未通过: " + verifyReason + "。请继续修复并再次验证。",
+                Map.of(
+                        "round", round,
+                        "passed", passed,
+                        "files", changedJavaFiles,
+                        "tools", validationDecisions.stream().map(ToolDecision::toolName).toList()
+                )
+        ), AgentContextAppendOptions.verifier());
+        return new AutoSelfHealOutcome(contextSession, true);
     }
 
     private OrchestrationResult checkInterrupted(
@@ -485,6 +596,156 @@ class AgentLoopOrchestrator {
         return items != null && items.stream().anyMatch(item -> "tool_error".equals(item.sourceType()));
     }
 
+    private boolean isBugFixRequest(AgentRequest request) {
+        return request.taskType() != null && "BUG_FIX".equals(request.taskType().name());
+    }
+
+    private boolean requiresSelfHealPass(AgentRequest request) {
+        return isBugFixRequest(request) && selfHealProperties.isEnabled() && selfHealProperties.isRequireSuccessBeforeFinal();
+    }
+
+    private boolean hasPendingSelfHealFailure(AgentContextSession contextSession) {
+        if (contextSession == null || contextSession.entries() == null || contextSession.entries().isEmpty()) {
+            return false;
+        }
+        List<AgentContextEntry> entries = contextSession.entries();
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            AgentContextItem item = entries.get(i).item();
+            if (!"verifier".equals(item.sourceType()) || !AUTO_SELF_HEAL_SOURCE_ID.equals(item.sourceId())) {
+                continue;
+            }
+            Object passed = item.metadata() == null ? null : item.metadata().get("passed");
+            return !(passed instanceof Boolean ok) || !ok;
+        }
+        return false;
+    }
+
+    private List<String> collectChangedJavaFiles(List<AgentToolExecutionResult> batchResults) {
+        if (batchResults == null || batchResults.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> files = new LinkedHashSet<>();
+        int maxFiles = Math.max(1, selfHealProperties.getMaxValidationFiles());
+        for (AgentToolExecutionResult batchResult : batchResults) {
+            if (batchResult.items() == null) {
+                continue;
+            }
+            for (AgentContextItem item : batchResult.items()) {
+                if (!"writeRepoFile".equals(item.sourceId()) || item.metadata() == null) {
+                    continue;
+                }
+                Object sourceFile = item.metadata().get("sourceFile");
+                if (sourceFile instanceof String path && path.endsWith(".java")) {
+                    files.add(path);
+                    if (files.size() >= maxFiles) {
+                        return List.copyOf(files);
+                    }
+                }
+            }
+        }
+        return List.copyOf(files);
+    }
+
+    private List<ToolDecision> buildValidationDecisions(List<String> changedJavaFiles) {
+        if (changedJavaFiles == null || changedJavaFiles.isEmpty()) {
+            return List.of();
+        }
+        List<ToolDecision> decisions = new ArrayList<>();
+        int maxFiles = Math.max(1, selfHealProperties.getMaxValidationFiles());
+        for (String sourceFile : changedJavaFiles.stream().limit(maxFiles).toList()) {
+            if (selfHealProperties.isRunCompile()) {
+                decisions.add(new ToolDecision(
+                        "tool",
+                        "compileJava",
+                        Map.of("sourceFile", sourceFile, "maxFiles", 1),
+                        List.of(),
+                        null,
+                        "自动编译验证最近修改的 Java 文件",
+                        null
+                ));
+            }
+            if (selfHealProperties.isRunLint()) {
+                decisions.add(new ToolDecision(
+                        "tool",
+                        "lintJavaByJdtls",
+                        Map.of("sourceFile", sourceFile, "maxFiles", 1),
+                        List.of(),
+                        null,
+                        "自动 lint 验证最近修改的 Java 文件",
+                        null
+                ));
+            }
+        }
+        return decisions;
+    }
+
+    private List<String> collectValidationFailures(List<AgentToolExecutionResult> validationResults) {
+        if (validationResults == null || validationResults.isEmpty()) {
+            return List.of("未执行任何自动验证工具");
+        }
+        List<String> failures = new ArrayList<>();
+        for (AgentToolExecutionResult validationResult : validationResults) {
+            if (validationResult == null) {
+                continue;
+            }
+            if (!"ok".equals(validationResult.status()) || containsToolError(validationResult.items())) {
+                failures.add(validationResult.toolName() + " 执行失败");
+                continue;
+            }
+            for (AgentContextItem item : validationResult.items()) {
+                if ("compileJava".equals(item.sourceId()) && isCompileFailure(item)) {
+                    failures.add("compileJava 未通过: " + summarizeFirstIssue(item));
+                }
+                if ("lintJavaByJdtls".equals(item.sourceId()) && isLintFailure(item)) {
+                    failures.add("lintJavaByJdtls 发现问题: " + summarizeFirstIssue(item));
+                }
+            }
+        }
+        return failures;
+    }
+
+    private boolean isCompileFailure(AgentContextItem item) {
+        Object success = item.metadata() == null ? null : item.metadata().get("success");
+        return success instanceof Boolean ok && !ok;
+    }
+
+    private boolean isLintFailure(AgentContextItem item) {
+        Object issuesCount = item.metadata() == null ? null : item.metadata().get("issuesCount");
+        return issuesCount instanceof Number number && number.intValue() > 0;
+    }
+
+    private String summarizeFirstIssue(AgentContextItem item) {
+        if (item.metadata() == null) {
+            return item.content();
+        }
+        Object issues = item.metadata().get("issues");
+        if (issues instanceof List<?> list && !list.isEmpty() && list.getFirst() instanceof Map<?, ?> first) {
+            Object file = first.get("file");
+            Object line = first.get("line");
+            Object message = first.get("message");
+            StringBuilder builder = new StringBuilder();
+            if (file != null && StringUtils.hasText(String.valueOf(file))) {
+                builder.append(file);
+            }
+            if (line != null) {
+                if (!builder.isEmpty()) {
+                    builder.append(":");
+                }
+                builder.append(line);
+            }
+            if (message != null && StringUtils.hasText(String.valueOf(message))) {
+                if (!builder.isEmpty()) {
+                    builder.append(" ");
+                }
+                builder.append(message);
+            }
+            if (!builder.isEmpty()) {
+                return builder.toString();
+            }
+        }
+        return item.content();
+    }
+
     private String summarizeContextRefs(List<AgentContextItem> contexts) {
         if (contexts == null || contexts.isEmpty()) {
             return "[]";
@@ -545,6 +806,9 @@ class AgentLoopOrchestrator {
     }
 
     private record ToolBatchOutcome(AgentContextSession contextSession, boolean producedContext, OrchestrationResult terminalResult) {
+    }
+
+    private record AutoSelfHealOutcome(AgentContextSession contextSession, boolean producedContext) {
     }
 
     private record FinalDecisionOutcome(OrchestrationResult terminalResult, String verifyFailureReason) {

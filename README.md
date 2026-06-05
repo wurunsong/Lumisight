@@ -11,6 +11,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 浏览器自动化：网页打开、DOM 摘要、点击输入、截图
 - 安全执行：sandbox、快照、回滚、人工门控
 - 上下文管理：结构化账本、artifact 落盘、投影与压缩
+- 自修复闭环：BUG_FIX 模式下写代码后自动编译 / lint，失败就继续迭代修复
 - 定时触发：cron job 调用 Agent 执行固定任务
 - 持久化任务系统：`.tasks/` 下的跨会话任务图、依赖与认领状态
 
@@ -217,6 +218,22 @@ Lumisight 当前不是简单把历史消息堆成一个字符串列表，而是�
 - 调模型前先做读时投影，而不是每轮都塞入全量历史
 - 必要时会按顺序触发大结果落盘、Snip、Micro-Compact、读时投影和 Auto-Compact
 - Auto-Compact 后会按预算恢复热文件/热结果、活跃 skill，以及必要的 todo/plan 视图
+
+## 自修复闭环
+
+当前 BUG_FIX 主链路已经具备最小自修复闭环：
+
+- 当 Agent 通过 `writeRepoFile` 修改 Java 文件后，系统会自动触发 `compileJava` 和 `lintJavaByJdtls`
+- 若自动验证失败，失败结果会回灌到结构化上下文里，下一轮继续修复而不是直接结束
+- 若最近一次自动验证仍未通过，Agent 不允许直接给出最终答案
+
+可调配置：
+
+- `lumisight.agent.self-heal.enabled`
+- `lumisight.agent.self-heal.run-compile`
+- `lumisight.agent.self-heal.run-lint`
+- `lumisight.agent.self-heal.require-success-before-final`
+- `lumisight.agent.self-heal.max-validation-files`
 
 这套机制的目的，是让 Agent 在保留执行证据的同时，尽量适配不同模型的上下文窗口。
 

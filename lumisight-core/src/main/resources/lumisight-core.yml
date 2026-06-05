@@ -110,6 +110,12 @@ lumisight:
       min-confidence: ${LUMISIGHT_AGENT_SKILL_ROUTING_MIN_CONFIDENCE:0.6}
       low-confidence-fallback: ${LUMISIGHT_AGENT_SKILL_ROUTING_LOW_CONFIDENCE_FALLBACK:NONE}
       default-skill-id: ${LUMISIGHT_AGENT_SKILL_ROUTING_DEFAULT_SKILL_ID:}
+    self-heal:
+      enabled: ${LUMISIGHT_AGENT_SELF_HEAL_ENABLED:true}
+      run-compile: ${LUMISIGHT_AGENT_SELF_HEAL_RUN_COMPILE:true}
+      run-lint: ${LUMISIGHT_AGENT_SELF_HEAL_RUN_LINT:true}
+      require-success-before-final: ${LUMISIGHT_AGENT_SELF_HEAL_REQUIRE_SUCCESS_BEFORE_FINAL:true}
+      max-validation-files: ${LUMISIGHT_AGENT_SELF_HEAL_MAX_VALIDATION_FILES:5}
     websocket:
       allowed-origins: ${LUMISIGHT_AGENT_WS_ALLOWED_ORIGINS:*}
       max-connections: ${LUMISIGHT_AGENT_WS_MAX_CONNECTIONS:200}
