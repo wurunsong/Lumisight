@@ -1,9 +1,6 @@
 # Lumisight 本地续聊流水账（CODE_FLOW）
 
-## 0. 固定测试仓库（显眼置顶）
-- 测试仓库路径：`/Users/lilac/rpc`
-
-> 规则：只增不减；按日期追加；仅本地使用，不推远程。
+> 规则：只增不减；按日期追加
 
 ## 2026-05-24
 - Nebula 最小可用链路已打通：space 自动派生（`kg_工程名`）、初始化与 schema 时序问题已修复。
@@ -214,7 +211,6 @@
 - 今日提交摘要（协议模型收敛）：
   - SSE 从“每次提问新建一条流”重构为“按 `sessionId` 建立单长连接订阅 + 命令单独投递”：新增 `GET /api/lumisight/agent/stream?sessionId=...` 会话流订阅语义，并将问题/恢复/中断统一收敛到 `POST /api/lumisight/agent/run`。
   - `AgentSessionDispatcher` 从“按请求持有 sink”改为“按会话持有共享事件总线”：单次 run 结束不再自动关闭整个会话流，显式 `interrupt` 才改变会话执行状态。
-  - `AgentSessionDispatcher` 的状态保护也从“多处 `synchronized` 方法/代码块”收敛为“单个 `ReentrantLock` 管状态 + 锁外执行副作用”：广播事件、线程中断与 worker 提交尽量移出临界区，降低同会话高频投递时的锁竞争。
   - WebSocket 侧跟随收敛为“连接复用会话订阅 + 命令投递”模型；同一连接对同一 `sessionId` 的后续命令会复用既有事件订阅。
   - 调试页 `agent-console.html` 改为 `Connect -> Send Command -> Interrupt/Disconnect` 的会话式交互，不再伪装成“每个请求一条独立 SSE 流”。
 - 今日提交摘要（上下文与运行骨架补记）：
@@ -224,22 +220,13 @@
   - 主编排类继续瘦身：`CodeAssistantAgentService` 把决策循环与最终输出拆到 `AgentLoopOrchestrator` 和 `AgentFinalResponseEmitter`，让上下文投影、工具结果回填和最终答案流式输出各自归位。
   - 新增 Cron 触发能力：提供 `/api/lumisight/agent/cron-jobs` 的增删改查与手动触发接口，后台用专用 `TaskScheduler + CronTrigger` 定时拉起 Agent 执行，并维护最近运行历史。
   - 向量符号摘要兜底文案从占位 TODO 改成稳定模板说明，避免 `symbol_doc` 未接真实 AI 总结时暴露技术占位文本。
-- 今日提交摘要（文档与客户端壳补记）：
-  - `daily-commit-architecture-sync` 与 `project-progress-sync-reader` 两个 skill 都补上了“每个独立功能一个 commit”约束；后者还明确要求 commit message 默认使用中文，降低后续迭代时的提交粒度漂移。
-  - 新增 `AGENT_CAPABILITY_GAP.md`，把当前能力、主要差距、优先级和实现成本收敛成长期维护清单，并补记浏览器 / DOM 操作、RAG / 图谱评测等后续建设方向。
-  - `lumisight-core.yml` 补齐 `lumisight.agent.context.*` 与 `lumisight.agent.cron.*` 两组可配置参数，让上下文阈值和 cron 调度参数不再散落在实现里。
-  - `agent-console.html` 做了一轮布局收口：左右栏栅格、按钮矩阵、命令记录头部换行和移动端断点都重新整理，前端调试页不再容易错位。
-  - `README.md` 从“细节堆叠型说明”重写为“项目入口文档”：高层介绍项目定位、两种启动方式、主要接口和专项文档入口，把字段级协议和实现细节收回专项文档。
-  - 新增 `lumisight-desktop-macos/`：用 SwiftUI 搭了一版只面向 macOS 的原生客户端壳，默认通过 WebSocket 连接现有 Agent 后端，提供会话栏、事件流、最终输出和命令输入面板。
 - 关键修复：
   - “客户端断开 SSE 会误 cancel 正在执行的会话” -> 改为订阅断开仅释放通道，不再顺手中断后台执行。
   - “同一会话反复提问对应多条 SSE 流，前端心智和后端调度模型不一致” -> 收敛为单会话主流连接，命令与事件分离。
   - “COLLECT/FOLLOW/STEER 的会话语义被请求级流模型削弱” -> 统一回到 `sessionId` 维度建模，使传输层与调度层语义对齐。
-  - “Session mailbox 上锁范围过大，广播/中断/线程池提交都发生在锁内” -> 改成显式状态锁 + 锁外副作用，保线程安全的同时减少热点锁持有时间。
   - “上下文管理继续靠字符串列表硬拼，工具结果一多就迅速膨胀” -> 改为结构化 context entry + artifact 落盘 + 读时投影链路，为不同模型窗口预留压缩和恢复机制。
   - “cron 任务只能手工重复触发，没有稳定的后台调度入口” -> 新增动态 cron job 注册、重调度与最近运行历史，让固定问题可按计划重复执行。
 - 验证：
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：通过，覆盖 SSE controller、session dispatcher、WebSocket handler 与调试页协议改造。
   - 文档同步：`README.md`、`AGENT_PROTOCOL.md`、`agent-architecture.html` 已同步改为“会话级单长连接 + 命令投递”口径。
   - 同一编译命令也覆盖了上下文账本、上下文投影/压缩、cron 调度接口和 `CodeAssistantAgentService` 拆分后的主链路，结果仍为 `BUILD SUCCESS`。
-  - 文档与配置提交已全部按“独立功能一笔 commit”落地，并已 push 到 `develop`；README 重写和上下文流水线 5 层拆分也都已同步到远程。
