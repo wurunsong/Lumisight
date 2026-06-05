@@ -181,6 +181,30 @@
       font-size: 13px;
       line-height: 1.7;
     }
+    .presence-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .presence {
+      padding: 16px 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.9));
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.04);
+    }
+    .presence h3 {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 15px;
+    }
+    .presence p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
     .dual {
       display: grid;
       grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.82fr);
@@ -337,6 +361,7 @@
     @media (max-width: 1120px) {
       .timeline,
       .signal-grid,
+      .presence-strip,
       .highlights,
       .swimlane-track {
         grid-template-columns: 1fr;
@@ -380,12 +405,12 @@
         <article class="flow-card sky">
           <span class="index">01</span>
           <h3>请求进入</h3>
-          <p>用户问题、会话上下文和控制动作一起进入统一入口，先归到同一个 session 视角里。</p>
+          <p>用户问题、会话上下文和控制动作一起进入统一入口，先归到同一个 session 视角里，并准备接上历史上下文。</p>
         </article>
         <article class="flow-card">
           <span class="index">02</span>
           <h3>会话调度</h3>
-          <p>系统先决定这是继续当前执行、打断改道，还是恢复上次停住的会话。</p>
+          <p>系统先决定这是继续当前执行、打断改道，还是恢复上次停住的会话，同时恢复该 session 的上下文状态。</p>
         </article>
         <article class="flow-card mint">
           <span class="index">03</span>
@@ -395,17 +420,31 @@
         <article class="flow-card gold">
           <span class="index">04</span>
           <h3>Lead 制定计划</h3>
-          <p>Lead 把请求拆成任务、依赖和执行顺序，决定是单个子任务还是多 worker 协作。</p>
+          <p>Lead 把请求拆成任务、依赖和执行顺序，也会吸收记忆、上下文和外挂检索带回来的补充证据。</p>
         </article>
         <article class="flow-card rose">
           <span class="index">05</span>
           <h3>执行与回流</h3>
-          <p>任务被执行后，结果、状态和证据重新汇回 Lead，而不是散落成多个独立对话。</p>
+          <p>任务被执行后，结果、状态和证据重新汇回 Lead，并写回上下文账本，而不是散落成多个独立对话。</p>
         </article>
         <article class="flow-card sky">
           <span class="index">06</span>
           <h3>统一最终回答</h3>
-          <p>所有中间结果都收敛回主会话，再由主 Agent / Lead 产出事件流和最终答案。</p>
+          <p>所有中间结果都收敛回主会话，再由主 Agent / Lead 产出事件流和最终答案；必要时也把长期事实沉淀回记忆层。</p>
+        </article>
+      </div>
+      <div class="presence-strip">
+        <article class="presence">
+          <h3>上下文管理存在于主链路里</h3>
+          <p>请求不是裸奔进入模型；会话历史、账本、压缩后的上下文视图会随着主流程一起参与决策和收敛。</p>
+        </article>
+        <article class="presence">
+          <h3>记忆系统在旁路支持主流程</h3>
+          <p>长期记忆不会替代当前会话，但会在需要时补充用户偏好、项目事实和跨会话经验，并在结束后继续沉淀有价值的信息。</p>
+        </article>
+        <article class="presence">
+          <h3>外挂 RAG / 图谱是增强层</h3>
+          <p>向量检索、图谱和源码增强工具不是主流程本体，但在需要额外证据时会被接入，给 Lead 或单 Agent 提供外部知识支持。</p>
         </article>
       </div>
     </section>
