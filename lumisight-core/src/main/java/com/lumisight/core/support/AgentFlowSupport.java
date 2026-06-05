@@ -24,6 +24,8 @@ public class AgentFlowSupport {
     private static final Set<AgentToolPermission> BASE_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.LOCAL_FS_READ,
             AgentToolPermission.GIT_READ,
+            AgentToolPermission.MEMORY_READ,
+            AgentToolPermission.MEMORY_WRITE,
             AgentToolPermission.TODO_WRITE
     );
 

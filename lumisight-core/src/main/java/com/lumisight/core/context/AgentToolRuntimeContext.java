@@ -8,7 +8,11 @@ public final class AgentToolRuntimeContext {
     }
 
     public static Scope open(String repoRoot, Integer defaultLimit) {
-        return new Scope(SUPPORT.openValue(new Context(repoRoot, defaultLimit)));
+        return open(repoRoot, defaultLimit, null);
+    }
+
+    public static Scope open(String repoRoot, Integer defaultLimit, String userId) {
+        return new Scope(SUPPORT.openValue(new Context(repoRoot, defaultLimit, userId)));
     }
 
     public static Context required() {
@@ -27,7 +31,7 @@ public final class AgentToolRuntimeContext {
         SUPPORT.clearValue();
     }
 
-    public record Context(String repoRoot, Integer defaultLimit) {
+    public record Context(String repoRoot, Integer defaultLimit, String userId) {
     }
 
     public static final class Scope implements AutoCloseable {

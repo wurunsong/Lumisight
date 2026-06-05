@@ -56,6 +56,14 @@ lumisight:
   skills:
     allowed-paths:
       - .lumisight/skills
+  memory:
+    root-dir: ${LUMISIGHT_MEMORY_ROOT_DIR:.lumisight/memory}
+    max-entrypoint-lines: ${LUMISIGHT_MEMORY_MAX_ENTRYPOINT_LINES:200}
+    max-entrypoint-bytes: ${LUMISIGHT_MEMORY_MAX_ENTRYPOINT_BYTES:25000}
+    header-scan-lines: ${LUMISIGHT_MEMORY_HEADER_SCAN_LINES:30}
+    max-scanned-files: ${LUMISIGHT_MEMORY_MAX_SCANNED_FILES:200}
+    max-relevant-entries: ${LUMISIGHT_MEMORY_MAX_RELEVANT_ENTRIES:5}
+    stale-after-days: ${LUMISIGHT_MEMORY_STALE_AFTER_DAYS:1}
   agent:
     context:
       artifact-dir: ${LUMISIGHT_AGENT_CONTEXT_ARTIFACT_DIR:.lumisight/context-artifacts}

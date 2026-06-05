@@ -9,6 +9,7 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
+import com.lumisight.memory.RelevantMemoryContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import org.springframework.stereotype.Component;
 
@@ -28,24 +29,37 @@ public class AgentPromptService {
     }
 
     public String systemPrompt(AgentTaskType taskType) {
-        return promptTemplateService.render(switch (taskType) {
+        return systemPrompt(taskType, RelevantMemoryContext.empty());
+    }
+
+    public String systemPrompt(AgentTaskType taskType, RelevantMemoryContext memoryContext) {
+        String base = promptTemplateService.render(switch (taskType) {
             case BUG_FIX -> "system_bug_fix";
             case CHAT -> "system_chat";
             default -> "system_code_explain";
         }, Map.of());
+        String memoryBlock = memoryReminderBlock(memoryContext);
+        return memoryBlock.isBlank() ? base : base + "\n\n" + memoryBlock;
     }
 
     public String verifySystemPrompt() {
         return promptTemplateService.render("verify_system", Map.of());
     }
 
-    public String buildFinalAnswerPrompt(AgentRequest request, List<AgentContextItem> contexts, int limit, SkillPlan skillPlan) {
+    public String buildFinalAnswerPrompt(
+            AgentRequest request,
+            List<AgentContextItem> contexts,
+            int limit,
+            SkillPlan skillPlan,
+            RelevantMemoryContext memoryContext
+    ) {
         return promptTemplateService.render("final_answer", Map.of(
                 "taskType", String.valueOf(request.taskType()),
                 "repoRoot", safeText(request.repoRoot()),
                 "contextLimit", limit,
                 "question", safeText(request.question()),
                 "skillGuidance", skillGuidanceBlock(skillPlan, true),
+                "memoryGuidance", memoryReminderBlock(memoryContext),
                 "contextBlock", detailedContextBlock(contexts)
         ));
     }
@@ -55,12 +69,14 @@ public class AgentPromptService {
             AgentDialogueMode dialogueMode,
             Set<AgentToolPermission> enabledPermissions,
             AgentToolRegistry registry,
-            SkillPlan skillPlan
+            SkillPlan skillPlan,
+            RelevantMemoryContext memoryContext
     ) {
         String prompt = promptTemplateService.render("orchestrator_system", Map.of(
                 "systemPrompt", systemPrompt(taskType),
                 "skillGuidance", skillGuidanceBlock(skillPlan, false),
                 "dialogueModeGuidance", dialogueModeGuidance(dialogueMode),
+                "memoryGuidance", memoryReminderBlock(memoryContext),
                 "todoGuidance", todoGuidanceBlock(),
                 "enabledToolHints", enabledToolHints(enabledPermissions, registry)
         ));
@@ -133,6 +149,7 @@ public class AgentPromptService {
                 AgentToolCategory.SOURCE,
                 AgentToolCategory.MCP,
                 AgentToolCategory.LOCAL,
+                AgentToolCategory.MEMORY,
                 AgentToolCategory.PLANNING,
                 AgentToolCategory.LSP,
                 AgentToolCategory.BUILD,
@@ -260,6 +277,22 @@ public class AgentPromptService {
     private String todoGuidanceBlock() {
         return "- 任务清单：如果任务是多步骤的，请优先使用 todo_write 维护任务清单；先列出所有步骤，再把状态从 pending 逐步更新为 in_progress 和 completed。\n"
                 + "- 提醒机制：系统可能会注入 <reminder>Update your todos.</reminder>，收到后请先刷新清单，再继续执行。";
+    }
+
+    private String memoryReminderBlock(RelevantMemoryContext memoryContext) {
+        RelevantMemoryContext safeContext = memoryContext == null ? RelevantMemoryContext.empty() : memoryContext;
+        StringBuilder builder = new StringBuilder();
+        builder.append("长期记忆规则:\n");
+        builder.append("- 只可依赖四类长期记忆：user / feedback / project / reference。\n");
+        builder.append("- 若需要写入长期记忆，只保存稳定的跨会话信息；不要保存代码结构、git 历史、临时任务状态、当前会话上下文，或任何能从当前仓库实时推导的信息。\n");
+        builder.append("- feedback 记忆优先写明 Why 和 How to apply；project 记忆若涉及日期，必须使用绝对日期。\n\n");
+        builder.append("长期记忆索引:\n");
+        builder.append(safeText(safeContext.entrypoint().content()));
+        if (safeContext.remindersBlock() != null && !safeContext.remindersBlock().isBlank()) {
+            builder.append("\n\n已加载的相关长期记忆:\n");
+            builder.append(safeContext.remindersBlock());
+        }
+        return builder.toString();
     }
 
     private String trimSkillContent(String rawSkillContent) {

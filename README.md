@@ -6,7 +6,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 会话式 Agent 编排：支持 `FOLLOW / COLLECT / STEER`
 - 流式交互：SSE 与 WebSocket 会话事件流
 - macOS 客户端壳：原生 SwiftUI 会话界面
-- 本地代码工具：文件、Git、Java 编译、Lint、LSP
+- 本地代码工具：文件、Git、Java 编译、Lint、LSP、长期记忆
 - 知识增强：向量检索、知识图谱、方法源码补全
 - 安全执行：sandbox、快照、回滚、人工门控
 - 上下文管理：结构化账本、artifact 落盘、投影与压缩
@@ -126,6 +126,19 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 - 服务重启后不会自动恢复
 - 定时执行仍然走同一套 Agent 主链路
 
+### Memory
+
+- `GET /api/lumisight/memory/entries`
+- `POST /api/lumisight/memory/entries`
+- `DELETE /api/lumisight/memory/entries/{filename}`
+- `GET /api/lumisight/memory/index`
+- `GET /api/lumisight/memory/relevant`
+
+说明：
+- 长期记忆只支持四类：`user / feedback / project / reference`
+- 每条记忆单独保存为 Markdown 文件，`MEMORY.md` 作为轻量索引
+- `GET /api/lumisight/memory/relevant` 会按当前问题挑选最相关的记忆，并附带陈旧度提醒
+
 ### KG / Vector
 
 仅在开启对应开关后可用：
@@ -170,6 +183,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - GRAPH：`fetchOneHopByKgNodeId`
 - SOURCE：`fetchMethodSourceByLocation`
 - MCP：`callMcpCapability`
+- MEMORY：`memory_list / memory_write`
 - PLANNING：`todo_write`
 
 ## 线程与会话治理

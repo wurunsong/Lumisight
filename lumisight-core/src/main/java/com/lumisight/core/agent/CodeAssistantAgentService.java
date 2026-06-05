@@ -11,6 +11,7 @@ import com.lumisight.core.support.AgentFlowSupport;
 import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentRequestValidators;
 import com.lumisight.core.support.AgentSessionContextStore;
+import com.lumisight.core.support.RelevantMemoryService;
 import com.lumisight.core.support.SkillAutoRouter;
 import com.lumisight.core.support.StreamingChatClientSupport;
 import com.lumisight.core.support.context.AgentContextManager;
@@ -18,6 +19,7 @@ import com.lumisight.core.support.context.AgentContextSession;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.hooks.AgentHookDispatcher;
 import com.lumisight.hooks.AgentHookPoint;
+import com.lumisight.memory.RelevantMemoryContext;
 import com.lumisight.skills.runtime.SkillContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import com.lumisight.skills.runtime.SkillRegistry;
@@ -32,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class CodeAssistantAgentService implements AgentExecutionEngine {
@@ -49,6 +52,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     private final AgentHookDispatcher agentHookDispatcher;
     private final AgentLoopOrchestrator agentLoopOrchestrator;
     private final AgentFinalResponseEmitter agentFinalResponseEmitter;
+    private final RelevantMemoryService relevantMemoryService;
 
     @Autowired
     public CodeAssistantAgentService(
@@ -62,7 +66,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             AgentContextManager agentContextManager,
             AgentHookDispatcher agentHookDispatcher,
             AgentLoopOrchestrator agentLoopOrchestrator,
-            AgentFinalResponseEmitter agentFinalResponseEmitter
+            AgentFinalResponseEmitter agentFinalResponseEmitter,
+            RelevantMemoryService relevantMemoryService
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.conversationManager = conversationManager;
@@ -75,6 +80,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         this.agentHookDispatcher = agentHookDispatcher;
         this.agentLoopOrchestrator = agentLoopOrchestrator;
         this.agentFinalResponseEmitter = agentFinalResponseEmitter;
+        this.relevantMemoryService = relevantMemoryService;
     }
 
     public Flux<AgentEvent> run(AgentRequest request) {
@@ -101,10 +107,27 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
         try {
             ExecutionContext context = prepareExecutionContext(request, sessionId);
-            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit())) {
+            CompletableFuture<RelevantMemoryContext> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
+                    request.taskType(),
+                    context.resolvedRepoRoot(),
+                    context.effectiveQuestion(),
+                    request.skillPath(),
+                    request.userId(),
+                    sessionId,
+                    request.approveRiskyToolCall(),
+                    request.interrupt(),
+                    request.resume(),
+                    request.includeRagContext(),
+                    request.includeKnowledgeGraphContext(),
+                    request.contextLimit(),
+                    request.runMode(),
+                    request.dialogueMode()
+            ));
+            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit(), request.userId())) {
                 publishInitState(request, context, traceId, publisher);
                 SkillPlan skillPlan = resolveSkillPlan(request, context, traceId, publisher);
                 Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(request, skillPlan);
+                RelevantMemoryContext relevantMemoryContext = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
 
                 ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
@@ -120,7 +143,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 }
                 context = resumeHandling.context();
 
-                if (request.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(request, context, skillPlan, traceId, publisher)) {
+                if (request.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(request, context, skillPlan, traceId, publisher, relevantMemoryContext)) {
                     sink.complete();
                     return;
                 }
@@ -136,7 +159,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         sessionId,
                         traceId,
                         enabledPermissions,
-                        context.runEpoch()
+                        context.runEpoch(),
+                        relevantMemoryContext
                 );
                 context = context.withContextSession(result.contextSession());
 
@@ -150,11 +174,22 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     return;
                 }
 
-                emitFinalAnswer(request, context, skillPlan, result, traceId, publisher);
+                emitFinalAnswer(request, context, skillPlan, result, traceId, publisher, relevantMemoryContext);
                 sink.complete();
             }
         } catch (Throwable t) {
             sink.error(t);
+        }
+    }
+
+    private RelevantMemoryContext joinRelevantMemory(CompletableFuture<RelevantMemoryContext> pendingRelevantMemory) {
+        if (pendingRelevantMemory == null) {
+            return RelevantMemoryContext.empty();
+        }
+        try {
+            return pendingRelevantMemory.join();
+        } catch (Exception e) {
+            return RelevantMemoryContext.empty();
         }
     }
 
@@ -286,7 +321,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             ExecutionContext context,
             SkillPlan skillPlan,
             String traceId,
-            AgentEventPublisher publisher
+            AgentEventPublisher publisher,
+            RelevantMemoryContext relevantMemoryContext
     ) {
         if (request.runMode() != AgentRunMode.PLAN) {
             return false;
@@ -299,7 +335,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         fireHook(AgentHookPoint.BEFORE_PLAN, context.sessionId(), 0, context.effectiveQuestion(), null, Map.of());
         String plan = streamingChatClientSupport.collect(
                 llmChatClient,
-                agentPromptService.systemPrompt(request.taskType()),
+                agentPromptService.systemPrompt(request.taskType(), relevantMemoryContext),
                 agentPromptService.planPrompt(request, skillPlan),
                 () -> !shouldInterruptExecution(context.sessionId(), context.runEpoch()),
                 null
@@ -315,7 +351,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             SkillPlan skillPlan,
             AgentLoopOrchestrator.OrchestrationResult orchestrationResult,
             String traceId,
-            AgentEventPublisher publisher
+            AgentEventPublisher publisher,
+            RelevantMemoryContext relevantMemoryContext
     ) {
         agentFinalResponseEmitter.emit(
                 request,
@@ -328,6 +365,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 orchestrationResult,
                 traceId,
                 publisher,
+                relevantMemoryContext,
                 () -> fireHook(AgentHookPoint.BEFORE_FINAL, context.sessionId(), orchestrationResult.finalRound(), context.effectiveQuestion(), null, Map.of("directAnswer", StringUtils.hasText(orchestrationResult.directAnswer()))),
                 () -> shouldInterruptExecution(context.sessionId(), context.runEpoch()),
                 interruptedSession -> appendInterruptedEvents(traceId, context.sessionId(), orchestrationResult.finalRound(), context.effectiveQuestion(), interruptedSession, publisher)

@@ -68,5 +68,10 @@
       <artifactId>lumisight-skills</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.lumisight</groupId>
+      <artifactId>lumisight-memory</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

@@ -28,6 +28,9 @@ JSON 结构:
 当前对话管理策略:
 <dialogueModeGuidance>
 
+长期记忆提醒:
+<memoryGuidance>
+
 任务清单提醒:
 <todoGuidance>
 

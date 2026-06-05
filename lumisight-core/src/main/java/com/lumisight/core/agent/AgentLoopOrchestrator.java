@@ -23,6 +23,7 @@ import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.hooks.AgentHookContext;
 import com.lumisight.hooks.AgentHookDispatcher;
 import com.lumisight.hooks.AgentHookPoint;
+import com.lumisight.memory.RelevantMemoryContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,7 +91,8 @@ class AgentLoopOrchestrator {
             String sessionId,
             String traceId,
             Set<AgentToolPermission> enabledPermissions,
-            long runEpoch
+            long runEpoch,
+            RelevantMemoryContext memoryContext
     ) {
         int lastRound = Math.max(0, startRound - 1);
         for (int round = startRound; round <= MAX_TOOL_ROUNDS; round++) {
@@ -130,7 +132,8 @@ class AgentLoopOrchestrator {
                             request.dialogueMode(),
                             enabledPermissions,
                             agentToolRegistry,
-                            skillPlan
+                            skillPlan,
+                            memoryContext
                     ),
                     agentPromptService.orchestratorUserPrompt(
                             agentFlowSupport.withQuestion(request, effectiveQuestion, sessionId),

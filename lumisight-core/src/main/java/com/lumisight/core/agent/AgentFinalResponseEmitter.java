@@ -10,6 +10,7 @@ import com.lumisight.core.support.context.AgentContextAppendOptions;
 import com.lumisight.core.support.context.AgentContextManager;
 import com.lumisight.core.support.context.AgentContextProjection;
 import com.lumisight.core.support.context.AgentContextSession;
+import com.lumisight.memory.RelevantMemoryContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
@@ -50,6 +51,7 @@ class AgentFinalResponseEmitter {
             AgentLoopOrchestrator.OrchestrationResult orchestrationResult,
             String traceId,
             AgentEventPublisher publisher,
+            RelevantMemoryContext memoryContext,
             Runnable beforeFinalHook,
             BooleanSupplier shouldInterruptExecution,
             Consumer<AgentContextSession> onInterrupted
@@ -77,14 +79,14 @@ class AgentFinalResponseEmitter {
         );
         AgentContextProjection finalProjection = agentContextManager.projectForFinal(sessionId, nextSession, finalRequest, skillPlan);
         nextSession = finalProjection.session();
-        String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, finalProjection.contexts(), limit, skillPlan);
+        String finalPrompt = agentPromptService.buildFinalAnswerPrompt(finalRequest, finalProjection.contexts(), limit, skillPlan, memoryContext);
         beforeFinalHook.run();
         if (shouldInterruptExecution.getAsBoolean()) {
             onInterrupted.accept(nextSession);
             return;
         }
         publisher.emit(AgentEvent.state(traceId, sessionId, orchestrationResult.finalRound(), AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
-        streamFinalAnswer(request, sessionId, runEpoch, orchestrationResult.finalRound(), finalPrompt, traceId, publisher, shouldInterruptExecution);
+        streamFinalAnswer(request, sessionId, runEpoch, orchestrationResult.finalRound(), finalPrompt, traceId, publisher, memoryContext, shouldInterruptExecution);
     }
 
     private AgentContextSession appendDirectAnswerDraftIfNeeded(String sessionId, AgentContextSession contextSession, String directAnswerDraft) {
@@ -107,11 +109,12 @@ class AgentFinalResponseEmitter {
             String finalPrompt,
             String traceId,
             AgentEventPublisher publisher,
+            RelevantMemoryContext memoryContext,
             BooleanSupplier shouldInterruptExecution
     ) {
         StringBuilder finalAnswerBuffer = new StringBuilder();
         llmChatClient.prompt()
-                .system(agentPromptService.systemPrompt(request.taskType()))
+                .system(agentPromptService.systemPrompt(request.taskType(), memoryContext))
                 .user(finalPrompt)
                 .stream()
                 .content()

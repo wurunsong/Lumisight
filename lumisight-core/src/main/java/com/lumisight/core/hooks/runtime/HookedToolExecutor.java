@@ -99,7 +99,11 @@ public class HookedToolExecutor {
         if (runtimeContext == null) {
             return execute(decision, enabledPermissions, limit, sessionId, round, question);
         }
-        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(runtimeContext.repoRoot(), runtimeContext.defaultLimit())) {
+        try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(
+                runtimeContext.repoRoot(),
+                runtimeContext.defaultLimit(),
+                runtimeContext.userId()
+        )) {
             return execute(decision, enabledPermissions, limit, sessionId, round, question);
         }
     }
