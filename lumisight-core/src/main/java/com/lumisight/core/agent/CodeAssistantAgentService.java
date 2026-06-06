@@ -214,7 +214,17 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     private AgentRequest resolveEffectiveRequest(AgentRequest request, String effectiveQuestion, String traceId, String sessionId, AgentEventPublisher publisher) {
         MultiAgentModeDecider.Decision decision = multiAgentModeDecider.decide(request, effectiveQuestion);
         if (decision.multiAgentSelected()) {
-            publisher.emit(AgentEvent.multiAgentSelected(traceId, sessionId, 0, decision.effectiveRunMode().name(), decision.reason()));
+            publisher.emit(AgentEvent.multiAgentSelected(
+                    traceId,
+                    sessionId,
+                    0,
+                    decision.effectiveRunMode().name(),
+                    decision.reason(),
+                    Map.of(
+                            "confidence", decision.confidence(),
+                            "matchedSignals", decision.matchedSignals()
+                    )
+            ));
         }
         if (decision.effectiveRunMode() == request.runMode()) {
             return request;
@@ -358,6 +368,9 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                         "topology", coordinationResult.plan().topology().name(),
                         "taskCount", coordinationResult.plan().tasks() == null ? 0 : coordinationResult.plan().tasks().size(),
                         "executionMode", coordinationResult.executionMode(),
+                        "planNarrative", coordinationResult.plan().metadata().getOrDefault("planNarrative", ""),
+                        "boundaryNotes", coordinationResult.plan().metadata().getOrDefault("boundaryNotes", List.of()),
+                        "taskBriefs", coordinationResult.plan().metadata().getOrDefault("taskBriefs", List.of()),
                         "lifecycleEvents", coordinationResult.lifecycleEvents(),
                         "taskStates", coordinationResult.executionState().taskStates(),
                         "inboxOffsets", coordinationResult.executionState().inboxOffsets(),
@@ -413,7 +426,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     0,
                     result.taskId(),
                     result.success(),
-                    result.summary()
+                    result.summary(),
+                    Map.of(
+                            "agentName", result.agentName(),
+                            "confidence", result.confidence(),
+                            "suggestedActions", result.suggestedActions()
+                    )
             ));
             nextSession = agentContextManager.append(
                     context.sessionId(),

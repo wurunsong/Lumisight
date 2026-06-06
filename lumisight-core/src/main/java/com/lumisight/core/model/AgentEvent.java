@@ -149,11 +149,28 @@ public record AgentEvent(
     }
 
     public static AgentEvent multiAgentSelected(String traceId, String sessionId, Integer round, String mode, String reason) {
+        return multiAgentSelected(traceId, sessionId, round, mode, reason, Map.of());
+    }
+
+    public static AgentEvent multiAgentSelected(
+            String traceId,
+            String sessionId,
+            Integer round,
+            String mode,
+            String reason,
+            Map<String, Object> payload
+    ) {
+        Map<String, Object> nextPayload = new java.util.LinkedHashMap<>();
+        nextPayload.put("mode", mode == null ? "" : mode);
+        nextPayload.put("reason", reason == null ? "" : reason);
+        if (payload != null && !payload.isEmpty()) {
+            nextPayload.putAll(payload);
+        }
         return base(
                 "MULTI_AGENT_SELECTED",
                 "多 Agent 路径已选择",
                 null,
-                Map.of("mode", mode == null ? "" : mode, "reason", reason == null ? "" : reason),
+                Map.copyOf(nextPayload),
                 traceId,
                 sessionId,
                 round,
@@ -191,11 +208,29 @@ public record AgentEvent(
     }
 
     public static AgentEvent subagentResult(String traceId, String sessionId, Integer round, String taskId, boolean success, String summary) {
+        return subagentResult(traceId, sessionId, round, taskId, success, summary, Map.of());
+    }
+
+    public static AgentEvent subagentResult(
+            String traceId,
+            String sessionId,
+            Integer round,
+            String taskId,
+            boolean success,
+            String summary,
+            Map<String, Object> payload
+    ) {
+        Map<String, Object> nextPayload = new java.util.LinkedHashMap<>();
+        nextPayload.put("taskId", taskId == null ? "" : taskId);
+        nextPayload.put("success", success);
+        if (payload != null && !payload.isEmpty()) {
+            nextPayload.putAll(payload);
+        }
         return base(
                 "SUBAGENT_RESULT",
                 summary == null ? "" : summary,
                 null,
-                Map.of("taskId", taskId == null ? "" : taskId, "success", success),
+                Map.copyOf(nextPayload),
                 traceId,
                 sessionId,
                 round,

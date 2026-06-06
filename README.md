@@ -165,7 +165,10 @@ Lumisight 现在同时有两套“任务”能力：
 - `task_list`：查看任务列表
 - `task_get`：查看单个任务完整 JSON
 - `task_claim`：认领已解锁任务
+- `task_release`：释放已认领任务并回退到 `pending`
 - `task_complete`：完成任务并返回因此解锁的下游任务
+- `task_resume`：自动续跑当前 owner 的进行中任务，或找到下一批已解锁任务并可自动认领
+- `task_board`：按 `ready / in_progress / blocked / completed` 查看任务看板
 
 任务字段当前包括：
 
@@ -177,7 +180,7 @@ Lumisight 现在同时有两套“任务”能力：
 
 - `pending -> in_progress -> completed`
 
-当前先实现了 `blockedBy` 依赖检查和跨会话持久化，还没有做环检测、release 回退和任务看板 UI。
+当前已经支持依赖环检测、release 回退、任务看板和自动续跑；更偏产品化的看板 UI、自动完成判定策略和更复杂的调度治理仍可继续增强。
 
 ## Multi-Agent
 

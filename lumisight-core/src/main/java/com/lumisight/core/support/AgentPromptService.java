@@ -289,7 +289,7 @@ public class AgentPromptService {
 
     private String todoGuidanceBlock() {
         return "- 会话内 checklist：如果只是当前会话里的多步骤执行，请使用 todo_write 维护任务清单；先列出所有步骤，再把状态从 pending 逐步更新为 in_progress 和 completed。\n"
-                + "- 持久化任务系统：如果任务需要跨会话保留、存在 blockedBy 依赖关系，或需要 claim/complete 语义，请使用 task_create / task_list / task_get / task_claim / task_complete，而不是只写 todo。\n"
+                + "- 持久化任务系统：如果任务需要跨会话保留、存在 blockedBy 依赖关系，或需要 claim/complete/release/resume/board 语义，请使用 task_create / task_list / task_get / task_claim / task_release / task_complete / task_resume / task_board，而不是只写 todo。\n"
                 + "- 提醒机制：系统可能会注入 <reminder>Update your todos.</reminder>，收到后请先刷新会话内 checklist，再继续执行。";
     }
 

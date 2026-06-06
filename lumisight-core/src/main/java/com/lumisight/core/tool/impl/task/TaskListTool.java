@@ -55,7 +55,7 @@ public class TaskListTool implements PermissionedAgentTool<TaskListTool.Args> {
 
     @Override
     public String description() {
-        return "列出当前仓库的持久化任务及其状态、依赖和是否已解锁。";
+        return "列出当前仓库的持久化任务及其状态、依赖和是否已解锁。status 还支持 ready / blocked 这样的执行态过滤。";
     }
 
     @Override

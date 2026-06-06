@@ -6,6 +6,8 @@ import com.lumisight.core.context.AgentToolInvocationContext;
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskRecord;
+import com.lumisight.core.service.task.TaskBoardView;
+import com.lumisight.core.service.task.TaskResumeResult;
 import com.lumisight.core.service.task.TaskStatus;
 import com.lumisight.core.service.task.TaskView;
 import org.springframework.util.StringUtils;
@@ -67,6 +69,49 @@ final class TaskToolSupport {
         return joiner.toString();
     }
 
+    static String renderTaskBoard(TaskBoardView board) {
+        StringJoiner joiner = new StringJoiner("\n");
+        joiner.add("## Task Board");
+        joiner.add("total=%d ready=%d in_progress=%d blocked=%d completed=%d allCompleted=%s".formatted(
+                board.total(),
+                board.ready(),
+                board.inProgress(),
+                board.blocked(),
+                board.completed(),
+                board.allCompleted()
+        ));
+        joiner.add("");
+        joiner.add("### Ready");
+        appendSection(joiner, board.readyTasks());
+        joiner.add("");
+        joiner.add("### In Progress");
+        appendSection(joiner, board.inProgressTasks());
+        joiner.add("");
+        joiner.add("### Blocked");
+        appendSection(joiner, board.blockedTasks());
+        return joiner.toString();
+    }
+
+    static String renderTaskResume(TaskResumeResult result) {
+        StringJoiner joiner = new StringJoiner("\n");
+        joiner.add(result.message());
+        if (result.allCompleted()) {
+            joiner.add("All tasks completed.");
+            return joiner.toString();
+        }
+        if (!result.activeTasks().isEmpty()) {
+            joiner.add("");
+            joiner.add("### Active");
+            appendSection(joiner, result.activeTasks());
+        }
+        if (!result.readyTasks().isEmpty()) {
+            joiner.add("");
+            joiner.add("### Ready");
+            appendSection(joiner, result.readyTasks());
+        }
+        return joiner.toString();
+    }
+
     static String renderTaskJson(ObjectMapper objectMapper, TaskView view) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("task", view.task());
@@ -83,6 +128,28 @@ final class TaskToolSupport {
         if (!StringUtils.hasText(status)) {
             return true;
         }
+        String normalized = status.trim().toLowerCase();
+        if ("ready".equals(normalized)) {
+            return view.task().status() == TaskStatus.PENDING && view.canStart();
+        }
+        if ("blocked".equals(normalized)) {
+            return view.task().status() == TaskStatus.PENDING && !view.canStart();
+        }
         return view.task().status() == TaskStatus.parse(status);
+    }
+
+    private static void appendSection(StringJoiner joiner, List<TaskView> views) {
+        if (views == null || views.isEmpty()) {
+            joiner.add("- 无");
+            return;
+        }
+        for (TaskView view : views) {
+            TaskRecord task = view.task();
+            String owner = task.owner() == null ? "-" : task.owner();
+            String blocked = view.blockingDependencies().isEmpty()
+                    ? (view.canStart() ? "ready" : "blocked")
+                    : "blocked by " + view.blockingDependencies();
+            joiner.add("- %s %s owner=%s %s".formatted(task.id(), task.subject(), owner, blocked));
+        }
     }
 }

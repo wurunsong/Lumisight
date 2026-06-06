@@ -2,12 +2,12 @@ package com.lumisight.core.tool.impl.task;
 
 import com.lumisight.core.context.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
-import com.lumisight.core.service.task.TaskCompleteResult;
+import com.lumisight.core.service.task.TaskReleaseResult;
+import com.lumisight.core.service.task.TaskService;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.core.tool.ToolArg;
-import com.lumisight.core.service.task.TaskService;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -15,23 +15,25 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-public class TaskCompleteTool implements PermissionedAgentTool<TaskCompleteTool.Args> {
+public class TaskReleaseTool implements PermissionedAgentTool<TaskReleaseTool.Args> {
 
     public record Args(
             @ToolArg(description = "任务 ID", required = true, example = "task_20260605113000_ab12cd34")
-            String taskId
+            String taskId,
+            @ToolArg(description = "释放任务的 owner，可不填；默认优先使用 userId，再回退到 sessionId", example = "agent-backend")
+            String owner
     ) {
     }
 
     private final TaskService taskService;
 
-    public TaskCompleteTool(TaskService taskService) {
+    public TaskReleaseTool(TaskService taskService) {
         this.taskService = taskService;
     }
 
     @Override
     public String toolName() {
-        return "task_complete";
+        return "task_release";
     }
 
     @Override
@@ -51,7 +53,7 @@ public class TaskCompleteTool implements PermissionedAgentTool<TaskCompleteTool.
 
     @Override
     public String description() {
-        return "将一个持久化任务标记为 completed，并返回因此被解锁的下游任务。";
+        return "释放一个已认领的持久化任务，把它从 in_progress 回退到 pending。适合会话中断、需要换人接手或暂时撤回 claim 的场景。";
     }
 
     @Override
@@ -65,17 +67,15 @@ public class TaskCompleteTool implements PermissionedAgentTool<TaskCompleteTool.
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
-        TaskCompleteResult result = taskService.complete(context.repoRoot(), args.taskId());
+        TaskReleaseResult result = taskService.release(context.repoRoot(), args.taskId(), TaskToolSupport.ownerOrDefault(args.owner()));
         return List.of(TaskToolSupport.item(
-                "task_complete",
-                result.task().id(),
+                "task_release",
+                args.taskId(),
                 result.message(),
                 Map.of(
-                        "taskId", result.task().id(),
-                        "status", result.task().status().wireValue(),
-                        "unblocked", result.unblocked().stream().map(view -> view.task().id()).toList(),
-                        "readyTasks", result.readyTasks().stream().map(view -> view.task().id()).toList(),
-                        "allCompleted", result.allCompleted()
+                        "taskId", args.taskId(),
+                        "released", result.released(),
+                        "status", result.view() == null ? "unknown" : result.view().task().status().wireValue()
                 )
         ));
     }

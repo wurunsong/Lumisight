@@ -168,6 +168,7 @@
               <option value="" selected>请选择</option>
               <option>NORMAL</option>
               <option>PLAN</option>
+              <option>MULTI_AGENT</option>
             </select>
           </div>
         </div>
@@ -246,7 +247,9 @@
     const EVENT_TYPES = [
       "PLAN", "SKILL_SELECTED", "SKILL_ROUTE", "DIALOGUE_MODE", "LOOP_STATE",
       "TOOL_CALL", "TOOL_RESULT", "ASK_USER", "HUMAN_GATE", "VERIFY_RESULT",
-      "TOKEN", "FINAL", "ERROR", "INTERRUPTED", "RESUMED"
+      "MULTI_AGENT_SELECTED", "ORCHESTRATION_PLAN", "SUBAGENT_SPAWNED",
+      "SUBAGENT_RESULT", "MULTI_AGENT_TASK_STATUS", "TEAM_AGENT_LIFECYCLE",
+      "MULTI_AGENT_FALLBACK", "TOKEN", "FINAL", "ERROR", "INTERRUPTED", "RESUMED"
     ];
     let eventSource = null;
 
