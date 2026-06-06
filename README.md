@@ -6,7 +6,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 会话式 Agent 编排：支持 `FOLLOW / COLLECT / STEER`
 - 流式交互：SSE 与 WebSocket 会话事件流
 - macOS 客户端壳：原生 SwiftUI 会话界面
-- 本地代码工具：文件、Git、Java 编译、Lint、LSP、长期记忆
+- 本地代码工具：文件、Git、Java 编译、Lint、LSP、长期记忆、环境操作
 - 知识增强：向量检索、知识图谱、方法源码补全
 - 浏览器自动化：网页打开、DOM 摘要、点击输入、截图
 - 安全执行：sandbox、快照、回滚、人工门控
@@ -15,6 +15,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 多 Agent 演进：单 Agent 默认路径、`task_subagent` 干净子任务、Lead + team workers 基础版请求内编排
 - 定时触发：cron job 调用 Agent 执行固定任务
 - 持久化任务系统：`.tasks/` 下的跨会话任务图、依赖与认领状态
+- 离线反思：基于 task / memory / cron 运行信号生成 project memory，并可选创建跟进任务
 
 ## 环境要求
 
@@ -152,6 +153,15 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 - 每条记忆单独保存为 Markdown 文件，`MEMORY.md` 作为轻量索引
 - `GET /api/lumisight/memory/relevant` 会按当前问题挑选最相关的记忆，并附带陈旧度提醒
 
+### Offline Reflection
+
+- `POST /api/lumisight/reflection/offline-runs`
+
+说明：
+- 会读取当前 repo 的任务看板、近期记忆和 cron 运行历史
+- 会生成一份离线反思摘要，并默认落为 `project` 类型 memory
+- 可选自动创建少量 follow-up tasks，方便把反思结果转成下一步动作
+
 ## 任务系统
 
 Lumisight 现在同时有两套“任务”能力：
@@ -288,6 +298,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 当前主工具族包括：
 
 - LOCAL：`grep / cat / ls / pwd / writeRepoFile / rollbackRepoFile`
+- LOCAL ENV：`envInstall / serviceStart / serviceStatus / serviceLogs / serviceStop`
 - BUILD：`compileJava`
 - GIT：`gitStatus / gitDiff / gitBlame`
 - LSP：`javaGoToDefinition / javaFindReferences / lintJavaByJdtls`
@@ -297,7 +308,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - MCP：`callMcpCapability`
 - BROWSER：`browser_open / browser_snapshot / browser_click / browser_type / browser_screenshot / browser_close`
 - MEMORY：`memory_list / memory_write`
-- PLANNING：`todo_write / task_create / task_list / task_get / task_claim / task_complete`
+- PLANNING：`todo_write / task_create / task_list / task_get / task_claim / task_release / task_complete / task_resume / task_board`
 
 ## 线程与会话治理
 

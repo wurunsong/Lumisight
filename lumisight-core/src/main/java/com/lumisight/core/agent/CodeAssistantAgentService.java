@@ -359,23 +359,23 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 orchestrationRequest,
                 Map.of("shouldStop", (BooleanSupplier) () -> shouldInterruptExecution(context.sessionId(), context.runEpoch()))
         );
+        Map<String, Object> orchestrationPayload = new LinkedHashMap<>();
+        orchestrationPayload.put("planId", coordinationResult.plan().planId());
+        orchestrationPayload.put("topology", coordinationResult.plan().topology().name());
+        orchestrationPayload.put("taskCount", coordinationResult.plan().tasks() == null ? 0 : coordinationResult.plan().tasks().size());
+        orchestrationPayload.put("executionMode", coordinationResult.executionMode());
+        orchestrationPayload.put("planNarrative", coordinationResult.plan().metadata().getOrDefault("planNarrative", ""));
+        orchestrationPayload.put("boundaryNotes", coordinationResult.plan().metadata().getOrDefault("boundaryNotes", List.of()));
+        orchestrationPayload.put("taskBriefs", coordinationResult.plan().metadata().getOrDefault("taskBriefs", List.of()));
+        orchestrationPayload.put("lifecycleEvents", coordinationResult.lifecycleEvents());
+        orchestrationPayload.put("taskStates", coordinationResult.executionState().taskStates());
+        orchestrationPayload.put("inboxOffsets", coordinationResult.executionState().inboxOffsets());
+        orchestrationPayload.put("currentRound", coordinationResult.executionState().currentRound());
         publisher.emit(AgentEvent.orchestrationPlan(
                 traceId,
                 context.sessionId(),
                 0,
-                Map.of(
-                        "planId", coordinationResult.plan().planId(),
-                        "topology", coordinationResult.plan().topology().name(),
-                        "taskCount", coordinationResult.plan().tasks() == null ? 0 : coordinationResult.plan().tasks().size(),
-                        "executionMode", coordinationResult.executionMode(),
-                        "planNarrative", coordinationResult.plan().metadata().getOrDefault("planNarrative", ""),
-                        "boundaryNotes", coordinationResult.plan().metadata().getOrDefault("boundaryNotes", List.of()),
-                        "taskBriefs", coordinationResult.plan().metadata().getOrDefault("taskBriefs", List.of()),
-                        "lifecycleEvents", coordinationResult.lifecycleEvents(),
-                        "taskStates", coordinationResult.executionState().taskStates(),
-                        "inboxOffsets", coordinationResult.executionState().inboxOffsets(),
-                        "currentRound", coordinationResult.executionState().currentRound()
-                )
+                orchestrationPayload
         ));
         AgentContextSession nextSession = agentContextManager.append(
                 context.sessionId(),
