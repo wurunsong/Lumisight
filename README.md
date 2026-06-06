@@ -85,6 +85,7 @@ podman machine start
 - [lumisight.html](./lumisight.html)：完整架构总览
 - [agent-architecture.html](./agent-architecture.html)：主架构视图
 - [memory-context-management.html](./memory-context-management.html)：上下文管理专项视图
+- [RAG_EVAL.md](./RAG_EVAL.md)：CodeSearchNet 风格代码检索评测说明
 - [CODE_FLOW.md](./CODE_FLOW.md)：按日期记录的开发进展
 - [AGENT_CAPABILITY_GAP.md](./AGENT_CAPABILITY_GAP.md)：当前能力与后续差距清单
 - [MULTI_AGENT_PLAN.md](./MULTI_AGENT_PLAN.md)：多 Agent 统一蓝图与分阶段落地说明
@@ -152,6 +153,15 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 - 长期记忆只支持四类：`user / feedback / project / reference`
 - 每条记忆单独保存为 Markdown 文件，`MEMORY.md` 作为轻量索引
 - `GET /api/lumisight/memory/relevant` 会按当前问题挑选最相关的记忆，并附带陈旧度提醒
+
+### RAG Eval
+
+- `POST /api/lumisight/rag-eval/codesearchnet/run`
+
+说明：
+- 当前优先支持 `CodeSearchNet` 风格的 `jsonl / jsonl.gz` 数据集
+- 默认跑 `docstring -> code retrieval` 评测，并输出 `Recall@K / MRR / mean NDCG`
+- 报告默认落到 `.lumisight/evals/rag/*.json`
 
 ### Offline Reflection
 
@@ -303,6 +313,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - GIT：`gitStatus / gitDiff / gitBlame`
 - LSP：`javaGoToDefinition / javaFindReferences / lintJavaByJdtls`
 - RAG：`searchHybridVector`
+- RAG EVAL：`/api/lumisight/rag-eval/codesearchnet/run`
 - GRAPH：`fetchOneHopByKgNodeId`
 - SOURCE：`fetchMethodSourceByLocation`
 - MCP：`callMcpCapability`
