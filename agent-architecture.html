@@ -384,7 +384,7 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 多 Agent 主流程</h1>
-      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。也就是说，先让人一眼看懂“请求怎么进来、什么时候升级、任务怎么分发、结果怎么回收”，再补工程层的关键能力，不把两件事混成同一张说明书。</p>
+      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。也就是说，先让人一眼看懂“请求怎么进来、什么时候升级、任务怎么分发、结果怎么回收”，再补计划执行、环境操作、离线反思和 RAG 评测这些工程闭环，不把两件事混成同一张说明书。</p>
       <div class="hero-badges">
         <span class="badge">Single Agent by Default</span>
         <span class="badge">Lead Orchestration</span>
@@ -420,7 +420,7 @@
         <article class="flow-card gold">
           <span class="index">04</span>
           <h3>Lead 制定计划</h3>
-          <p>Lead 把请求拆成任务、依赖和执行顺序，也会吸收记忆、上下文和外挂检索带回来的补充证据。</p>
+          <p>Lead 把请求拆成任务、依赖和执行顺序，也会吸收记忆、上下文、外挂检索与计划系统当前状态带回来的补充证据。</p>
         </article>
         <article class="flow-card rose">
           <span class="index">05</span>
@@ -430,7 +430,7 @@
         <article class="flow-card sky">
           <span class="index">06</span>
           <h3>统一最终回答</h3>
-          <p>所有中间结果都收敛回主会话，再由主 Agent / Lead 产出事件流和最终答案；必要时也把长期事实沉淀回记忆层。</p>
+          <p>所有中间结果都收敛回主会话，再由主 Agent / Lead 产出事件流和最终答案；必要时把长期事实沉淀回记忆层，并在后台形成可复用的反思结果。</p>
         </article>
       </div>
       <div class="presence-strip">
@@ -444,7 +444,7 @@
         </article>
         <article class="presence">
           <h3>外挂 RAG / 图谱是增强层</h3>
-          <p>向量检索、图谱和源码增强工具不是主流程本体，但在需要额外证据时会被接入，给 Lead 或单 Agent 提供外部知识支持。</p>
+          <p>向量检索、图谱和源码增强工具不是主流程本体，但在需要额外证据时会被接入，给 Lead 或单 Agent 提供外部知识支持，并可再用公开 benchmark 反向校准检索质量。</p>
         </article>
       </div>
     </section>
@@ -538,6 +538,10 @@
             <h3>最终收口</h3>
             <p>无论拆成多少 worker，最后负责写入、验证、事件输出和回答用户的仍然是主 Agent / Lead。worker 提供的是局部结果，不是最终对话主体。</p>
           </article>
+          <article class="note-card">
+            <h3>执行基底</h3>
+            <p>多 Agent 之下并不是“任意 shell”，而是计划系统、受控环境工具、服务日志检查和离线反思一起构成可持续推进的执行底座，Lead 只是把这些能力调度起来。</p>
+          </article>
         </div>
       </div>
 
@@ -615,6 +619,38 @@
             <li>恢复点按 wave 和 task state 定位，不会把已经完成的子任务再跑一遍。</li>
             <li>这让用户体验保持“同一个任务持续推进”的连续感。</li>
             <li>多 Agent 最终仍然服务于主会话，而不是替代主会话。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>计划系统把执行闭环固定下来</h3>
+          <ul>
+            <li>主链路已经不只依赖会话内 todo，而是补齐了 `task_create / claim / release / complete / resume / board` 这一组跨会话计划语义。</li>
+            <li>Lead 可以围绕 ready、blocked、in-progress 和 completed 来判断下一步，而不是每轮重新猜当前推进到哪里。</li>
+            <li>这样多 Agent、单 Agent 和 cron / 离线反思都能围绕同一套任务视图衔接。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>环境操作仍受同一套边界约束</h3>
+          <ul>
+            <li>系统现在能做依赖安装、服务启动、状态检查、日志读取和服务停止，但这些动作仍被限制在 repo 内白名单命令与托管日志路径里。</li>
+            <li>触发条件是“需要把代码改动落到真实运行态或验证环境”，核心处理是受控命令执行与后台服务托管。</li>
+            <li>保护措施是最小命令面、显式 serviceId、可追踪 pid / logFile，输出结果则回到主会话继续决策或修复。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>离线反思把结束后的经验回流主系统</h3>
+          <ul>
+            <li>请求结束不再意味着信息流断掉；后台可以读取 task board、近期 memory 和 cron 历史，生成一份离线反思摘要。</li>
+            <li>这条链路的输入是执行痕迹，处理是聚合当前阻塞、失败运行和近期沉淀，保护是默认只写 `project memory` 或少量 follow-up task。</li>
+            <li>输出结果不是新的聊天回答，而是让未来请求能直接复用的长期经验与下一步动作。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>RAG 检索开始有公开 benchmark 校准</h3>
+          <ul>
+            <li>外挂向量检索不再只是“能接进去”，而是增加了 CodeSearchNet 风格的代码检索评测入口。</li>
+            <li>触发条件是需要验证 `docstring -> code retrieval` 的召回质量，核心处理是读取公开 jsonl 数据、构建临时语料库并计算 `Recall@K / MRR / mean NDCG`。</li>
+            <li>这样 RAG 的价值不只停留在架构说明里，还能用公开数据集回答“检索到底召回得怎么样”。</li>
           </ul>
         </article>
       </div>

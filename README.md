@@ -112,6 +112,7 @@ Lumisight 现在采用“按会话订阅事件流，再向同一会话投递命�
 - `http://localhost:8080/agent-console.html`
 
 它适合本地直接观察会话事件流、最终输出和命令投递效果。
+调试页现在也支持显式切到 `MULTI_AGENT` 路径，并展示模式升级、拆解叙事和 team worker 回流等关键事件。
 
 可选桌面壳：
 
@@ -239,6 +240,11 @@ Lead + team workers 的当前能力：
 - `POST /api/lumisight/kg/query`
 - `POST /api/lumisight/vector/code-chunk/ingest`
 - `POST /api/lumisight/vector/symbol-doc/ingest`
+
+说明：
+
+- `lumisight.vector.enabled=true` 时，代码块和注释检索会走真实 `VectorStore` provider，而不是空实现兜底
+- `lumisight.kg.enabled=true` 时，知识图谱增强会进入同一套上下文准备链路
 
 ## 浏览器 / DOM 能力
 

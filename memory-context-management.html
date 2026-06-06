@@ -385,7 +385,7 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 记忆与上下文主流程</h1>
-      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆又怎样在旁路支持主流程，并在结束后继续沉淀。</p>
+      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆又怎样在旁路支持主流程，并在结束后通过离线反思继续沉淀。</p>
       <div class="hero-badges">
         <span class="badge">Session Ledger</span>
         <span class="badge">Projection Before Prompt</span>
@@ -431,7 +431,7 @@
         <article class="flow-card sky">
           <span class="index">06</span>
           <h3>沉淀与结束</h3>
-          <p>这一轮结束后，会话上下文继续保留在账本层，真正值得长期保存的事实才会被沉淀到长期记忆层。</p>
+          <p>这一轮结束后，会话上下文继续保留在账本层；真正值得长期保存的事实会被沉淀到长期记忆层，必要时还会触发离线反思，把 task / memory / cron 里的稳定信号再整理一次。</p>
         </article>
       </div>
       <div class="presence-strip">
@@ -445,7 +445,7 @@
         </article>
         <article class="presence">
           <h3>外挂检索是增强层</h3>
-          <p>RAG、图谱和源码增强工具不是记忆系统本体，但会在需要更多证据时被接到同一套上下文准备链路里。</p>
+          <p>RAG、图谱和源码增强工具不是记忆系统本体，但会在需要更多证据时被接到同一套上下文准备链路里；检索质量也可以再用公开 benchmark 做校准。</p>
         </article>
       </div>
     </section>
@@ -505,7 +505,7 @@
               <article class="lane-step memory">
                 <div class="dot"></div>
                 <strong>执行后再判断沉淀</strong>
-                <span>不是每轮都写长期记忆，只有真正稳定和值得保留的事实才会进入记忆层。</span>
+                <span>不是每轮都写长期记忆，只有真正稳定和值得保留的事实才会进入记忆层；必要时还会进入离线反思，再决定是否生成 project memory 或 follow-up tasks。</span>
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
@@ -527,7 +527,7 @@
           </article>
           <article class="note-card">
             <h3>外挂检索插在哪里</h3>
-            <p>RAG、图谱和方法源码增强不直接替代记忆，也不替代会话账本。它们更像证据放大器，在准备阶段提供外部补充，再通过同一套上下文链路进入模型视图。</p>
+            <p>RAG、图谱和方法源码增强不直接替代记忆，也不替代会话账本。它们更像证据放大器，在准备阶段提供外部补充，再通过同一套上下文链路进入模型视图；现在还可以用公开代码检索 benchmark 校准这层增强质量。</p>
           </article>
         </div>
       </div>
@@ -544,6 +544,10 @@
         <article class="signal">
           <h3>什么时候写记忆</h3>
           <p>不是每条内容都进长期记忆，而是只有用户偏好、项目事实、稳定经验等更长期的东西才会被沉淀。</p>
+        </article>
+        <article class="signal">
+          <h3>什么时候做离线反思</h3>
+          <p>当任务看板、近期记忆和 cron 历史里已经积累出阶段性模式时，系统可以在主执行链外再整理一次，产出更稳定的 project memory。</p>
         </article>
       </div>
     </section>
@@ -612,7 +616,16 @@
           <ul>
             <li>向量检索、图谱和源码增强会在需要时为主流程补证据。</li>
             <li>这些证据仍通过同一套上下文准备机制进入 prompt。</li>
+            <li>现在这层检索质量还可以用 CodeSearchNet 风格 benchmark 进一步校准。</li>
             <li>所以外挂能力是增强层，而不是与记忆系统割裂的另一条暗线。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>离线反思复用同一份账本与记忆信号</h3>
+          <ul>
+            <li>离线反思不会绕开主系统，而是回看 task board、近期记忆和 cron 历史这些已有信号。</li>
+            <li>输出仍会回到 project memory，必要时再转成少量 follow-up tasks。</li>
+            <li>这让“执行后的整理”也复用同一套上下文和记忆资产，而不是另起一套孤立流程。</li>
           </ul>
         </article>
       </div>

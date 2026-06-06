@@ -274,3 +274,20 @@
   - `git log --since="2026-06-05 00:00:00" --until="2026-06-05 23:59:59"`：复查识别 24 条提交（`470bec9` 至 `20479be`），当天功能提交与文档提交保持分离。
   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-core -am -Dtest=TeamAgentExecutionServiceTest -Dsurefire.failIfNoSpecifiedTests=false test`：通过，覆盖 team lifecycle、权限流、依赖阻断、持久化恢复、波次暂停恢复和 fan-out 并发执行。
   - 文档同步复查：`README.md`、`agent-architecture.html`、`memory-context-management.html`、`MULTI_AGENT_PLAN.md` 与 `AGENT_CAPABILITY_GAP.md` 已统一到“长期记忆 + 五层上下文管理 + 持久化任务 + 浏览器工具 + BUG_FIX + 多 Agent 基础版已实现”口径。
+
+## 2026-06-06
+- 今日提交摘要（4 commits）：
+  - `eeac8af`：新增完整架构总览页 `lumisight.html`，并把 `AGENT_CAPABILITY_GAP.md` 从“企业级路线图”重排为“学习 / 个人项目 / 找工作展示”视角下的能力清单与收尾顺序。
+  - `4a6d3f3`：计划执行系统与多 Agent 收尾同步推进；任务系统补齐 `task_release / task_resume / task_board`、依赖环检测与完成后 ready task 计算，多 Agent 则补上 auto-upgrade 信号、plan narrative、boundary notes、task briefs 与控制台事件展示。
+  - `1e2efdd`：新增离线反思与环境操作能力；增加 `/api/lumisight/reflection/offline-runs`，可基于 task / memory / cron 信号生成 project memory，并补齐 `envInstall / serviceStart / serviceStatus / serviceLogs / serviceStop` 这组受控环境工具。
+  - `25acd1e`：新增 CodeSearchNet 风格 RAG 检索评测；增加 `/api/lumisight/rag-eval/codesearchnet/run` 与 `RAG_EVAL.md`，并把 `searchHybridVector` 所依赖的 code/comment vector provider 接上真实 `VectorStore` 检索实现。
+- 关键修复：
+  - “持久化任务只有 create/claim/complete，缺少续跑、释放和全局看板” -> 任务系统补齐 release、resume、board 与依赖环检测，让跨会话计划闭环真正可演示。
+  - “多 Agent 能跑，但升级原因和编排边界不够可解释” -> 在主链路里补上 `confidence / matchedSignals / planNarrative / boundaryNotes / taskBriefs`，同时让调试页显式展示多 Agent 事件。
+  - “环境操作仍停留在文件/Git/编译层，没有服务级动作” -> 新增受控后台服务启动、状态、日志和停止工具，仍保持 repo 内白名单命令和托管日志文件。
+  - “离线反思只是 gap 文档里的概念项” -> 收敛成真实后台分析链路：读取任务看板、近期记忆和 cron 历史，生成反思摘要并默认沉淀为 `project memory`，还可选创建 follow-up task。
+  - “RAG 只有 ingest 能力，没有公开 benchmark，也没有真正接通 runtime provider” -> 引入 CodeSearchNet 风格评测入口，并把 code/symbol 检索接上 `VectorStore` provider，避免 `searchHybridVector` 落回 noop。
+- 验证：
+  - `git log --since="2026-06-06 00:00:00" --until="2026-06-06 23:59:59"`：识别 4 条提交（`eeac8af`、`4a6d3f3`、`1e2efdd`、`25acd1e`），保持“独立功能一个 commit”与文档同步 commit 分离。
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home PATH="$JAVA_HOME/bin:$PATH" mvn -pl lumisight-api -am compile -DskipTests`：今天针对任务系统、多 Agent 事件收尾、离线反思、环境操作与 CodeSearchNet 风格 RAG eval 多次编译验证，结果均为 `BUILD SUCCESS`。
+  - 文档与能力复查：`README.md`、`agent-architecture.html`、`memory-context-management.html` 与 `RAG_EVAL.md` 已统一到“多 Agent / 计划执行 / 离线反思 / 环境操作 / RAG 检索评测都已有基础版实现”的口径。
