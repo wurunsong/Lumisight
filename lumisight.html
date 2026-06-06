@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumisight System Overview</title>
+  <style>
+    :root {
+      --bg: #edf2f7;
+      --ink: #13263f;
+      --muted: #5d6f87;
+      --line: rgba(24, 50, 84, 0.12);
+      --paper: rgba(255, 255, 255, 0.84);
+      --navy: #0f2745;
+      --blue: #2d74ff;
+      --sky: #dbe9ff;
+      --mint: #ddf5ec;
+      --gold: #fff0d9;
+      --rose: #f4e9ff;
+      --slate: #eef3f9;
+      --teal: #0f8a74;
+      --shadow: 0 24px 60px rgba(18, 42, 72, 0.09);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 12% 12%, rgba(45, 116, 255, 0.15), transparent 24%),
+        radial-gradient(circle at 88% 10%, rgba(15, 138, 116, 0.12), transparent 20%),
+        linear-gradient(180deg, #f6f9fc 0%, #edf2f7 48%, #e9eff6 100%);
+    }
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 20px 54px;
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 32px;
+      padding: 34px 36px 36px;
+      color: #f4f8ff;
+      background:
+        radial-gradient(circle at top right, rgba(127, 182, 255, 0.34), transparent 24%),
+        linear-gradient(135deg, #0b203a 0%, #143b68 54%, #2465b0 100%);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      bottom: -70px;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 68%);
+      pointer-events: none;
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      max-width: 860px;
+      margin: 0;
+      color: rgba(236, 244, 255, 0.9);
+      font-size: 15px;
+      line-height: 1.8;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .badge {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: #eef5ff;
+      font-size: 12px;
+      letter-spacing: 0.01em;
+    }
+    .section {
+      margin-top: 24px;
+      padding: 24px;
+      border-radius: 28px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .section-head h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      color: var(--navy);
+    }
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+      max-width: 780px;
+    }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      position: relative;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 3%;
+      right: 3%;
+      top: 58px;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(45, 116, 255, 0.1), rgba(45, 116, 255, 0.45), rgba(15, 138, 116, 0.22));
+      z-index: 0;
+    }
+    .flow-card {
+      position: relative;
+      z-index: 1;
+      min-height: 206px;
+      padding: 18px 16px 16px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 12px 28px rgba(22, 45, 76, 0.06);
+    }
+    .flow-card.sky { background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); }
+    .flow-card.mint { background: linear-gradient(180deg, #ebfaf4 0%, #ffffff 100%); }
+    .flow-card.gold { background: linear-gradient(180deg, #fff5e7 0%, #ffffff 100%); }
+    .flow-card.rose { background: linear-gradient(180deg, #f7f0ff 0%, #ffffff 100%); }
+    .flow-card.slate { background: linear-gradient(180deg, #f3f6fb 0%, #ffffff 100%); }
+    .index {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1px solid rgba(20, 51, 89, 0.12);
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+    .flow-card h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      line-height: 1.3;
+      color: var(--navy);
+    }
+    .flow-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .presence-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .presence {
+      padding: 16px 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.9));
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.04);
+    }
+    .presence h3 {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 15px;
+    }
+    .presence p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .dual {
+      display: grid;
+      grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.8fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .diagram {
+      border-radius: 26px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,248,253,0.96));
+    }
+    .diagram h3 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: var(--navy);
+    }
+    .swimlane {
+      display: grid;
+      grid-template-columns: 136px 1fr;
+      gap: 14px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+    .swimlane:first-of-type { margin-top: 0; }
+    .swimlane-label {
+      padding: 16px 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #f3f7fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--navy);
+    }
+    .swimlane-track {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      position: relative;
+    }
+    .swimlane-track::before {
+      content: "";
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 46px;
+      height: 1px;
+      background: rgba(34, 74, 123, 0.14);
+      z-index: 0;
+    }
+    .lane-step {
+      position: relative;
+      z-index: 1;
+      min-height: 132px;
+      padding: 16px 14px 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.05);
+    }
+    .lane-step .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 6px rgba(45, 116, 255, 0.12);
+      margin-bottom: 16px;
+    }
+    .lane-step.mint .dot {
+      background: var(--teal);
+      box-shadow: 0 0 0 6px rgba(15, 138, 116, 0.12);
+    }
+    .lane-step.gold .dot {
+      background: #c08b20;
+      box-shadow: 0 0 0 6px rgba(192, 139, 32, 0.12);
+    }
+    .lane-step.rose .dot {
+      background: #8d51e5;
+      box-shadow: 0 0 0 6px rgba(141, 81, 229, 0.12);
+    }
+    .lane-step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--navy);
+    }
+    .lane-step span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .side-panel {
+      display: grid;
+      gap: 14px;
+    }
+    .note-card {
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(245,249,255,0.98), rgba(255,255,255,0.96));
+    }
+    .note-card h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      color: var(--navy);
+    }
+    .note-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .highlights {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .highlight {
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 12px 28px rgba(20, 44, 72, 0.05);
+    }
+    .highlight h3 {
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 17px;
+    }
+    .highlight p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    @media (max-width: 1120px) {
+      .timeline,
+      .presence-strip,
+      .highlights,
+      .swimlane-track {
+        grid-template-columns: 1fr;
+      }
+      .timeline::before,
+      .swimlane-track::before {
+        display: none;
+      }
+      .dual,
+      .swimlane {
+        grid-template-columns: 1fr;
+      }
+      .section-head {
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Lumisight 完整架构总览</h1>
+      <p>这页先讲 Lumisight 作为一个本地 Agent 系统，用户请求如何进入、如何被调度、在哪里接上上下文和记忆、什么时候升级成多 Agent、又如何带着验证与沉淀收口。多 Agent 细节不在这里展开到最深，那部分继续由专项页负责。</p>
+      <div class="hero-badges">
+        <span class="badge">Session-First Runtime</span>
+        <span class="badge">Context And Memory Aware</span>
+        <span class="badge">Safe Tool Execution</span>
+        <span class="badge">Escalate On Demand</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Main Flow</span>
+          <h2>端到端主流程</h2>
+        </div>
+        <p>重点不是模块名，而是一个请求从进入系统，到被理解、执行、验证，再到把结果沉淀回会话、任务和记忆层，中间的信息如何闭环。</p>
+      </div>
+      <div class="timeline">
+        <article class="flow-card sky">
+          <span class="index">01</span>
+          <h3>会话命令进入</h3>
+          <p>用户通过 SSE、WebSocket、调试页或桌面壳把问题、恢复、打断等命令送进同一个 `sessionId` 视角，系统先统一看成“同一会话上的下一次动作”。</p>
+        </article>
+        <article class="flow-card">
+          <span class="index">02</span>
+          <h3>调度与交互模式判断</h3>
+          <p>dispatcher 先决定是 `FOLLOW` 顺序推进、`COLLECT` 合并等待输入，还是 `STEER` 抢占当前执行；必要时恢复等待态、todo 和中断后的执行位置。</p>
+        </article>
+        <article class="flow-card mint">
+          <span class="index">03</span>
+          <h3>上下文与记忆接入</h3>
+          <p>模型不是裸奔开工。会话账本、artifact、hot cache、长期记忆和必要的外挂证据会先被投影成当前轮真正需要的上下文视图。</p>
+        </article>
+        <article class="flow-card gold">
+          <span class="index">04</span>
+          <h3>规划执行路径</h3>
+          <p>系统先判断这是单 Agent 直接处理、调用 `task_subagent` 做干净局部分析，还是升级到 Lead + workers 的多 Agent 编排；同时把约束、skill 和计划带入本轮决策。</p>
+        </article>
+        <article class="flow-card rose">
+          <span class="index">05</span>
+          <h3>执行、验证与回流</h3>
+          <p>工具执行可触达代码、Git、浏览器、图谱、向量、任务与记忆接口，但都要经过受限执行边界；写 Java 后还会自动编译 / lint，把失败结果继续回灌上下文。</p>
+        </article>
+        <article class="flow-card slate">
+          <span class="index">06</span>
+          <h3>事件输出与长期沉淀</h3>
+          <p>结果以会话事件流和最终回答回到用户侧，同时把有价值的信息写回上下文账本、持久化任务、execution state 或长期记忆，保证下一次不是从零开始。</p>
+        </article>
+      </div>
+      <div class="presence-strip">
+        <article class="presence">
+          <h3>多 Agent 是升级支线</h3>
+          <p>复杂请求才升级，不把所有任务都拆成 team；默认仍优先保持单 Agent 路径。</p>
+        </article>
+        <article class="presence">
+          <h3>浏览器与 RAG 是证据层</h3>
+          <p>Playwright、源码、图谱和向量检索不替代主流程，只在需要额外证据时进入回路。</p>
+        </article>
+        <article class="presence">
+          <h3>任务系统负责跨会话推进</h3>
+          <p>`todo_write` 解决当前会话内计划，`.tasks/` 里的持久化任务图负责跨会话阻塞、认领与解锁。</p>
+        </article>
+        <article class="presence">
+          <h3>记忆层只沉淀长期事实</h3>
+          <p>长期记忆只保留用户、反馈、项目和参考这四类稳定信息，避免把短期执行噪音误当成长期权威。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Capability Layers</span>
+          <h2>能力协同面</h2>
+        </div>
+        <p>下面这层不再按“请求时间线”看，而是把 Lumisight 的核心运行面拆成三条长期存在的协同层：会话控制层、执行增强层、沉淀恢复层。</p>
+      </div>
+
+      <div class="dual">
+        <div class="diagram">
+          <h3>三层协同泳道</h3>
+
+          <div class="swimlane">
+            <div class="swimlane-label">会话控制层</div>
+            <div class="swimlane-track">
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>统一会话入口</strong>
+                <span>SSE、WebSocket、桌面壳和调试页都进入同一 `sessionId` 调度语义。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>FOLLOW / COLLECT / STEER</strong>
+                <span>系统在消息投递层决定排队、合并还是抢占，不把交互语义留给前端猜。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>单 Agent 或升级</strong>
+                <span>默认直走单 Agent，必要时切到 subagent 或多 Agent 编排，但主会话保持唯一收敛点。</span>
+              </article>
+              <article class="lane-step">
+                <div class="dot"></div>
+                <strong>真实事件流回给用户</strong>
+                <span>`PLAN / TOOL / TOKEN / FINAL` 持续输出，不必等整轮结束才知道系统在做什么。</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="swimlane">
+            <div class="swimlane-label">执行增强层</div>
+            <div class="swimlane-track">
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <strong>本地代码与 Git 工具</strong>
+                <span>文件、编译、Lint、LSP、Git 语义工具组成默认执行面。</span>
+              </article>
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <strong>浏览器与页面验证</strong>
+                <span>浏览器工具让本地页面打开、识别 DOM、点击输入和截图验证进入同一闭环。</span>
+              </article>
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <strong>图谱与向量增强</strong>
+                <span>当问题需要额外证据时，再调用源码、图谱和向量检索补强决策依据。</span>
+              </article>
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <strong>写后自动自验证</strong>
+                <span>BUG_FIX 模式在写 Java 后自动编译和 JDTLS Lint，失败就继续修，而不是提前宣布完成。</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="swimlane">
+            <div class="swimlane-label">沉淀恢复层</div>
+            <div class="swimlane-track">
+              <article class="lane-step gold">
+                <div class="dot"></div>
+                <strong>结构化上下文账本</strong>
+                <span>会话历史不再只是字符串堆叠，而是 entry、artifact、投影和压缩链路。</span>
+              </article>
+              <article class="lane-step gold">
+                <div class="dot"></div>
+                <strong>长期记忆与陈旧度提醒</strong>
+                <span>记忆只保留跨会话仍值得复用的事实，并在取回时提醒它是否可能已经过时。</span>
+              </article>
+              <article class="lane-step gold">
+                <div class="dot"></div>
+                <strong>任务与执行状态持久化</strong>
+                <span>`.tasks/`、team execution state 和等待态恢复点，让跨会话推进、resume 和依赖解锁变得可追踪。</span>
+              </article>
+              <article class="lane-step gold">
+                <div class="dot"></div>
+                <strong>定时触发入口</strong>
+                <span>cron job 可以按计划重新拉起同一套 Agent 主链路，让固定巡检不必每次人工发起。</span>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="side-panel">
+          <article class="note-card">
+            <h3>什么时候升级多 Agent</h3>
+            <p>当一个请求天然需要并发扫描、多视角分析、依赖收敛，或者“实现与验证分工”时，系统才值得把它升级成 Lead + workers 的编排路径。</p>
+          </article>
+          <article class="note-card">
+            <h3>什么时候只用 subagent</h3>
+            <p>如果只是某个局部分析会污染主上下文，但还不值得拉起完整 team，主 Agent 会更倾向于调用 `task_subagent` 做干净隔离。</p>
+          </article>
+          <article class="note-card">
+            <h3>为什么这页不细拆多 Agent</h3>
+            <p>这页的主角是整个系统。Lead、worker、wave 恢复、权限申请和 mailbox 协议已经在 `agent-architecture.html` 作为多 Agent 专项页单独展开。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Technical Highlights</span>
+          <h2>技术亮点</h2>
+        </div>
+        <p>这些亮点解释 Lumisight 为什么不像一个只会顺序调用工具的简单流水线，但它们仍然是补充层，不喧宾夺主。</p>
+      </div>
+
+      <div class="highlights">
+        <article class="highlight">
+          <h3>会话先于请求</h3>
+          <p>系统把“继续、恢复、打断、追问”都纳入同一会话模型，而不是让每个 HTTP 请求都自成一次孤立执行。</p>
+        </article>
+        <article class="highlight">
+          <h3>上下文是结构化资产</h3>
+          <p>上下文通过 artifact、hot cache、投影和压缩来控体积、保可恢复性，避免长会话越跑越重。</p>
+        </article>
+        <article class="highlight">
+          <h3>长期记忆不冒充权威</h3>
+          <p>记忆被限制在四类长期事实里，并带陈旧度提醒，降低把历史经验当成当前真实状态的风险。</p>
+        </article>
+        <article class="highlight">
+          <h3>执行边界默认受限</h3>
+          <p>工具、Hook、浏览器和写文件能力都被放在统一受限执行边界里，并与快照、回滚和人工门控组合使用。</p>
+        </article>
+        <article class="highlight">
+          <h3>改代码后必须自证</h3>
+          <p>BUG_FIX 模式要求系统拿编译和 lint 结果为修改负责，减少“改了但没证据”这种表面完成。</p>
+        </article>
+        <article class="highlight">
+          <h3>升级是为了降噪，不是炫技</h3>
+          <p>多 Agent、subagent、RAG 和浏览器工具都只在它们能明显降低主会话噪音、补证据或提升推进效率时才启用。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

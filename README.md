@@ -12,7 +12,7 @@ Lumisight 是一个面向 Java 工程场景的 Agent 项目，核心目标是把
 - 安全执行：sandbox、快照、回滚、人工门控
 - 上下文管理：结构化账本、artifact 落盘、投影与压缩
 - 自修复闭环：BUG_FIX 模式下写代码后自动编译 / lint，失败就继续迭代修复
-- 多 Agent 演进：单 Agent 默认路径、`task_subagent` 干净子任务、team mailbox 骨架
+- 多 Agent 演进：单 Agent 默认路径、`task_subagent` 干净子任务、Lead + team workers 基础版请求内编排
 - 定时触发：cron job 调用 Agent 执行固定任务
 - 持久化任务系统：`.tasks/` 下的跨会话任务图、依赖与认领状态
 
@@ -81,6 +81,7 @@ podman machine start
 ## 核心文档
 
 - [AGENT_PROTOCOL.md](./AGENT_PROTOCOL.md)：Agent 协议说明
+- [lumisight.html](./lumisight.html)：完整架构总览
 - [agent-architecture.html](./agent-architecture.html)：主架构视图
 - [memory-context-management.html](./memory-context-management.html)：上下文管理专项视图
 - [CODE_FLOW.md](./CODE_FLOW.md)：按日期记录的开发进展
