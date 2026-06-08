@@ -35,6 +35,7 @@ public class AgentCronJobService {
     private final AgentRequestMapper agentRequestMapper;
     private final AgentExecutionEngine agentExecutionEngine;
 
+    // jobId -> state
     private final Map<String, CronJobState> jobs = new ConcurrentHashMap<>();
 
     public AgentCronJobService(
@@ -96,11 +97,14 @@ public class AgentCronJobService {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request is required");
         }
+        String resolvedJobId = StringUtils.hasText(jobId)
+                ? jobId
+                : existing == null ? "cron-" + UUID.randomUUID() : existing.definition.jobId();
         String cron = normalizeCron(request.cron());
-        AgentRunRequest normalizedRunRequest = normalizeRunRequest(jobId, request.request(), existing);
+        AgentRunRequest normalizedRunRequest = normalizeRunRequest(resolvedJobId, request.request());
         long now = System.currentTimeMillis();
         return new CronJobDefinition(
-                StringUtils.hasText(jobId) ? jobId : "cron-" + UUID.randomUUID(),
+                resolvedJobId,
                 requireName(request.name()),
                 cron,
                 request.enabled() == null || request.enabled(),
@@ -114,16 +118,13 @@ public class AgentCronJobService {
         );
     }
 
-    private AgentRunRequest normalizeRunRequest(String jobId, AgentRunRequest request, CronJobState existing) {
+    private AgentRunRequest normalizeRunRequest(String resolvedJobId, AgentRunRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "run request is required");
         }
-        String normalizedJobId = StringUtils.hasText(jobId)
-                ? jobId
-                : existing == null ? "cron-" + UUID.randomUUID() : existing.definition.jobId();
         String sessionId = StringUtils.hasText(request.sessionId())
                 ? request.sessionId().trim()
-                : "cron-session-" + normalizedJobId;
+                : "cron-session-" + resolvedJobId;
         String userId = StringUtils.hasText(request.userId()) ? request.userId().trim() : "cron-user";
         return new AgentRunRequest(
                 request.taskType(),
@@ -168,6 +169,7 @@ public class AgentCronJobService {
         if (!state.definition.enabled()) {
             return;
         }
+        // 复用的spring的定时任务调度器
         ScheduledFuture<?> future = taskScheduler.schedule(
                 () -> executeScheduled(jobId),
                 new CronTrigger(state.definition.cron(), ZoneId.of(state.definition.timezone()))
@@ -305,6 +307,7 @@ public class AgentCronJobService {
         private CronJobState withRunStarted(CronRunRecord runRecord, int maxRecentRuns, String triggerType) {
             Deque<CronRunRecord> nextRuns = new LinkedList<>(runs);
             nextRuns.addFirst(runRecord);
+            // 只维护最近 maxRecentRuns 个运行记录
             while (nextRuns.size() > maxRecentRuns) {
                 nextRuns.removeLast();
             }
