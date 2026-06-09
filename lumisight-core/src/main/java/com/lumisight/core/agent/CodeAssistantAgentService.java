@@ -108,6 +108,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
         String traceId = UUID.randomUUID().toString();
         String sessionId = StringUtils.hasText(request.sessionId()) ? request.sessionId() : UUID.randomUUID().toString();
+        // sink包装类，用于在关键节点处给用户发送事件
         AgentEventPublisher publisher = new AgentEventPublisher(sink);
         if (request.interrupt()) {
             conversationManager.interrupt(sessionId);
@@ -212,6 +213,15 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
     }
 
+    /**
+     * 决定agent编排方式：单agent、多agent
+     * @param request 用户请求
+     * @param effectiveQuestion 提问
+     * @param traceId trace
+     * @param sessionId 会话id
+     * @param publisher 返回流
+     * @return 结构化的agent请求
+     */
     private AgentRequest resolveEffectiveRequest(AgentRequest request, String effectiveQuestion, String traceId, String sessionId, AgentEventPublisher publisher) {
         MultiAgentModeDecider.Decision decision = multiAgentModeDecider.decide(request, effectiveQuestion);
         if (decision.multiAgentSelected()) {
@@ -247,23 +257,28 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 request.dialogueMode()
         );
     }
-
+    /**
+     * 准备本轮对话的初始上下文，主要包含：当前提问和历史上下文
+     * @param request 用户请求
+     * @param sessionId 会话 ID
+     * @return 当前对话的初始上下文
+     */
     private ExecutionContext prepareExecutionContext(AgentRequest request, String sessionId) {
         AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
         long runEpoch = conversationManager.nextEpoch(sessionId);
         String effectiveQuestion = request.question();
         String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
-        AgentContextSession contextSession = agentContextManager.restore(sessionId, resumeState);
         int startRound = 1;
         if (request.resume() && resumeState != null) {
             resumeState = normalizeResumeState(resumeState);
-            contextSession = agentContextManager.restore(sessionId, resumeState);
             startRound = resumeState.nextRound();
             if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
                 effectiveQuestion = resumeState.baseQuestion();
             }
         }
+        // 恢复当前 session 的历史上下文；resume 场景先归一化状态，再恢复一次即可。
+        AgentContextSession contextSession = agentContextManager.restore(sessionId, resumeState);
         return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, startRound);
     }
 

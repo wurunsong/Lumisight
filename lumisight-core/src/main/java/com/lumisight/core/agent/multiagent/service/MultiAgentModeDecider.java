@@ -18,12 +18,15 @@ public class MultiAgentModeDecider {
     }
 
     public Decision decide(AgentRequest request, String effectiveQuestion) {
+        // 没打开多agent开关
         if (!properties.isEnabled()) {
             return new Decision(AgentRunMode.NORMAL, false, "multi-agent disabled", 0.0d, List.of());
         }
+        // 用户明确指定了多agent模式
         if (request.runMode() == AgentRunMode.MULTI_AGENT) {
             return new Decision(AgentRunMode.MULTI_AGENT, true, "explicit runMode", 1.0d, List.of("explicit_run_mode"));
         }
+        // 自动升级开关关闭，或者问题不符合自动升级条件
         if (!properties.isAutoUpgradeEnabled() || !StringUtils.hasText(effectiveQuestion)) {
             return new Decision(request.runMode(), false, "auto-upgrade disabled", 0.0d, List.of());
         }
@@ -47,6 +50,8 @@ public class MultiAgentModeDecider {
             signals++;
             matchedSignals.add("fix_with_test_impact");
         }
+        // TODO: 这里先用启发式信号做多 Agent 自动升级，后续替换为专门的调度/编排决策模型，
+        // 结合请求复杂度、依赖结构、可并行性和历史执行反馈统一判断是否应该升级。
         double confidence = Math.min(1.0d, signals / 3.0d);
         if (confidence >= properties.getAutoUpgradeThreshold()) {
             return new Decision(AgentRunMode.MULTI_AGENT, true, "orchestrator auto-upgrade", confidence, List.copyOf(matchedSignals));

@@ -74,6 +74,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (state.contextSession() != null) {
             return state.contextSession();
         }
+        // 新老逻辑兼容，以前上下文是用AgentContextItem管理的
         List<AgentContextEntry> migrated = new ArrayList<>();
         long now = System.currentTimeMillis();
         List<AgentContextItem> contexts = state.contexts() == null ? List.of() : state.contexts();

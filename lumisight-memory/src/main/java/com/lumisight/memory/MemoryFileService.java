@@ -287,11 +287,11 @@ public class MemoryFileService {
     }
 
     private Path ensureMemoryDirUnchecked(String repoRoot, String userId) {
-        if (!StringUtils.hasText(repoRoot)) {
-            throw new IllegalArgumentException("repoRoot is required");
-        }
         String safeUserId = StringUtils.hasText(userId) ? userId.trim() : "default-user";
-        return Path.of(repoRoot)
+        Path root = StringUtils.hasText(repoRoot)
+                ? Path.of(repoRoot)
+                : Path.of(".").toAbsolutePath().normalize();
+        return root
                 .resolve(properties.getRootDir())
                 .resolve(safeUserId)
                 .normalize();

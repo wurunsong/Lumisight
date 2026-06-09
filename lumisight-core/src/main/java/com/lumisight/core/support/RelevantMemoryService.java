@@ -45,6 +45,11 @@ public class RelevantMemoryService {
         this.memoryService = memoryService;
     }
 
+    /**
+     * 预取相关记忆
+     * @param request 结构化agent请求
+     * @return 相关记忆
+     */
     public CompletableFuture<RelevantMemoryContext> prefetch(AgentRequest request) {
         return CompletableFuture.supplyAsync(() -> resolveRelevant(request.repoRoot(), request.userId(), request.question()));
     }
