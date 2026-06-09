@@ -1,6 +1,6 @@
 package com.lumisight.core.agent.multiagent.service;
 
-import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
+import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.TopologyType;
 import com.lumisight.core.agent.multiagent.port.TaskRouter;
@@ -9,8 +9,6 @@ import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;
 import com.lumisight.core.model.AgentTaskType;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

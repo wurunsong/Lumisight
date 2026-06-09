@@ -1,5 +1,9 @@
-package com.lumisight.core.context;
+package com.lumisight.core.context.ambient;
 
+/**
+ * 工具运行上下文
+ * todo 后面抽象一个AgentAmbientContext接口，作为非agent运行上下文的基类
+ */
 public final class AgentToolRuntimeContext {
 
     private static final Support SUPPORT = new Support();

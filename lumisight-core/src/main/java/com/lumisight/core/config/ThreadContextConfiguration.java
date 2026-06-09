@@ -1,8 +1,8 @@
 package com.lumisight.core.config;
 
 import com.lumisight.common.concurrent.ThreadContextRegistry;
-import com.lumisight.core.context.AgentToolInvocationContext;
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Configuration;

@@ -1,7 +1,7 @@
 package com.lumisight.core.tool.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.context.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.AgentToolInvocationContext;
 import com.lumisight.core.hooks.runtime.ToolHookContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentToolExecutionResult;

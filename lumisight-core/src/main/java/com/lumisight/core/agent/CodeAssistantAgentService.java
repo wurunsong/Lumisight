@@ -2,7 +2,8 @@ package com.lumisight.core.agent;
 
 import com.lumisight.core.agent.multiagent.service.MultiAgentCoordinator;
 import com.lumisight.core.agent.multiagent.service.MultiAgentModeDecider;
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ExecutionContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
@@ -120,6 +121,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         try {
             ExecutionContext context = prepareExecutionContext(request, sessionId);
             AgentRequest effectiveRequest = resolveEffectiveRequest(request, context.effectiveQuestion(), traceId, sessionId, publisher);
+            // 获取该repoRoot下的长期记忆
             CompletableFuture<RelevantMemoryContext> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
                     effectiveRequest.taskType(),
                     context.resolvedRepoRoot(),
@@ -136,12 +138,15 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     effectiveRequest.runMode(),
                     effectiveRequest.dialogueMode()
             ));
+            // open方法在线程上下文（不是agent上下文）保存仓库路径、agent上下文限制和userId
             try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit(), effectiveRequest.userId())) {
                 publishInitState(effectiveRequest, context, traceId, publisher);
+                // 获取skill
                 SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, context, traceId, publisher);
-                Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest, skillPlan);
+                Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest);
                 RelevantMemoryContext relevantMemoryContext = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
+                // 调度多agent
                 context = orchestrateMultiAgentIfNeeded(effectiveRequest, context, traceId, publisher);
 
                 ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
@@ -310,6 +315,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         SkillPlan skillPlan = new SkillPlan("未指定技能，走默认编排", List.of(), "", "");
         String skillRef = request.skillPath();
         boolean shouldResolveSkill = StringUtils.hasText(skillRef);
+        // 用户未制定skill，用模型判断下是否有可用的skill
         if (!shouldResolveSkill) {
             SkillAutoRouter.RouteResult routeResult = skillAutoRouter.route(context.effectiveQuestion());
             publisher.emit(AgentEvent.skillRouted(
@@ -325,9 +331,11 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 shouldResolveSkill = true;
             }
         }
+        // 不用skill，直接返回
         if (!shouldResolveSkill) {
             return skillPlan;
         }
+        // 构建skill上下文
         SkillContext skillContext = new SkillContext(
                 request.taskType().name(),
                 request.dialogueMode().name(),
@@ -625,26 +633,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 metadata == null ? Map.of() : metadata
         ));
     }
-
-    private record ExecutionContext(
-            String sessionId,
-            long runEpoch,
-            AgentConversationManager.ConversationState resumeState,
-            String effectiveQuestion,
-            String resolvedRepoRoot,
-            int limit,
-            AgentContextSession contextSession,
-            int startRound
-    ) {
-        private ExecutionContext withContextSession(AgentContextSession nextContextSession) {
-            return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, nextContextSession, startRound);
-        }
-
-        private ExecutionContext withStartRound(int nextStartRound) {
-            return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, nextStartRound);
-        }
-    }
-
     private record ResumeHandlingResult(ExecutionContext context, boolean completed) {
     }
 }

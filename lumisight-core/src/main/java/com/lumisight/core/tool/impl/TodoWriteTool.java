@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl;
 
-import com.lumisight.core.context.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.AgentToolInvocationContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.TodoTask;
 import com.lumisight.core.support.AgentSessionContextStore;

@@ -3,6 +3,22 @@ package com.lumisight.memory;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 解析和渲染长期记忆 markdown 文档。
+ * 文档格式要求：
+ * 1. 文件必须以 YAML frontmatter 开头，并以第二个 `---` 结束。
+ * 2. frontmatter 当前只解析简单的 `key: value` 单行字段，要求至少包含 `name`、`description`、`type`。
+ * 3. frontmatter 之后的剩余 markdown 内容会整体作为 memory body。
+ *
+ * 示例：
+ * ---
+ * name: Coding Preference
+ * description: User prefers root-cause fixes over workarounds.
+ * type: user
+ * ---
+ *
+ * 这里是长期记忆正文。
+ */
 final class MemoryFrontmatterParser {
 
     private MemoryFrontmatterParser() {

@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.browser;
 
-import com.lumisight.core.context.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.AgentToolInvocationContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.browser.BrowserElementSummary;
 import com.lumisight.core.service.browser.BrowserPageSnapshot;

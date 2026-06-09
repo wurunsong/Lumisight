@@ -1,6 +1,6 @@
 package com.lumisight.core.agent;
 
-import com.lumisight.core.agent.multiagent.service.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
 import com.lumisight.core.hooks.runtime.HookedToolExecutor;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;

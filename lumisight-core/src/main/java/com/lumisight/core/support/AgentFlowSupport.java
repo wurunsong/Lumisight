@@ -2,14 +2,14 @@ package com.lumisight.core.support;
 
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.service.ChildAgentPermissionPolicy;
-import com.lumisight.core.agent.multiagent.service.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
-import com.lumisight.skills.runtime.SkillPlan;
+
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -74,11 +74,12 @@ public class AgentFlowSupport {
         );
     }
 
-    public Set<AgentToolPermission> enabledPermissions(AgentRequest request, SkillPlan skillPlan) {
-        MultiAgentExecutionContext.Context executionContext = MultiAgentExecutionContext.current();
-        if (executionContext != null && executionContext.role() != MultiAgentExecutionContext.Role.LEAD_AGENT) {
+    public Set<AgentToolPermission> enabledPermissions(AgentRequest request) {
+        MultiAgentExecutionContext.Context multiAgentContext = MultiAgentExecutionContext.current();
+        // 当前在multiAgent模式，并且不是leadAgent
+        if (multiAgentContext != null && multiAgentContext.role() != MultiAgentExecutionContext.Role.LEAD_AGENT) {
             return childAgentPermissionPolicy.permissionsFor(
-                    executionContext.role(),
+                    multiAgentContext.role(),
                     capabilityFromTaskType(request)
             );
         }
@@ -95,6 +96,7 @@ public class AgentFlowSupport {
             enabledPermissions.add(AgentToolPermission.LSP_JAVA_READ);
             enabledPermissions.add(AgentToolPermission.BUILD_COMPILE);
         }
+        // todo 后面提供写工具
         return enabledPermissions;
     }
 

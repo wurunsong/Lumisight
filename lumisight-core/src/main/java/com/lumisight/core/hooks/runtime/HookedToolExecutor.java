@@ -1,7 +1,7 @@
 package com.lumisight.core.hooks.runtime;
 
 import com.lumisight.common.concurrent.NamedExecutors;
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.tool.AgentToolPermission;

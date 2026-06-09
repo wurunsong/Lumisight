@@ -1,6 +1,7 @@
 package com.lumisight.core.agent.multiagent.service;
 
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
+import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
 import com.lumisight.core.tool.AgentToolPermission;
 import org.springframework.stereotype.Component;
 

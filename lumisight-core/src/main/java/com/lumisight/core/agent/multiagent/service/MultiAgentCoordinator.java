@@ -2,7 +2,7 @@ package com.lumisight.core.agent.multiagent.service;
 
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.agent.multiagent.model.MultiAgentExecutionState;
-import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
+import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TopologyType;
@@ -40,6 +40,7 @@ public class MultiAgentCoordinator {
             attributes.putAll(runtimeAttributes);
         }
         attributes.put("source", "multi-agent-coordinator");
+        // todo 这里的id是不是应该和全局uid有关联或者一致？不然会很混乱
         OrchestrationContext context = new OrchestrationContext(
                 UUID.randomUUID().toString(),
                 request,

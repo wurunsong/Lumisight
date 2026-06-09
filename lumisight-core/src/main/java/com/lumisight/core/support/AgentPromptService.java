@@ -1,6 +1,6 @@
 package com.lumisight.core.support;
 
-import com.lumisight.core.agent.multiagent.service.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentRequest;
@@ -15,7 +15,6 @@ import com.lumisight.memory.RelevantMemoryContext;
 import com.lumisight.skills.runtime.SkillPlan;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

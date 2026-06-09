@@ -56,15 +56,20 @@ public class RelevantMemoryService {
 
     public RelevantMemoryContext resolveRelevant(String repoRoot, String userId, String query) {
         try {
+            // todo 这里需要改成既从仓库获取仓库记忆，也从根目录获取长期记忆（有关于用户信息的记忆）
+            // 获取该用户在该仓库的记忆索引
             MemoryEntrypoint entrypoint = memoryService.loadEntrypoint(repoRoot, userId);
+            // 获取该用户在该仓库的长期记忆header
             List<MemoryHeader> headers = memoryService.scanHeaders(repoRoot, userId);
             if (headers.isEmpty() || !StringUtils.hasText(query)) {
                 return new RelevantMemoryContext(entrypoint, List.of(), "");
             }
+            // 选取相关记忆文件名
             List<String> selectedFilenames = selectRelevantFilenames(query, headers);
             if (selectedFilenames.isEmpty()) {
                 return new RelevantMemoryContext(entrypoint, List.of(), "");
             }
+            // 获取选中的记忆文件
             List<MemoryEntry> entries = memoryService.readEntries(repoRoot, userId, selectedFilenames);
             return new RelevantMemoryContext(entrypoint, entries, renderSelectedReminders(entries));
         } catch (Exception e) {
@@ -111,12 +116,15 @@ public class RelevantMemoryService {
     }
 
     private List<String> selectHeuristically(String query, List<MemoryHeader> headers) {
+        // 把用户提问拆成一组去重后的关键词
         List<String> tokens = tokenize(query);
         record ScoredHeader(MemoryHeader header, double score) {
         }
+        // todo 是否需要引入模型打分？
         List<ScoredHeader> scored = new ArrayList<>();
         for (MemoryHeader header : headers) {
             String haystack = (header.filename() + " " + header.name() + " " + header.description()).toLowerCase(Locale.ROOT);
+            // 先用关键词做一次粗筛
             double score = typeHintScore(query, header.type());
             for (String token : tokens) {
                 if (token.length() >= 2 && haystack.contains(token)) {
@@ -124,6 +132,7 @@ public class RelevantMemoryService {
                 }
             }
             if (score > 0) {
+                // 做一个时间衰减
                 score += header.mtimeMs() / 1_000_000_000_000.0;
                 scored.add(new ScoredHeader(header, score));
             }

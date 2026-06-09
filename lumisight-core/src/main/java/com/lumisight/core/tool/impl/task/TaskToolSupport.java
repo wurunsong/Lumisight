@@ -2,8 +2,8 @@ package com.lumisight.core.tool.impl.task;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.context.AgentToolInvocationContext;
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskRecord;
 import com.lumisight.core.service.task.TaskBoardView;

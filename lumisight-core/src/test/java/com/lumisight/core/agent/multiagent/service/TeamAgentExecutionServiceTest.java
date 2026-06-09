@@ -2,7 +2,7 @@ package com.lumisight.core.agent.multiagent.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.agent.multiagent.model.MultiAgentExecutionState;
-import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
+import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;

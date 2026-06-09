@@ -1,7 +1,7 @@
 package com.lumisight.core.agent.multiagent.service;
 
 import com.lumisight.core.model.AgentTaskType;
-import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
+import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
@@ -20,6 +20,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * todo 这里面都没有调用模型，怎么能叫做调度agent？
+ */
 @Component
 public class DefaultOrchestratorAgent implements OrchestratorAgent {
 
@@ -94,6 +97,11 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
         return SubAgentCapability.CODE_EXPLAIN;
     }
 
+    /**
+     * todo 这个buildTask太粗糙了，可以用关键词正则粗筛，但还是需要调用模型的
+     * @param context
+     * @return
+     */
     private List<SubAgentTask> buildTasks(OrchestrationContext context) {
         String question = context.request().question() == null ? "" : context.request().question();
         List<SubAgentTask> tasks = new ArrayList<>();
@@ -115,14 +123,24 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
         return tasks.stream().limit(Math.max(1, properties.getMaxTasksPerPlan())).toList();
     }
 
+    /**
+     * agent 的拓扑
+     * todo 这个decideTopology太粗糙了，可以用关键词正则粗筛，但还是需要调用模型的
+     * @param context
+     * @param tasks
+     * @return
+     */
     private TopologyType decideTopology(OrchestrationContext context, List<SubAgentTask> tasks) {
+        // 串行
         if (tasks.size() <= 1) {
             return TopologyType.SERIAL_DAG;
         }
         String question = context.request().question() == null ? "" : context.request().question();
+        // 串行+并行
         if (question.contains("测试") && (question.contains("修复") || question.contains("重构"))) {
             return TopologyType.HYBRID;
         }
+        // 并行
         return TopologyType.FAN_OUT_FAN_IN;
     }
 

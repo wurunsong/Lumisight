@@ -1,4 +1,4 @@
-package com.lumisight.core.context;
+package com.lumisight.core.context.ambient;
 
 abstract class AbstractThreadLocalAgentContext<T> {
 

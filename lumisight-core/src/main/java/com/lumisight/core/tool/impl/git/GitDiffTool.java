@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.git;
 
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
 import com.lumisight.common.exec.SandboxAccessSpec;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.sandbox.SandboxCommandRunner;

@@ -1,7 +1,7 @@
 package com.lumisight.core.tool.impl.task;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskService;
 import com.lumisight.core.service.task.TaskView;

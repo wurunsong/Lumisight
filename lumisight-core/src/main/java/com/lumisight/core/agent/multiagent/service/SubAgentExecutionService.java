@@ -4,6 +4,7 @@ import com.lumisight.core.agent.CodeAssistantAgentService;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TaskContextEnvelope;
+import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;

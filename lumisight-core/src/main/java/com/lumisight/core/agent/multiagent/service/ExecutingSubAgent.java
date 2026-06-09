@@ -1,6 +1,6 @@
 package com.lumisight.core.agent.multiagent.service;
 
-import com.lumisight.core.agent.multiagent.model.OrchestrationContext;
+import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TaskContextEnvelope;

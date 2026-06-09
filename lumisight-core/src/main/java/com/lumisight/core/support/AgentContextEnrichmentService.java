@@ -2,7 +2,7 @@ package com.lumisight.core.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.common.util.ValueParsers;
-import com.lumisight.core.context.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.port.SourceCodeLookupProvider;

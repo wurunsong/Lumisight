@@ -22,6 +22,11 @@ import java.util.Objects;
 import java.util.StringJoiner;
 import java.util.stream.Stream;
 
+/**
+ * 如果传了repoRoot，则记忆保存在repoRoot/.lumisight/memory/userId/MEMORY.md
+ * todo 如果没有传repoRoot，则记忆保存在～/.lumisight/memory/tmp/sessionId/MEMORY.md
+ * ～/.lumisight/memory/userId/MEMORY.md保存的是这个用户的长期记忆画像
+ */
 @Service
 public class MemoryFileService {
 

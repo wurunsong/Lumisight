@@ -1,4 +1,4 @@
-package com.lumisight.core.context;
+package com.lumisight.core.context.ambient;
 
 public final class AgentToolInvocationContext {
 

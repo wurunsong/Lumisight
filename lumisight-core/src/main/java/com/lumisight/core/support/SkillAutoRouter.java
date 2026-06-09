@@ -39,6 +39,7 @@ public class SkillAutoRouter {
         if (!StringUtils.hasText(question)) {
             return RouteResult.noMatch("empty_question");
         }
+        // 获取所有skill摘要
         List<RegisteredSkill> skills = skillCatalog.allSkills();
         if (skills.isEmpty()) {
             return RouteResult.noMatch("no_registered_skill");
@@ -72,6 +73,7 @@ public class SkillAutoRouter {
             if (!StringUtils.hasText(chosen) || "NONE".equalsIgnoreCase(chosen)) {
                 return RouteResult.noMatch(reason);
             }
+            // 找到模型选择的skill
             for (RegisteredSkill skill : skills) {
                 if (skill.id().equals(chosen)
                         || skill.name().equalsIgnoreCase(chosen)
@@ -80,6 +82,7 @@ public class SkillAutoRouter {
                     if (accepted) {
                         return new RouteResult(skill.id(), confidence, reason, chosen, true);
                     }
+                    // 如果有配置默认skill，就返回默认skill
                     String fallbackSkillId = resolveFallbackSkillId(skills);
                     return new RouteResult(fallbackSkillId, confidence, reason, chosen, false);
                 }
