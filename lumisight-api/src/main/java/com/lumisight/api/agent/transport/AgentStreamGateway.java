@@ -5,6 +5,9 @@ import com.lumisight.api.agent.support.AgentSessionDispatcher;
 import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
 
+/**
+ * facade类，承接一下controller和dispatcher的逻辑
+ */
 @Component
 public class AgentStreamGateway {
 

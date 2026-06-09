@@ -43,9 +43,15 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * stream负责建立长链接和流式响应用户提问
+     * @param sessionId 会话id
+     * @return sse流式响应
+     */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestParam("sessionId") String sessionId) {
         String normalizedSessionId = requireSessionId(sessionId);
+        // 0 代表用不超时
         SseEmitter emitter = new SseEmitter(0L);
         Disposable disposable = streamGateway.subscribe(normalizedSessionId, new SseEventChannel(emitter, normalizedSessionId));
         ActiveSseConnection connection = new ActiveSseConnection(normalizedSessionId, emitter, disposable);
@@ -64,10 +70,16 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
             unregisterConnection(connection);
             disposable.dispose();
         });
+        // 在/run接口中，仍然用这个sse流回复用户（同一会话下）
         sendEvent(emitter, AgentEvent.state("", normalizedSessionId, 0, "STREAM", "connected", "SSE session stream connected."), normalizedSessionId);
         return emitter;
     }
 
+    /**
+     * run接口负责接收用户对话信息，并交给agent处理，但返回结果是依靠stream流式返回，run只返回一个状态
+     * @param request 用户对话信息
+     * @return 本次请求的状态
+     */
     @PostMapping(value = "/run", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> run(@RequestBody AgentRunRequest request) {
         AgentRunRequest normalized = normalizeCommandRequest(request);

@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -26,12 +28,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Component
+@Slf4j
 public class AgentSessionDispatcher {
-
-    private static final Logger log = LoggerFactory.getLogger(AgentSessionDispatcher.class);
+    // 每个session一个mailbox，用来存储用户的提问，也涉及到collect、steer、follow三种模式
     private final Map<String, SessionMailbox> mailboxes = new ConcurrentHashMap<>();
     private final ExecutorService workerPool = NamedExecutors.newCachedPool("agent-session-worker");
+    // agent调度类
     private final AgentInteractionOrchestrator interactionOrchestrator;
+    // 会话上下文管理类
     private final AgentSessionContextStore conversationManager;
 
     public AgentSessionDispatcher(
@@ -40,15 +44,6 @@ public class AgentSessionDispatcher {
     ) {
         this.interactionOrchestrator = interactionOrchestrator;
         this.conversationManager = conversationManager;
-    }
-
-    public Flux<AgentEvent> stream(AgentRunRequest request) {
-        AgentRunRequest normalized = ensureIds(request);
-        return Flux.defer(() -> {
-            Flux<AgentEvent> events = subscribe(normalized.sessionId());
-            submit(normalized);
-            return events;
-        });
     }
 
     public void submit(AgentRunRequest request) {
@@ -97,12 +92,16 @@ public class AgentSessionDispatcher {
         );
     }
 
+    /**
+     * 信箱类，用于管理当前会话的用户提问以及提问状态
+     */
     private final class SessionMailbox {
         private final String sessionId;
         private final BlockingQueue<QueuedEnvelope> queue = new LinkedBlockingQueue<>();
         private final Sinks.Many<AgentEvent> eventSink = Sinks.many().multicast().directBestEffort();
         private final ReentrantLock stateLock = new ReentrantLock();
         private volatile RunningExecution current;
+        // 当前会话是否有正在执行的任务
         private boolean workerStarted;
         private int subscriberCount;
 
@@ -110,6 +109,10 @@ public class AgentSessionDispatcher {
             this.sessionId = sessionId;
         }
 
+        /**
+         * 提交一个新的用户提问
+         * @param envelope 用户提问
+         */
         private void submit(QueuedEnvelope envelope) {
             List<AgentEvent> delayedEvents = new ArrayList<>();
             RunningExecution runningToInterrupt = null;
@@ -130,8 +133,10 @@ public class AgentSessionDispatcher {
                 }
 
                 AgentDialogueMode mode = parseMode(envelope.request.dialogueMode());
+                // 当前没有正在执行中的任务，并且消息队列非空
                 if (current == null && !queue.isEmpty()) {
                     switch (mode) {
+                        // 把新消息合并到queue的第一条消息中
                         case COLLECT -> {
                             if (mergeIntoPendingLocked(envelope)) {
                                 delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待启动的问题。"));
@@ -139,6 +144,7 @@ public class AgentSessionDispatcher {
                                 return;
                             }
                         }
+                        // 把旧消息都丢掉
                         case STEER -> {
                             clearPendingLocked("被新的 STEER 请求替换。", true, delayedEvents);
                             queue.offer(envelope);
@@ -146,12 +152,13 @@ public class AgentSessionDispatcher {
                             startWorker = markWorkerStartLocked();
                             return;
                         }
+                        // follow走下面的默认逻辑
                         case FOLLOW -> {
                             // no-op: keep FIFO ordering
                         }
                     }
                 }
-
+                // 当前有任务正在执行
                 if (current != null) {
                     switch (mode) {
                         case FOLLOW -> {
@@ -182,7 +189,7 @@ public class AgentSessionDispatcher {
             } finally {
                 stateLock.unlock();
             }
-
+            // 向用户推送状态信息
             delayedEvents.forEach(this::emit);
             if (runningToInterrupt != null) {
                 if (manualInterrupt) {
@@ -194,6 +201,7 @@ public class AgentSessionDispatcher {
             } else if (manualInterrupt) {
                 log.info("agent_session interrupt requested, sessionId={}, hasRunning=false", sessionId);
             }
+            // 执行agent逻辑，是一个阻塞队列操作
             if (startWorker) {
                 workerPool.submit(this::drainLoop);
             }
@@ -408,6 +416,10 @@ public class AgentSessionDispatcher {
 
     }
 
+    /**
+     * 用于管理当前会话正在执行的Agent任务
+     * 相比简单的workerStarted，这里还包含了当前会话的状态信息disposable，以及当前会话的执行线程workerThread
+     */
     private final class RunningExecution {
         private final SessionMailbox mailbox;
         private final String sessionId;
