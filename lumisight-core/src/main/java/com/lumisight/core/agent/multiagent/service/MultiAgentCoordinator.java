@@ -52,12 +52,15 @@ public class MultiAgentCoordinator {
         List<String> lifecycleEvents;
         MultiAgentExecutionState executionState;
         if (useTeamAgent) {
+            // 完整的team agent调度流程：leader sub1 sub2 sub3 ...
             TeamAgentExecutionService.ExecutionResult executionResult = teamAgentExecutionService.executePlan(plan, context);
             plan = executionResult.executionState().plan();
             results = executionResult.results();
             lifecycleEvents = executionResult.lifecycleEvents();
             executionState = executionResult.executionState();
         } else {
+            // sub agent调度
+            // todo 为啥subAgent是调度agent类实现的？这和上面的teamAgent也不对称。。。
             results = orchestratorAgent.executePlan(plan, context);
             lifecycleEvents = List.of();
             executionState = new MultiAgentExecutionState(

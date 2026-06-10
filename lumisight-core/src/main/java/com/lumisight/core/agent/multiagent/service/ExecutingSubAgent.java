@@ -15,6 +15,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * todo 这个subAgent类被subAgent模式和teamAgent模式混用。。。
+ */
 @Component
 @Order(0)
 public class ExecutingSubAgent implements SubAgent {

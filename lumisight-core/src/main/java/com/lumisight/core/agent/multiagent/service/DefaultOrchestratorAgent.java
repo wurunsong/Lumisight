@@ -61,7 +61,9 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
     @Override
     public List<SubAgentResult> executePlan(OrchestrationPlan plan, OrchestrationContext context) {
         List<SubAgentResult> results = new ArrayList<>();
+        // todo 这个子任务的调度，底层看起来也没有并发，是不是有问题呢？
         for (SubAgentTask task : plan.tasks()) {
+            // router路由到可执行该任务的agent
             SubAgent agent = taskRouter.route(task);
             results.add(agent.execute(task, context));
         }

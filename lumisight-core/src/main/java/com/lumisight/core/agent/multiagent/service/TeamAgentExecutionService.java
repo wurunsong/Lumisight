@@ -74,6 +74,7 @@ public class TeamAgentExecutionService {
         Map<String, Long> inboxOffsets = new ConcurrentHashMap<>(initInboxOffsets(resumeState));
         Map<String, SubAgentResult> completed = initCompleted(resumeState);
         Map<String, List<String>> permissionsByTask = initPermissionsByTask(resumeState);
+        // todo 为啥不用copyOnWriteArrayList
         List<String> lifecycleEvents = Collections.synchronizedList(initLifecycleEvents(resumeState));
 
         List<List<SubAgentTask>> waves = buildExecutionWaves(tasks, effectivePlan.topology());
@@ -81,6 +82,7 @@ public class TeamAgentExecutionService {
         if (resumeState != null) {
             lifecycleEvents.add("lead:resume_loaded:" + effectivePlan.planId());
         }
+        // team agent状态会落到文件中<repoRoot>/.lumisight/teams/<teamId>/execution-state.json
         executionStateStore.save(repoRoot, teamId, snapshot(teamId, effectivePlan, taskStates, completed, inboxOffsets, currentRound, lifecycleEvents, permissionsByTask));
         boolean paused = false;
         for (List<SubAgentTask> wave : waves) {
@@ -99,8 +101,10 @@ public class TeamAgentExecutionService {
             currentRound++;
             dispatchTasks(repoRoot, teamId, runnable, workerIds, completed, inboxOffsets, lifecycleEvents, permissionsByTask, taskStates);
             Map<String, WorkerPendingTask> pendingByWorker = new ConcurrentHashMap<>();
+            // pollWorkerInbox最后还是调用的CodeAssistantAgentService这个类，runWorkerActions是一个多线程执行器
             runWorkerActions(workerIds, workerId -> pollWorkerInbox(context, teamId, workerId, inboxOffsets, pendingByWorker, lifecycleEvents));
             List<TeamAgentMessage> bufferedLeadMessages = List.of();
+            // 这里执行那些需要提权而在前一步没执行的任务
             if (!pendingByWorker.isEmpty()) {
                 bufferedLeadMessages = handleLeadPermissionRequests(repoRoot, teamId, inboxOffsets, lifecycleEvents);
                 runWorkerActions(new ArrayList<>(pendingByWorker.keySet()), workerId ->
@@ -198,6 +202,12 @@ public class TeamAgentExecutionService {
         return new ArrayList<>(list.stream().map(String::valueOf).toList());
     }
 
+    /**
+     * 把一连串任务拆成一波一波（wave）可执行的任务组，wave考虑了任务的依赖关系
+     * @param tasks
+     * @param topology
+     * @return
+     */
     private List<List<SubAgentTask>> buildExecutionWaves(List<SubAgentTask> tasks, TopologyType topology) {
         if (topology == TopologyType.SERIAL_DAG) {
             return tasks.stream().map(List::of).toList();
@@ -210,10 +220,12 @@ public class TeamAgentExecutionService {
             List<SubAgentTask> ready = pending.values().stream()
                     .filter(task -> task.dependsOn() == null || released.containsAll(task.dependsOn()))
                     .sorted(Comparator.comparingInt(SubAgentTask::priority).reversed())
-                    .toList();
-            if (ready.isEmpty()) {
-                ready = List.of(pending.values().iterator().next());
-            }
+                    .collect(Collectors.collectingAndThen(
+                            Collectors.toList(),
+                            candidates -> candidates.isEmpty()
+                                    ? List.of(pending.values().iterator().next())
+                                    : List.copyOf(candidates)
+                    ));
             waves.add(ready);
             ready.forEach(task -> {
                 pending.remove(task.taskId());
@@ -277,6 +289,7 @@ public class TeamAgentExecutionService {
         if (context == null || context.runtimeAttributes() == null) {
             return false;
         }
+        // raw支持多种动态判断方式，不只是判断布尔值，还可以是其他函数类型
         Object raw = context.runtimeAttributes().get("shouldStop");
         if (raw instanceof BooleanSupplier supplier) {
             return supplier.getAsBoolean();
@@ -382,6 +395,7 @@ public class TeamAgentExecutionService {
                 continue;
             }
             SubAgentTask task = objectMapper.convertValue(message.payload().get("task"), SubAgentTask.class);
+            // 向leader agent所要权限
             List<String> requestedPermissions = requestedPermissions(task);
             if (!requestedPermissions.isEmpty()) {
                 mailboxBus.send(context.request().repoRoot(), new TeamAgentMessage(

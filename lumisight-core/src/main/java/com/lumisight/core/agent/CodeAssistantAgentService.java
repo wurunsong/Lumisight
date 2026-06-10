@@ -147,8 +147,10 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 RelevantMemoryContext relevantMemoryContext = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
                 // 调度多agent
+                // todo 这里的多agent调度有很大的问题，teamAgent最终的逻辑执行还是在CodeAssistantAgentService这个类里，会形成递归，
+                //  应该把前面的公共部分做一个隔离，具体方案后面再说
                 context = orchestrateMultiAgentIfNeeded(effectiveRequest, context, traceId, publisher);
-
+                // 处理上一轮对话没完成的工具调用
                 ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
                         effectiveRequest,
                         context,
@@ -167,7 +169,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     sink.complete();
                     return;
                 }
-
+                // emitPlanIfNeeded只有在被中断的时候才返回true
                 if (effectiveRequest.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(effectiveRequest, context, skillPlan, traceId, publisher, relevantMemoryContext)) {
                     sink.complete();
                     return;
@@ -504,6 +506,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             ));
             return new ResumeHandlingResult(context, true);
         }
+        // 这里是继续执行之前中断的工具调用
+        // todo 这怎么又冒出来一个agentLoopOrchestrator？太多了，分工不清晰，后面整合下
         AgentToolExecutionResult gatedResult = agentLoopOrchestrator.executePendingDecision(
                 resumeState.pendingDecision(),
                 enabledPermissions,
@@ -540,6 +544,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
         publisher.emit(AgentEvent.state(traceId, context.sessionId(), 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
         fireHook(AgentHookPoint.BEFORE_PLAN, context.sessionId(), 0, context.effectiveQuestion(), null, Map.of());
+        // 生成计划
         String plan = streamingChatClientSupport.collect(
                 llmChatClient,
                 agentPromptService.systemPrompt(request.taskType(), relevantMemoryContext),
@@ -547,6 +552,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 () -> !shouldInterruptExecution(context.sessionId(), context.runEpoch()),
                 null
         );
+        // 把计划展示给用户
         publisher.emit(AgentEvent.plan(traceId, context.sessionId(), plan));
         fireHook(AgentHookPoint.AFTER_PLAN, context.sessionId(), 0, context.effectiveQuestion(), null, Map.of("plan", plan));
         return false;
