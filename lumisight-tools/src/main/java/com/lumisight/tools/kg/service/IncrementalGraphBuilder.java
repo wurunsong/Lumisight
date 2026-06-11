@@ -43,6 +43,7 @@ public class IncrementalGraphBuilder {
         GitState gitState = resolveGitState(repoRoot);
         log.info("Start KG build, repoRoot={}, gitBranch={}, gitCommit={}",
                 repoRoot.toAbsolutePath().normalize(), gitState.branch(), gitState.commit());
+        // 只对主分（master或main）支构建
         validateBranch(gitState.branch());
         String repoName = repoRoot.getFileName().toString();
         String repoRootString = repoRoot.toAbsolutePath().normalize().toString();
@@ -54,6 +55,7 @@ public class IncrementalGraphBuilder {
                 nebulaProperties.getPassword(),
                 repoName
         )) {
+            // 知识图谱构建时的commit
             String graphCommit = store.currentRepoCommit(repoName);
             log.info("Current graph baseline commit from repo_meta, repoName={}, graphCommit={}", repoName, graphCommit);
 
@@ -64,11 +66,13 @@ public class IncrementalGraphBuilder {
             skipped.setBuildUpdated(false);
 
             if (graphCommit != null && !graphCommit.isBlank()) {
+                // 如果当前分支已是最新，则跳过构建。
                 if (graphCommit.equals(gitState.commit())) {
                     log.info("Skip KG build: graph already at current HEAD, commit={}", gitState.commit());
                     skipped.setBuildSkipReason("No update: graph already at current HEAD");
                     return skipped;
                 }
+                // 判断图谱的commit是否为当前分支的祖先（也就是图谱中的分支是不是更旧）
                 if (!isAncestor(repoRoot, graphCommit, gitState.commit())) {
                     log.warn("Skip KG build: current commit is not ahead of baseline, baseline={}, current={}",
                             graphCommit, gitState.commit());
@@ -136,6 +140,7 @@ public class IncrementalGraphBuilder {
                     log.info("Diff impacted classes, count={}, classes={}", impactedClasses.size(), impactedClasses);
 
                     for (String className : impactedClasses) {
+                        // 拿到新老类里的方法节点
                         Map<String, GraphNode> oldMethods = methodsByClass(oldFragment, className);
                         Map<String, GraphNode> newMethods = methodsByClass(newFragment, className);
 
@@ -146,7 +151,7 @@ public class IncrementalGraphBuilder {
                                 store.markAdjacentEdgesDeleted(oldMethodId);
                             }
                         }
-
+                        // 更新类信息
                         GraphNode oldClassNode = classNodeByName(oldFragment, className);
                         GraphNode newClassNode = classNodeByName(newFragment, className);
                         if (newClassNode != null) {
@@ -298,7 +303,9 @@ public class IncrementalGraphBuilder {
     }
 
     private GitState resolveGitState(Path repoRoot) {
+        // 获取当前分支
         String branch = runGitCommand(repoRoot, "rev-parse", "--abbrev-ref", "HEAD");
+        // 获取当前commit hash
         String commit = runGitCommand(repoRoot, "rev-parse", "HEAD");
         return new GitState(branch, commit);
     }
@@ -369,11 +376,11 @@ public class IncrementalGraphBuilder {
                 continue;
             }
             String status = parts[0];
-            if (status.startsWith("R") && parts.length >= 3) {
+            if (status.startsWith("R") && parts.length >= 3) { // 重命名
                 diffs.add(new JavaFileDiff(parts[1], parts[2]));
-            } else if ("A".equals(status) || "M".equals(status)) {
+            } else if ("A".equals(status) || "M".equals(status)) { // 新增或修改
                 diffs.add(new JavaFileDiff(parts[1], parts[1]));
-            } else if ("D".equals(status)) {
+            } else if ("D".equals(status)) { // 删除
                 diffs.add(new JavaFileDiff(parts[1], null));
             }
         }

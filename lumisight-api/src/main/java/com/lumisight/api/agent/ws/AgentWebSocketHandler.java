@@ -82,6 +82,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        // 更新活跃连接数
         activeConnections.updateAndGet(v -> Math.max(0, v - 1));
         SessionSubscription subscription = subscriptions.remove(session.getId());
         messageTimestamps.remove(session.getId());
