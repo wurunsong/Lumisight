@@ -54,11 +54,14 @@ public class MemoryFileService {
 
     public List<MemoryHeader> scanHeaders(String repoRoot, String userId) {
         try {
+            // 获取记忆目录
             Path dir = ensureMemoryDir(repoRoot, userId);
+            // 获取不为MEMORY.md的markdown文件
             List<Path> files = listMemoryFiles(dir);
             List<MemoryHeader> headers = new ArrayList<>();
             for (Path file : files) {
                 try {
+                    // 读取记忆文件头
                     headers.add(readHeader(file));
                 } catch (Exception e) {
                     log.warn("memory_header_scan_failed, file={}, error={}", file, e.getMessage());
@@ -132,6 +135,12 @@ public class MemoryFileService {
         }
     }
 
+    /**
+     * 根据当前的所有记忆文件，重新生成一份记忆索引MEMORY.md
+     * @param repoRoot
+     * @param userId
+     * @return
+     */
     public MemoryEntrypoint rebuildEntrypoint(String repoRoot, String userId) {
         try {
             Path dir = ensureMemoryDir(repoRoot, userId);
@@ -230,12 +239,14 @@ public class MemoryFileService {
             currentBytes += candidateBytes;
             keptLines++;
         }
+        // todo 这里做截断是否需要模型参与？
         builder.append("\n\n> WARNING: MEMORY.md 太大了，已按行数/字节上限截断；请删除或合并低价值记忆。");
         return new MemoryEntrypoint(builder.toString(), lineTruncated, byteTruncated, lines.length, bytes.length);
     }
 
     private List<Path> listMemoryFiles(Path dir) throws IOException {
         try (Stream<Path> stream = Files.list(dir)) {
+            // todo 这里最好有一个规范的记忆命名方式吧，只找markdown感觉会有问题
             return stream
                     .filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().endsWith(".md"))

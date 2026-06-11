@@ -24,7 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Path;
 import java.util.List;
-
+// todo 这里记忆管理有问题，增改查都应该是包含在agent loop中，而不是需要单独请求
 @RestController
 @RequestMapping("/api/lumisight/memory")
 public class MemoryController {
@@ -37,6 +37,12 @@ public class MemoryController {
         this.relevantMemoryService = relevantMemoryService;
     }
 
+    /**
+     * 列出磁盘上的记忆文件摘要
+     * @param repoRoot
+     * @param userId
+     * @return
+     */
     @GetMapping("/entries")
     public List<MemoryHeaderResponse> list(
             @RequestParam(required = false) String repoRoot,
@@ -47,6 +53,11 @@ public class MemoryController {
                 .toList();
     }
 
+    /**
+     * 新增一个长期记忆文件
+     * @param request
+     * @return
+     */
     @PostMapping("/entries")
     @ResponseStatus(HttpStatus.CREATED)
     public MemoryEntryResponse create(@RequestBody MemoryCreateRequest request) {
@@ -65,6 +76,12 @@ public class MemoryController {
         ));
     }
 
+    /**
+     * 删除一个长期记忆文件
+     * @param filename
+     * @param repoRoot
+     * @param userId
+     */
     @DeleteMapping("/entries/{filename}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(
@@ -78,6 +95,12 @@ public class MemoryController {
         }
     }
 
+    /**
+     * 展示MEMORY.md这个记忆索引文件的内容
+     * @param repoRoot
+     * @param userId
+     * @return
+     */
     @GetMapping("/index")
     public String entrypoint(
             @RequestParam(required = false) String repoRoot,
@@ -86,6 +109,13 @@ public class MemoryController {
         return memoryService.loadEntrypoint(normalizeRepoRoot(repoRoot), normalizeUserId(userId)).content();
     }
 
+    /**
+     * 搜索和query相关的记忆文件
+     * @param query
+     * @param repoRoot
+     * @param userId
+     * @return
+     */
     @GetMapping("/relevant")
     public MemoryRelevantResponse relevant(
             @RequestParam String query,
