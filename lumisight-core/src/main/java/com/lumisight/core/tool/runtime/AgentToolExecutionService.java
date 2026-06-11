@@ -227,7 +227,6 @@ public class AgentToolExecutionService {
     private String fallbackToolName(String toolName) {
         return switch (toolName) {
             case "cat" -> "fetchMethodSourceByLocation";
-            case "grep", "ls", "pwd" -> "callMcpCapability";
             default -> null;
         };
     }
@@ -239,28 +238,6 @@ public class AgentToolExecutionService {
                     "startLine", args.get("startLine") == null ? 1 : args.get("startLine"),
                     "endLine", args.get("endLine") == null ? 200 : args.get("endLine")
             );
-        }
-        if ("grep".equals(toolName)) {
-            return Map.of(
-                    "capability", "grep",
-                    "args", Map.of(
-                            "pattern", String.valueOf(args.getOrDefault("pattern", "")),
-                            "filePattern", String.valueOf(args.getOrDefault("filePattern", "")),
-                            "limit", args.get("limit") == null ? 50 : args.get("limit")
-                    )
-            );
-        }
-        if ("ls".equals(toolName)) {
-            return Map.of(
-                    "capability", "ls",
-                    "args", Map.of(
-                            "path", String.valueOf(args.getOrDefault("path", "")),
-                            "limit", args.get("limit") == null ? 100 : args.get("limit")
-                    )
-            );
-        }
-        if ("pwd".equals(toolName)) {
-            return Map.of("capability", "pwd", "args", Map.of());
         }
         return args;
     }

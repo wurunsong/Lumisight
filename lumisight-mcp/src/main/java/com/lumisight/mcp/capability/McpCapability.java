@@ -2,11 +2,15 @@ package com.lumisight.mcp.capability;
 
 import java.util.Map;
 
-public interface McpCapability {
+/**
+ * MCP capability extension point.
+ * 当前仅保留抽象定义，具体 capability 由后续真正需要时再按场景补回。
+ */
+public abstract class McpCapability {
 
-    String name();
+    public abstract String name();
 
-    String description();
+    public abstract String description();
 
-    Map<String, Object> invoke(Map<String, Object> args);
+    public abstract Map<String, Object> invoke(Map<String, Object> args);
 }

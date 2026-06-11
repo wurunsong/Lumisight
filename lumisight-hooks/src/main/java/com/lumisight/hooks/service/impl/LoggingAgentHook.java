@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import com.lumisight.hooks.dto.AgentHookContext;
+import com.lumisight.hooks.enums.AgentHookPoint;
+
 @Component
 public class LoggingAgentHook implements AgentHook {
 

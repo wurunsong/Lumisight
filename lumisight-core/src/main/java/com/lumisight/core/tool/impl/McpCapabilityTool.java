@@ -53,7 +53,7 @@ public class McpCapabilityTool implements PermissionedAgentTool<McpCapabilityToo
 
     @Override
     public String description() {
-        return "调用 MCP 扩展能力，把请求转发给已注册的 capability，适合访问补充型外部能力。";
+        return "调用 MCP 扩展能力，把请求转发给已注册的 capability。当前默认只保留抽象扩展点。";
     }
 
     @Override
@@ -84,9 +84,9 @@ public class McpCapabilityTool implements PermissionedAgentTool<McpCapabilityToo
         ));
     }
 
-    @Tool(description = "调用 MCP 能力。capability 填能力名，args 填该能力参数。默认会注入 repoRoot。常用能力: grep/cat/ls/pwd/listRepoFiles/readRepoFileSnippet。")
+    @Tool(description = "调用 MCP 能力。capability 填能力名，args 填该能力参数。默认会注入 repoRoot。当前默认不内置具体 capability，实现按需补充。")
     public List<AgentContextItem> callMcpCapability(
-            @ToolParam(description = "能力名，例如 listRepoFiles/readRepoFileSnippet") String capability,
+            @ToolParam(description = "能力名，例如 futureCustomCapability") String capability,
             @ToolParam(description = "能力参数对象") Map<String, Object> args
     ) {
         return invoke(new Args(capability, args == null ? Map.of() : args), 5);

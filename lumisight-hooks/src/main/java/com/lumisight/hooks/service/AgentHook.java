@@ -1,5 +1,8 @@
 package com.lumisight.hooks;
 
+import com.lumisight.hooks.dto.AgentHookContext;
+import com.lumisight.hooks.enums.AgentHookPoint;
+
 public interface AgentHook {
 
     default int order() {

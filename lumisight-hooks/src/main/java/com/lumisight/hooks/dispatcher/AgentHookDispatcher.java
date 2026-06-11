@@ -5,6 +5,9 @@ import org.springframework.stereotype.Component;
 import java.util.Comparator;
 import java.util.List;
 
+import com.lumisight.hooks.dto.AgentHookContext;
+import com.lumisight.hooks.enums.AgentHookPoint;
+
 @Component
 public class AgentHookDispatcher {
 

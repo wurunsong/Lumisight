@@ -2,6 +2,8 @@ package com.lumisight.memory;
 
 import java.util.List;
 
+import com.lumisight.memory.dto.MemoryEntry;
+
 public record RelevantMemoryContext(
         MemoryEntrypoint entrypoint,
         List<MemoryEntry> selectedEntries,

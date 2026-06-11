@@ -322,7 +322,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - RAG EVAL：`/api/lumisight/rag-eval/codesearchnet/run`
 - GRAPH：`fetchOneHopByKgNodeId`
 - SOURCE：`fetchMethodSourceByLocation`
-- MCP：`callMcpCapability`
+- MCP：`callMcpCapability`（默认仅保留抽象扩展入口，不再内置具体 capability）
 - BROWSER：`browser_open / browser_snapshot / browser_click / browser_type / browser_screenshot / browser_close`
 - MEMORY：`memory_list / memory_write`
 - PLANNING：`todo_write / task_create / task_list / task_get / task_claim / task_release / task_complete / task_resume / task_board`
