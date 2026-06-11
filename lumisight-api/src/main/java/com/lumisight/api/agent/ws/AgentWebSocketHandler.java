@@ -43,17 +43,20 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        // 超过最大连接数，直接关闭连接
         if (activeConnections.incrementAndGet() > webSocketProperties.getMaxConnections()) {
             activeConnections.decrementAndGet();
             session.close(CloseStatus.SERVICE_OVERLOAD);
             return;
         }
+        // 设置消息体大小
         session.setTextMessageSizeLimit(webSocketProperties.getMaxTextMessageSize());
         super.afterConnectionEstablished(session);
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        // 检查这条连接/会话有没有超出消息频率限制
         if (!allowMessage(session.getId())) {
             sendProtocol(session, new WsAgentMessage("ERROR", "", null, "rate limit exceeded", System.currentTimeMillis()));
             session.close(CloseStatus.POLICY_VIOLATION);
@@ -116,6 +119,11 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
         return type.trim().toUpperCase();
     }
 
+    /**
+     * 一个简单的滑动窗口限流
+     * @param sessionId
+     * @return
+     */
     private boolean allowMessage(String sessionId) {
         long now = System.currentTimeMillis();
         long cutoff = now - 60_000L;
@@ -127,6 +135,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
             }
             deque.pollFirst();
         }
+        // 检查1分钟内的消息数量是否超过阈值
         if (deque.size() >= webSocketProperties.getMessageRateLimitPerMinute()) {
             return false;
         }

@@ -114,18 +114,22 @@ class AgentLoopOrchestrator {
                 publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "timeout", "达到本次子任务的安全时间上限"));
                 return new OrchestrationResult("已达到当前子任务的安全时间上限，请基于已收集证据收敛结论。", false, false, Math.max(0, round - 1), contextSession);
             }
+            // todo 中断的逻辑分散在各个地方，如何统一处理？
             OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;
             }
 
             publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
+            // 新增上下文，并顺便用snip和micro进行压缩
             contextSession = agentContextManager.append(sessionId, contextSession, new AgentContextItem(
                     "conversation",
                     "user_prompt_round_" + round,
                     effectiveQuestion,
                     Map.of("round", round, "role", "user")
             ), AgentContextAppendOptions.conversation());
+            // todo projectForDecision方法里会再做一次snip和micro，和上面重复了
+            // todo 上下文压缩有很大的问题，除了compact以外，snip、micro和project都是裁剪上下文，感觉很重复啊
             AgentContextProjection decisionProjection = agentContextManager.projectForDecision(
                     sessionId,
                     contextSession,
@@ -236,6 +240,21 @@ class AgentLoopOrchestrator {
         return hookedToolExecutor.execute(decision, enabledPermissions, limit, sessionId, round, question);
     }
 
+    /**
+     * 批量调用工具
+     * @param request
+     * @param effectiveQuestion
+     * @param sessionId
+     * @param traceId
+     * @param round
+     * @param contextSession
+     * @param limit
+     * @param enabledPermissions
+     * @param runEpoch
+     * @param decision
+     * @param publisher
+     * @return
+     */
     private ToolBatchOutcome executeToolBatches(
             AgentRequest request,
             String effectiveQuestion,
@@ -249,6 +268,7 @@ class AgentLoopOrchestrator {
             ToolDecision decision,
             AgentEventPublisher publisher
     ) {
+        // 展开工具调用信息
         List<ToolDecision> toolCalls = expandToolCalls(decision);
         if (toolCalls.isEmpty()) {
             return new ToolBatchOutcome(contextSession, false, null);
@@ -256,6 +276,7 @@ class AgentLoopOrchestrator {
         List<List<ToolDecision>> batches = hookedToolExecutor.partitionToolCalls(toolCalls, enabledPermissions);
         boolean producedContext = false;
         for (List<ToolDecision> batch : batches) {
+            // 判断是否需要人工确认高风险工具调用
             ToolDecision gatedDecision = findHumanGatedDecision(batch);
             if (gatedDecision != null && !request.approveRiskyToolCall()) {
                 conversationManager.saveWaitingForGate(
@@ -297,6 +318,7 @@ class AgentLoopOrchestrator {
                     ));
                 }
             }
+            // 执行工具
             List<AgentToolExecutionResult> batchResults = hookedToolExecutor.executeBatch(
                     batch,
                     enabledPermissions,
@@ -321,6 +343,7 @@ class AgentLoopOrchestrator {
                 contextSession = appendResult.session();
                 producedContext = producedContext || appendResult.producedContext();
             }
+            // 代码自动修复能力
             AutoSelfHealOutcome autoSelfHealOutcome = runAutoSelfHealIfNeeded(
                     request,
                     effectiveQuestion,
@@ -340,6 +363,18 @@ class AgentLoopOrchestrator {
         return new ToolBatchOutcome(contextSession, producedContext, null);
     }
 
+    /**
+     * 对最终决策做一个评估
+     * @param request
+     * @param effectiveQuestion
+     * @param sessionId
+     * @param traceId
+     * @param round
+     * @param decision
+     * @param contextSession
+     * @param publisher
+     * @return
+     */
     private FinalDecisionOutcome evaluateFinalDecision(
             AgentRequest request,
             String effectiveQuestion,
@@ -350,6 +385,7 @@ class AgentLoopOrchestrator {
             AgentContextSession contextSession,
             AgentEventPublisher publisher
     ) {
+        // 如果需要向用户提问，就先保存当前上下文，并返回等待用户补充信息的状态。
         if ("ask_user".equalsIgnoreCase(decision.action())) {
             String question = StringUtils.hasText(decision.askUserQuestion()) ? decision.askUserQuestion() : "我还需要你补充一些信息，才能继续。";
             conversationManager.saveWaiting(
@@ -364,9 +400,11 @@ class AgentLoopOrchestrator {
             fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
             return new FinalDecisionOutcome(new OrchestrationResult(null, true, false, round, contextSession), null);
         }
+        // 如果不是最终决策，直接返回。
         if (!"final".equalsIgnoreCase(decision.action()) || !StringUtils.hasText(decision.finalAnswer())) {
             return new FinalDecisionOutcome(null, null);
         }
+        // todo 这里验证未通过不是agent自己再验证一遍，而是直接返回给用户吗？感觉不完善
         if (requiresSelfHealPass(request) && hasPendingSelfHealFailure(contextSession)) {
             String reason = "最近一次代码修改的自动编译/lint 验证尚未通过，请继续修复并再次验证。";
             publisher.emit(AgentEvent.verifyResult(traceId, sessionId, round, false, reason));
@@ -429,6 +467,7 @@ class AgentLoopOrchestrator {
         if (changedJavaFiles.isEmpty()) {
             return new AutoSelfHealOutcome(contextSession, false);
         }
+        // 决定使用compile还是用lint进行代码验证
         List<ToolDecision> validationDecisions = buildValidationDecisions(changedJavaFiles);
         if (validationDecisions.isEmpty()) {
             return new AutoSelfHealOutcome(contextSession, false);
@@ -444,6 +483,7 @@ class AgentLoopOrchestrator {
         ));
         boolean producedContext = false;
         List<AgentToolExecutionResult> validationResults = new ArrayList<>();
+        // 实际上就是调用compile/lint工具
         for (ToolDecision validationDecision : validationDecisions) {
             publisher.emit(AgentEvent.toolCall(traceId, sessionId, round, validationDecision.toolName(), validationDecision.args()));
             AgentToolExecutionResult validationResult = executePendingDecision(

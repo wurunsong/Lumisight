@@ -103,6 +103,12 @@ public class AgentConversationManager implements AgentSessionContextStore {
         todoStates.put(sessionId, new TodoState(new ArrayList<>(normalized), round, round, System.currentTimeMillis()));
     }
 
+    /**
+     * todo 这里有问题啊，应该把实际的提醒项和已完成项都列出来
+     * @param sessionId
+     * @param round
+     * @return
+     */
     public Optional<AgentContextItem> todoReminderContext(String sessionId, int round) {
         if (!StringUtils.hasText(sessionId)) {
             return Optional.empty();
@@ -116,6 +122,7 @@ public class AgentConversationManager implements AgentSessionContextStore {
         if (state == null) {
             return Optional.empty();
         }
+        // 距离上一次 todo活动或 reminder提醒还不够久，就先别再提醒。
         int lastActivityRound = Math.max(state.lastTodoRound, state.lastReminderRound);
         if (round - lastActivityRound < 3) {
             return Optional.empty();

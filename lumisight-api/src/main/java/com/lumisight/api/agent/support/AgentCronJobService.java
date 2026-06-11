@@ -50,6 +50,10 @@ public class AgentCronJobService {
         this.agentExecutionEngine = agentExecutionEngine;
     }
 
+    /**
+     * 列出当前所有定时任务
+     * @return
+     */
     public List<AgentCronJobResponse> list() {
         return jobs.values().stream()
                 .sorted(Comparator.comparingLong((CronJobState state) -> state.definition.updatedAt()).reversed())
@@ -57,10 +61,20 @@ public class AgentCronJobService {
                 .toList();
     }
 
+    /**
+     * 获取某个任务的详细信息
+     * @param jobId
+     * @return
+     */
     public AgentCronJobResponse get(String jobId) {
         return toResponse(requireState(jobId));
     }
 
+    /**
+     * 创建定时任务
+     * @param request
+     * @return
+     */
     public AgentCronJobResponse create(AgentCronJobUpsertRequest request) {
         CronJobDefinition definition = buildDefinition(null, request, System.currentTimeMillis(), null);
         CronJobState state = new CronJobState(definition, new LinkedList<>(), null, null);
@@ -69,6 +83,12 @@ public class AgentCronJobService {
         return toResponse(requireState(definition.jobId()));
     }
 
+    /**
+     * 更新定时任务
+     * @param jobId
+     * @param request
+     * @return
+     */
     public AgentCronJobResponse update(String jobId, AgentCronJobUpsertRequest request) {
         CronJobState existing = requireState(jobId);
         CronJobDefinition definition = buildDefinition(jobId, request, existing.definition.createdAt(), existing);

@@ -124,6 +124,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 totalBytes += entry.byteSize();
             }
         }
+        // 工具的返回结果太大，需要进行压缩
         if (totalBytes > properties.getToolMessageBytes()) {
             resultEntries = artifactizeLargestEntries(sessionId, resultEntries, totalBytes);
         }
@@ -191,6 +192,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
             SkillPlan skillPlan,
             ProjectionPurpose purpose
     ) {
+        // 上下文投影前先做一次snip+micro压缩
         WriteTimeCompactionResult writeResult = applyWriteTimeCompaction(sessionId, input);
         AgentContextSession session = writeResult.session();
         List<AgentContextCompressionStage> stages = new ArrayList<>(writeResult.stages());
@@ -202,6 +204,9 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 - properties.getResponseReserveTokens()
                 - properties.getAutoCompactBufferTokens();
         if (estimatedTokens > autoCompactThreshold && session.autoCompactFailureCount() < properties.getMaxAutoCompactFailures()) {
+            // 做一次上下文压缩
+            // todo 应该先compact还是先project？
+            // autoCompact会用模型对现有上下文进行压缩，并且会从原始上下文中恢复热点上下文、skill上下文和plan上下文
             CompactionStepResult autoCompactResult = autoCompact(sessionId, session, request, skillPlan, purpose);
             session = autoCompactResult.session();
             estimatedTokens = estimateTokens(session.entries());
@@ -271,16 +276,16 @@ public class DefaultAgentContextManager implements AgentContextManager {
                     100,
                     now + 1
             ));
-
+            // 在压缩前的上下文中恢复出热点上下文
             RestoreBundle hotRestore = restoreHotEntries(session, recentTail, now + 2);
             rebuilt.addAll(hotRestore.entries());
-
+            // 在压缩前的上下文中恢复出skill上下文
             RestoreBundle skillRestore = restoreSkillEntries(sessionId, skillPlan, hotRestore.remainingTokenBudget(), now + 100);
             rebuilt.addAll(skillRestore.entries());
-
+            // 在压缩前的上下文中恢复出计划上下文
             RestoreBundle planRestore = restorePlanEntries(session, compactedSegment, recentTail, skillRestore.remainingTokenBudget(), now + 200);
             rebuilt.addAll(planRestore.entries());
-
+            // 把近期的上下文加入到压缩后的上下文中
             rebuilt.addAll(recentTail);
             AgentContextSession nextSession = new AgentContextSession(
                     rebuilt,
@@ -325,21 +330,26 @@ public class DefaultAgentContextManager implements AgentContextManager {
             return new RestoreBundle(List.of(), properties.getPostCompactTokenBudget());
         }
         Set<String> existingResources = collectLogicalResourceIds(recentTail);
+        // 把上下文按照重要顺序排序
         List<AgentContextHotCacheEntry> restorable = hotCacheEntries.stream()
                 .filter(AgentContextHotCacheEntry::restorable)
                 .sorted(Comparator.comparingLong(AgentContextHotCacheEntry::lastAccessedAt).reversed())
                 .toList();
         List<AgentContextEntry> restored = new ArrayList<>();
+        // 压缩后所能容忍的hot上下文token总额
         int tokenBudget = properties.getPostCompactTokenBudget();
         Set<String> seen = new LinkedHashSet<>();
         for (AgentContextHotCacheEntry entry : restorable) {
+            // 恢复的上下文超过上限就不再继续恢复
             if (restored.size() >= properties.getPostCompactMaxRestoreEntries()) {
                 break;
             }
+            // 如果当前entry的token大于压缩后能容忍的最大token数，则跳过
             if (entry.tokenEstimate() > properties.getPostCompactMaxTokensPerEntry()) {
                 continue;
             }
             String logicalResourceId = entry.logicalResourceId();
+            // 如果当前资源logicalResourceId已经存在，则跳过
             if (StringUtils.hasText(logicalResourceId) && (existingResources.contains(logicalResourceId) || !seen.add(logicalResourceId))) {
                 continue;
             }
@@ -364,6 +374,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (skillPlan == null || remainingBudget <= 0) {
             return new RestoreBundle(List.of(), remainingBudget);
         }
+        // skill上下文的token容量
         int skillBudget = Math.min(properties.getPostCompactSkillTokenBudget(), remainingBudget);
         if (skillBudget <= 0) {
             return new RestoreBundle(List.of(), remainingBudget);
@@ -384,6 +395,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         }
         if (StringUtils.hasText(skillPlan.rawSkillContent())) {
             content.append("技能原文:\n");
+            // 这里会对skill原文做截断
             content.append(trimToTokenBudget(skillPlan.rawSkillContent(), skillBudget - estimateTokens(content.toString())));
         }
         String rendered = content.toString().trim();
@@ -418,6 +430,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (alreadyPresent) {
             return new RestoreBundle(List.of(), remainingBudget);
         }
+        // 获取上次的计划
         AgentContextEntry latestPlan = latestPlanEntry(session, compactedSegment);
         if (latestPlan == null || latestPlan.tokenEstimate() > Math.min(remainingBudget, properties.getPostCompactMaxTokensPerEntry())) {
             return new RestoreBundle(List.of(), remainingBudget);
@@ -459,6 +472,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 .filter(this::isPlanOrTodoEntry)
                 .max(Comparator.comparingLong(AgentContextEntry::lastAccessedAt))
                 .ifPresent(candidates::add);
+        // 只返回最新的计划
         return candidates.stream().max(Comparator.comparingLong(AgentContextEntry::lastAccessedAt)).orElse(null);
     }
 
@@ -497,6 +511,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
             userPrompt.append("技能摘要: ").append(skillPlan.summary()).append("\n");
         }
         userPrompt.append("历史上下文:\n").append(payload);
+        // 模型生成摘要
         String summary = streamingChatClientSupport.collect(chatClient, systemPrompt, userPrompt.toString());
         if (StringUtils.hasText(summary)) {
             return summary;
@@ -504,6 +519,12 @@ public class DefaultAgentContextManager implements AgentContextManager {
         return heuristicSummary(entries, request);
     }
 
+    /**
+     * 兜底的启发式摘要生成器。
+     * @param entries
+     * @param request
+     * @return
+     */
     private String heuristicSummary(List<AgentContextEntry> entries, AgentRequest request) {
         StringBuilder builder = new StringBuilder();
         builder.append("## 用户主要请求与意图\n");
@@ -526,10 +547,11 @@ public class DefaultAgentContextManager implements AgentContextManager {
     private ProjectionResult collapseForProjection(AgentContextSession session, ProjectionPurpose purpose) {
         List<AgentContextEntry> entries = new ArrayList<>(session.entries());
         int estimatedTokens = estimateTokens(entries);
+        // 如果token没超限，就不映射直接返回
         if (estimatedTokens <= properties.getProjectionSoftTokens()) {
             return new ProjectionResult(entries, estimatedTokens, false, List.of(), Map.of());
         }
-
+        // todo 这个参数何意味，怎么给的10和14
         int recentConversationBudget = purpose == ProjectionPurpose.DECISION ? 10 : 14;
         Set<String> recentConversationIds = recentConversationIds(entries, recentConversationBudget);
         LinkedHashSet<String> requiredIds = new LinkedHashSet<>();
@@ -542,6 +564,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         int targetBudget = estimatedTokens > properties.getProjectionHardTokens()
                 ? properties.getProjectionHardTokens()
                 : properties.getProjectionSoftTokens();
+        // selected是要保留的上下文
         List<AgentContextEntry> selected = new ArrayList<>();
         int usedTokens = 0;
         for (AgentContextEntry entry : entries) {
@@ -550,11 +573,12 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 usedTokens += entry.tokenEstimate();
             }
         }
-
+        // optional是可选择保留或抛弃的上下文
         List<AgentContextEntry> optional = entries.stream()
                 .filter(entry -> !requiredIds.contains(entry.id()))
                 .sorted(this::compareProjectionPriority)
                 .toList();
+        // optional，看看哪些能够保留
         for (AgentContextEntry entry : optional) {
             if (usedTokens >= targetBudget && entry.priority() < 88) {
                 continue;
@@ -571,6 +595,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 .toList();
         List<AgentContextEntry> finalSelected = selected;
         int collapsedCount = Math.max(0, entries.size() - selected.size());
+        // hiddenByKind这是没被选中的上下文集合
         Map<String, Long> hiddenByKind = entries.stream()
                 .filter(entry -> finalSelected.stream().noneMatch(kept -> kept.id().equals(entry.id())))
                 .collect(Collectors.groupingBy(entry -> entry.kind().name(), LinkedHashMap::new, Collectors.counting()));
@@ -592,9 +617,11 @@ public class DefaultAgentContextManager implements AgentContextManager {
                     92
             ));
         }
+        // 投影后的上下文集合
         projected.addAll(selected);
 
         int projectedTokens = estimateTokens(projected);
+        // 如果投影后还是超过token限制，再做一次硬裁剪
         if (projectedTokens > properties.getProjectionHardTokens()) {
             projected = trimToHardLimit(projected, recentConversationIds);
             projectedTokens = estimateTokens(projected);
@@ -615,6 +642,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 .toList();
         int used = estimateTokens(required);
         List<AgentContextEntry> kept = new ArrayList<>(required);
+        // todo 这里是不是应该是小于等于？这个方法好奇怪。。。不像是在做压缩
         if (used >= properties.getProjectionHardTokens()) {
             return kept;
         }
@@ -637,8 +665,10 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private WriteTimeCompactionResult applyWriteTimeCompaction(String sessionId, AgentContextSession session) {
+        // 通过snip方式对上下文进行一轮压缩
         CompactionStepResult snipResult = applySnip(session);
         AgentContextSession compacted = snipResult.session();
+        // todo snip和micro的区别是？没看出来啊
         CompactionStepResult microResult = applyMicroCompact(compacted);
         compacted = microResult.session();
 
@@ -650,7 +680,9 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private CompactionStepResult applySnip(AgentContextSession session) {
+        // todo token的计算是？
         int estimatedTokens = estimateTokens(session.entries());
+        // token未超过阈值，不处理
         if (estimatedTokens <= properties.getSnipTriggerTokens()) {
             return CompactionStepResult.noop(session);
         }
@@ -658,23 +690,28 @@ public class DefaultAgentContextManager implements AgentContextManager {
         List<Integer> removableIndexes = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             AgentContextEntry entry = entries.get(i);
+            // todo 这里判断上下文的重要性，isAlwaysProjected是不是可以再细化
             if (entry.kind() == AgentContextEntryKind.CONVERSATION
                     && entry.priority() <= 60
                     && !isAlwaysProjected(entry)
+                    // sourceType=context_marker的消息是上下文管理器生成的，不应该被删除
                     && !"context_marker".equals(entry.item().sourceType())) {
                 removableIndexes.add(i);
             }
         }
+        // todo 这里keepRecent是至少删除的条目数？语义有点混乱，是不是应该保证剩余条数？再调研
         int keepRecent = properties.getSnipKeepRecentConversation();
         if (removableIndexes.size() <= keepRecent) {
             return CompactionStepResult.noop(session);
         }
         List<Integer> toRemove = removableIndexes.subList(0, removableIndexes.size() - keepRecent);
+        // next存的是留下来的上下文
         List<AgentContextEntry> next = new ArrayList<>();
         int freed = 0;
         int removedCount = 0;
         Set<Integer> removeSet = new LinkedHashSet<>(toRemove);
         for (int i = 0; i < entries.size(); i++) {
+            // i是待删除上下文，并且剩余的上下文的token总和仍然超过了阈值
             if (removeSet.contains(i) && estimatedTokens - freed > properties.getSnipTargetTokens()) {
                 freed += entries.get(i).tokenEstimate();
                 removedCount++;
@@ -682,10 +719,12 @@ public class DefaultAgentContextManager implements AgentContextManager {
             }
             next.add(entries.get(i));
         }
+        // freed <= 0等价于裁剪失败
         if (freed <= 0) {
             return CompactionStepResult.noop(session);
         }
-        next.add(0, AgentContextEntry.marker(
+        // 记录进行了上下文压缩
+        next.addFirst(AgentContextEntry.marker(
                 newEntryId("snip-boundary"),
                 AgentContextEntryKind.ARTIFACT_MARKER,
                 "snip_boundary",
@@ -719,8 +758,10 @@ public class DefaultAgentContextManager implements AgentContextManager {
     private CompactionStepResult applyMicroCompact(AgentContextSession session) {
         long now = System.currentTimeMillis();
         long staleMillis = Duration.ofMinutes(properties.getMicroCompactStaleMinutes()).toMillis();
+        // 判断上次投影的时间是否超过可容忍阈值
         boolean stale = session.lastProjectionAt() > 0 && now - session.lastProjectionAt() >= staleMillis;
         boolean oversized = estimateTokens(session.entries()) > properties.getProjectionSoftTokens();
+        // 投影时间没超，上下文大小也没超
         if (!stale && !oversized) {
             return CompactionStepResult.noop(session);
         }
@@ -731,6 +772,8 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 compactableIndexes.add(i);
             }
         }
+        // todo 这里为啥不是比较剩余的上下文和keepRecent
+        // todo 这里的keepRecent好像是强制在压缩的里面保存keepRecent条？是不是有问题呢
         int keepRecent = properties.getMicroCompactKeepRecent();
         if (compactableIndexes.size() <= keepRecent) {
             return CompactionStepResult.noop(session);
@@ -743,6 +786,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         int compactedCount = 0;
         for (int i = 0; i < entries.size(); i++) {
             AgentContextEntry entry = entries.get(i);
+            // 如果entry不可压缩，则原样保留
             if (!entry.compactable() || keepSet.contains(i) || entry.compacted()) {
                 next.add(entry);
                 continue;
@@ -777,6 +821,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private List<AgentContextEntry> artifactizeLargestEntries(String sessionId, List<AgentContextEntry> entries, int totalBytes) {
+        // 根据字节数排序
         List<AgentContextEntry> sorted = entries.stream()
                 .sorted(Comparator.comparingInt(AgentContextEntry::byteSize).reversed())
                 .toList();
@@ -789,6 +834,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
             if (entry.artifactRef() != null) {
                 continue;
             }
+            // 执行压缩逻辑
             AgentContextEntry artifactized = artifactizeEntry(sessionId, entry);
             replacements.put(entry.id(), artifactized);
             currentBytes -= Math.max(0, entry.byteSize() - artifactized.byteSize());
@@ -834,12 +880,15 @@ public class DefaultAgentContextManager implements AgentContextManager {
 
     private AgentContextEntry artifactizeEntry(String sessionId, AgentContextEntry entry) {
         int fullTokens = estimateTokens(entry.item().content());
+        // 对工具结果进行持久化
         AgentContextArtifactRef artifactRef = artifactStore.persist(
                 sessionId,
                 entry.id(),
                 entry.item().content(),
                 entry.item().metadata() == null ? Map.of() : entry.item().metadata()
         );
+        // 截取部分工具结果，拼到上下文里面
+        // todo 这里是不是要做个摘要，而不是直接截断？
         String preview = preview(entry.item().content());
         Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of(
                 "artifactPath", artifactRef.relativePath(),
@@ -889,12 +938,15 @@ public class DefaultAgentContextManager implements AgentContextManager {
         }
         Map<String, AgentContextHotCacheEntry> merged = new LinkedHashMap<>();
         List<AgentContextHotCacheEntry> existing = session.hotCacheEntries() == null ? List.of() : session.hotCacheEntries();
+        // 先存旧的hotCache
         for (AgentContextHotCacheEntry entry : existing) {
             merged.put(cacheKey(entry), entry);
         }
+        // 再存新的hotCache，如果key一样会覆盖旧的
         for (AgentContextHotCacheEntry entry : newEntries) {
             merged.put(cacheKey(entry), entry);
         }
+        // hotCache最多64条
         List<AgentContextHotCacheEntry> ordered = merged.values().stream()
                 .sorted(Comparator.comparingLong(AgentContextHotCacheEntry::lastAccessedAt).reversed())
                 .limit(64)
@@ -933,9 +985,11 @@ public class DefaultAgentContextManager implements AgentContextManager {
         if (entry == null || entry.item() == null) {
             return new AgentContextItem("tool_restore", "unknown", "", Map.of("restored", true));
         }
+        // 如果没有引用（也就是没持久化到磁盘），就直接返回
         if (entry.artifactRef() == null) {
             return entry.item();
         }
+        // 从磁盘恢复上下文
         String fullContent = artifactStore.load(entry.artifactRef());
         if (!StringUtils.hasText(fullContent)) {
             return entry.item();
@@ -965,9 +1019,12 @@ public class DefaultAgentContextManager implements AgentContextManager {
         Set<String> ids = projectedEntries.stream().map(AgentContextEntry::id).collect(Collectors.toSet());
         Set<String> logicalResourceIds = collectLogicalResourceIds(projectedEntries);
         long now = System.currentTimeMillis();
+        // 给刚刚投影过的条目加上最后访问时间
         List<AgentContextEntry> nextEntries = session.entries().stream()
                 .map(entry -> ids.contains(entry.id()) ? entry.touch(now) : entry)
                 .toList();
+        // 给刚刚投影过的热缓存条目加上最后访问时间
+        // todo logicalResourceIds到底是啥
         List<AgentContextHotCacheEntry> nextCache = (session.hotCacheEntries() == null ? List.<AgentContextHotCacheEntry>of() : session.hotCacheEntries()).stream()
                 .map(entry -> ids.contains(entry.sourceEntryId()) || logicalResourceIds.contains(entry.logicalResourceId()) ? entry.touch(now) : entry)
                 .toList();
@@ -1107,15 +1164,22 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private Set<String> recentConversationIds(List<AgentContextEntry> entries, int budget) {
+        // 只留下Conversion类型的上下文
         List<AgentContextEntry> conversationEntries = entries.stream()
                 .filter(entry -> entry.kind() == AgentContextEntryKind.CONVERSATION)
                 .toList();
+        // 跳过旧记录，只保留新纪录
         return conversationEntries.stream()
                 .skip(Math.max(0, conversationEntries.size() - budget))
                 .map(AgentContextEntry::id)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
+    /**
+     * todo 啥是逻辑资源？
+     * @param entries
+     * @return
+     */
     private Set<String> collectLogicalResourceIds(Collection<AgentContextEntry> entries) {
         Set<String> ids = new LinkedHashSet<>();
         if (entries == null) {
@@ -1272,6 +1336,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
             List<AgentContextCompressionStage> stages,
             Map<String, Object> metrics
     ) {
+        // applied=false代表本轮没有执行压缩
         static CompactionStepResult noop(AgentContextSession session) {
             return new CompactionStepResult(session, false, List.of(), Map.of());
         }

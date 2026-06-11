@@ -22,6 +22,7 @@ public class AgentWebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        // "/ws/lumisight/agent"域名用agentWebSocketHandler处理
         registry.addHandler(agentWebSocketHandler, "/ws/lumisight/agent")
                 .setAllowedOrigins(webSocketProperties.getAllowedOrigins());
     }

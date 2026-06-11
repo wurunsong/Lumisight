@@ -42,6 +42,12 @@ public class HookedToolExecutor {
         );
     }
 
+    /**
+     * 给工具分批次，同一批次并发执行，不同批次顺序执行
+     * @param toolCalls
+     * @param enabledPermissions
+     * @return
+     */
     public List<List<ToolDecision>> partitionToolCalls(
             List<ToolDecision> toolCalls,
             Set<AgentToolPermission> enabledPermissions

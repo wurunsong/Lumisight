@@ -1,7 +1,7 @@
 package com.lumisight.core.context.ambient;
 
 /**
- * 多agent编排上下文
+ * 多agent编排上下文，更像是配置类，不像是上下文类
  * todo 后面抽象一个AgentAmbientContext接口，作为非agent运行上下文的基类
  */
 public final class MultiAgentExecutionContext {
