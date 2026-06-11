@@ -1,4 +1,4 @@
-package com.lumisight.hooks;
+package com.lumisight.hooks.service;
 
 import com.lumisight.hooks.dto.AgentHookContext;
 import com.lumisight.hooks.enums.AgentHookPoint;

@@ -7,6 +7,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.StringJoiner;
 
+import com.lumisight.memory.dto.MemoryHeader;
+
 final class MemorySelectorManifest {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")

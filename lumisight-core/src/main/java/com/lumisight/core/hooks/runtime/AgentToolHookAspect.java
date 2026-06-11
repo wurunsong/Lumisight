@@ -2,9 +2,9 @@ package com.lumisight.core.hooks.runtime;
 
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
-import com.lumisight.hooks.AgentHookContext;
-import com.lumisight.hooks.AgentHookDispatcher;
-import com.lumisight.hooks.AgentHookPoint;
+import com.lumisight.hooks.dto.AgentHookContext;
+import com.lumisight.hooks.dispatcher.AgentHookDispatcher;
+import com.lumisight.hooks.enums.AgentHookPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;

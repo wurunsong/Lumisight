@@ -1,4 +1,4 @@
-package com.lumisight.hooks;
+package com.lumisight.hooks.enums;
 
 public enum AgentHookPoint {
     BEFORE_PLAN,

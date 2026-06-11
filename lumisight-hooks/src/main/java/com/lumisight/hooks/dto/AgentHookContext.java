@@ -1,4 +1,4 @@
-package com.lumisight.hooks;
+package com.lumisight.hooks.dto;
 
 import java.util.Map;
 

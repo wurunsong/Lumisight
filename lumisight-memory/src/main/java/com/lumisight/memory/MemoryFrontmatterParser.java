@@ -3,6 +3,9 @@ package com.lumisight.memory;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.lumisight.memory.dto.MemoryWriteRequest;
+import com.lumisight.memory.enums.MemoryType;
+
 /**
  * 解析和渲染长期记忆 markdown 文档。
  * 文档格式要求：

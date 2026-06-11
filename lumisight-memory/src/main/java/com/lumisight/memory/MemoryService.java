@@ -1,6 +1,11 @@
 package com.lumisight.memory;
 
 import com.lumisight.common.LayerInfo;
+import com.lumisight.memory.dto.MemoryEntry;
+import com.lumisight.memory.dto.MemoryEntrypoint;
+import com.lumisight.memory.dto.MemoryHeader;
+import com.lumisight.memory.dto.MemoryWriteRequest;
+
 import org.springframework.stereotype.Service;
 
 import java.util.List;

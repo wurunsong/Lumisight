@@ -15,10 +15,10 @@ import com.lumisight.core.service.task.TaskCreateRequest;
 import com.lumisight.core.service.task.TaskRecord;
 import com.lumisight.core.service.task.TaskService;
 import com.lumisight.core.service.task.TaskView;
-import com.lumisight.memory.MemoryEntry;
+import com.lumisight.memory.dto.MemoryEntry;
 import com.lumisight.memory.MemoryService;
-import com.lumisight.memory.MemoryType;
-import com.lumisight.memory.MemoryWriteRequest;
+import com.lumisight.memory.enums.MemoryType;
+import com.lumisight.memory.dto.MemoryWriteRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -51,6 +51,13 @@ public class OfflineReflectionService {
         this.cronJobService = cronJobService;
     }
 
+    /**
+     * 执行一次离线反思：
+     * 1. 汇总当前 repo 的 task board、最近 memory 和最近 cron/background run。
+     * 2. 基于这些输入生成摘要、详细 reflection body 和建议动作列表。
+     * 3. 按请求决定是否把反思结果落成 project memory，以及是否创建后续 follow-up task。
+     * 4. 返回本次反思的完整结果视图，供接口直接响应。
+     */
     public OfflineReflectionResponse run(String repoRoot, String userId, OfflineReflectionRunRequest request) {
         OfflineReflectionRunRequest safeRequest = request == null
                 ? new OfflineReflectionRunRequest(repoRoot, userId, Boolean.TRUE, Boolean.FALSE, 6, 6, 3)
@@ -136,7 +143,7 @@ public class OfflineReflectionService {
                 .limit(limit)
                 .toList();
     }
-
+    // todo 是否需要引入模型的能力进行反思？
     private List<String> buildSuggestedActions(
             TaskBoardView board,
             List<OfflineReflectionCronRunResponse> recentCronRuns,

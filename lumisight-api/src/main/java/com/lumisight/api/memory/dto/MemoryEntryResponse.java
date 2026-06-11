@@ -1,6 +1,6 @@
 package com.lumisight.api.memory.dto;
 
-import com.lumisight.memory.MemoryEntry;
+import com.lumisight.memory.dto.MemoryEntry;
 
 public record MemoryEntryResponse(
         String filename,

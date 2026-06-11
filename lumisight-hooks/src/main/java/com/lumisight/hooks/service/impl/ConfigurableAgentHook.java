@@ -1,4 +1,4 @@
-package com.lumisight.hooks;
+package com.lumisight.hooks.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,6 +11,7 @@ import com.lumisight.common.exec.SandboxPolicyPlanner;
 import com.lumisight.common.exec.SandboxProperties;
 import com.lumisight.hooks.dto.AgentHookContext;
 import com.lumisight.hooks.enums.AgentHookPoint;
+import com.lumisight.hooks.service.AgentHook;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

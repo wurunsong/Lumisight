@@ -1,8 +1,12 @@
-package com.lumisight.skills.runtime;
+package com.lumisight.skills.runtime.impl;
 
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+
+import com.lumisight.skills.runtime.AgentSkill;
+import com.lumisight.skills.dto.SkillContext;
+import com.lumisight.skills.dto.SkillPlan;
 
 @Component
 public class BuiltinWorkflowSkill implements AgentSkill {

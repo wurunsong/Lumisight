@@ -1,12 +1,12 @@
 package com.lumisight.core.support;
 
 import com.lumisight.core.model.AgentRequest;
-import com.lumisight.memory.MemoryEntry;
-import com.lumisight.memory.MemoryEntrypoint;
-import com.lumisight.memory.MemoryHeader;
+import com.lumisight.memory.dto.MemoryEntry;
+import com.lumisight.memory.dto.MemoryEntrypoint;
+import com.lumisight.memory.dto.MemoryHeader;
 import com.lumisight.memory.MemoryService;
-import com.lumisight.memory.MemoryType;
-import com.lumisight.memory.RelevantMemoryContext;
+import com.lumisight.memory.enums.MemoryType;
+import com.lumisight.memory.dto.RelevantMemoryContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;

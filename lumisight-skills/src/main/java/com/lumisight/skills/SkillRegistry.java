@@ -1,9 +1,13 @@
-package com.lumisight.skills.runtime;
+package com.lumisight.skills;
 
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
+
+import com.lumisight.skills.dto.SkillContext;
+import com.lumisight.skills.dto.SkillPlan;
+import com.lumisight.skills.runtime.AgentSkill;
 
 @Component
 public class SkillRegistry {

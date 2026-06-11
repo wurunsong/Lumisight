@@ -1,4 +1,4 @@
-package com.lumisight.skills.runtime;
+package com.lumisight.skills;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -17,6 +17,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import com.lumisight.skills.config.SkillCatalogProperties;
+import com.lumisight.skills.dto.ParsedSkillDocument;
+import com.lumisight.skills.dto.RegisteredSkill;
+
+/**
+ * 启动时注册skill
+ */
 @Component
 public class SkillCatalog {
 

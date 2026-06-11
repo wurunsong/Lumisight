@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
-
+// todo 这样测试是正确的吗？是业界常用的吗？
 @Service
 public class CodeSearchNetRagEvalService {
 
@@ -57,8 +57,11 @@ public class CodeSearchNetRagEvalService {
         }
         String language = normalizeLanguage(request.language());
         String partition = normalizePartition(request.partition());
+        // 这次评测最多取多少条样本
         int maxExamples = request.maxExamples() == null ? 200 : Math.max(20, Math.min(request.maxExamples(), 2000));
+        // 过滤样本时，docstring 至少要多长
         int minDocstringLength = request.minDocstringLength() == null ? 12 : Math.max(0, Math.min(request.minDocstringLength(), 200));
+        // 这次评测要按哪些 top-K 阈值来统计指标
         List<Integer> topKValues = normalizeTopKValues(request.topKValues());
         boolean persistReport = request.persistReport() == null || request.persistReport();
 

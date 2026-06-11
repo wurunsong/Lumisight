@@ -1,4 +1,4 @@
-package com.lumisight.skills.runtime;
+package com.lumisight.skills.dto;
 
 import java.util.Map;
 

@@ -1,10 +1,12 @@
-package com.lumisight.skills.runtime;
+package com.lumisight.skills;
 
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.lumisight.skills.dto.ParsedSkillDocument;
 
 @Component
 public class SkillMarkdownParser {

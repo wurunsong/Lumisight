@@ -1,8 +1,6 @@
-package com.lumisight.memory;
+package com.lumisight.memory.dto;
 
 import java.util.List;
-
-import com.lumisight.memory.dto.MemoryEntry;
 
 public record RelevantMemoryContext(
         MemoryEntrypoint entrypoint,

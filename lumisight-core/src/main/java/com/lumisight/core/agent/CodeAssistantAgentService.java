@@ -21,12 +21,13 @@ import com.lumisight.core.support.StreamingChatClientSupport;
 import com.lumisight.core.support.context.AgentContextManager;
 import com.lumisight.core.support.context.AgentContextSession;
 import com.lumisight.core.tool.AgentToolPermission;
-import com.lumisight.hooks.AgentHookDispatcher;
-import com.lumisight.hooks.AgentHookPoint;
-import com.lumisight.memory.RelevantMemoryContext;
-import com.lumisight.skills.runtime.SkillContext;
-import com.lumisight.skills.runtime.SkillPlan;
-import com.lumisight.skills.runtime.SkillRegistry;
+import com.lumisight.hooks.dispatcher.AgentHookDispatcher;
+import com.lumisight.hooks.enums.AgentHookPoint;
+import com.lumisight.hooks.dto.AgentHookContext;
+import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.skills.dto.SkillContext;
+import com.lumisight.skills.dto.SkillPlan;
+import com.lumisight.skills.SkillRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -631,7 +632,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
     }
 
     private void fireHook(AgentHookPoint point, String sessionId, int round, String question, String toolName, Map<String, Object> metadata) {
-        agentHookDispatcher.fire(point, new com.lumisight.hooks.AgentHookContext(
+        agentHookDispatcher.fire(point, new AgentHookContext(
                 sessionId,
                 round,
                 question,

@@ -5,7 +5,7 @@ import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.support.AgentConversationManager;
 import com.lumisight.core.support.StreamingChatClientSupport;
-import com.lumisight.skills.runtime.SkillPlan;
+import com.lumisight.skills.dto.SkillPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;

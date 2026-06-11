@@ -6,7 +6,7 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.core.tool.ToolArg;
-import com.lumisight.memory.MemoryHeader;
+import com.lumisight.memory.dto.MemoryHeader;
 import com.lumisight.memory.MemoryService;
 import org.springframework.stereotype.Component;
 

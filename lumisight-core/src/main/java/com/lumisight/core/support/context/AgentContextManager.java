@@ -4,7 +4,7 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.support.AgentConversationManager;
-import com.lumisight.skills.runtime.SkillPlan;
+import com.lumisight.skills.dto.SkillPlan;
 
 import java.util.List;
 

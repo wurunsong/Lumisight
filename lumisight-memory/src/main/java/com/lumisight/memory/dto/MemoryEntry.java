@@ -1,4 +1,6 @@
-package com.lumisight.memory;
+package com.lumisight.memory.dto;
+
+import com.lumisight.memory.enums.MemoryType;
 
 public record MemoryEntry(
         String filename,

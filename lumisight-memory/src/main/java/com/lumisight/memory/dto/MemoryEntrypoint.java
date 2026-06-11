@@ -1,4 +1,4 @@
-package com.lumisight.memory;
+package com.lumisight.memory.dto;
 
 public record MemoryEntrypoint(
         String content,

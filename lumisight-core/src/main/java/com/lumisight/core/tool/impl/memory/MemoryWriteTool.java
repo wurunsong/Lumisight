@@ -6,10 +6,10 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.core.tool.ToolArg;
-import com.lumisight.memory.MemoryEntry;
+import com.lumisight.memory.dto.MemoryEntry;
 import com.lumisight.memory.MemoryService;
-import com.lumisight.memory.MemoryType;
-import com.lumisight.memory.MemoryWriteRequest;
+import com.lumisight.memory.enums.MemoryType;
+import com.lumisight.memory.dto.MemoryWriteRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

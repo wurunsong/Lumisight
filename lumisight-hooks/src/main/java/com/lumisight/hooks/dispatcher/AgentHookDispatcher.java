@@ -1,10 +1,11 @@
-package com.lumisight.hooks;
+package com.lumisight.hooks.dispatcher;
 
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
 
+import com.lumisight.hooks.service.AgentHook;
 import com.lumisight.hooks.dto.AgentHookContext;
 import com.lumisight.hooks.enums.AgentHookPoint;
 

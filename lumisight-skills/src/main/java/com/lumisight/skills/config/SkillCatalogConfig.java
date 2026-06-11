@@ -1,4 +1,4 @@
-package com.lumisight.skills.runtime;
+package com.lumisight.skills.config;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;

@@ -11,8 +11,8 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
-import com.lumisight.memory.RelevantMemoryContext;
-import com.lumisight.skills.runtime.SkillPlan;
+import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.skills.dto.SkillPlan;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

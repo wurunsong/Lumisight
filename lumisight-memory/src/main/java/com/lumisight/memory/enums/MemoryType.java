@@ -1,4 +1,4 @@
-package com.lumisight.memory;
+package com.lumisight.memory.enums;
 
 import java.util.Arrays;
 import java.util.Locale;

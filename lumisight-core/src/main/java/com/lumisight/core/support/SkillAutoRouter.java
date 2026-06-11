@@ -1,7 +1,7 @@
 package com.lumisight.core.support;
 
-import com.lumisight.skills.runtime.RegisteredSkill;
-import com.lumisight.skills.runtime.SkillCatalog;
+import com.lumisight.skills.dto.RegisteredSkill;
+import com.lumisight.skills.SkillCatalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
