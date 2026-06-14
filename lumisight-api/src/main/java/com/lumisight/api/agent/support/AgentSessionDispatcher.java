@@ -30,6 +30,9 @@ import java.util.concurrent.locks.ReentrantLock;
 @Component
 @Slf4j
 public class AgentSessionDispatcher {
+    private static final String STEP_INTERRUPT = "INTERRUPT";
+    private static final String STEP_QUEUE = "QUEUE";
+
     // 每个session一个mailbox，用来存储用户的提问，也涉及到collect、steer、follow三种模式
     private final Map<String, SessionMailbox> mailboxes = new ConcurrentHashMap<>();
     private final ExecutorService workerPool = NamedExecutors.newCachedPool("agent-session-worker");
@@ -103,6 +106,7 @@ public class AgentSessionDispatcher {
         private volatile RunningExecution current;
         // 当前会话是否有正在执行的任务
         private boolean workerStarted;
+        // 订阅数需要和 current / queue / workerStarted 一起参与 idle 判定，所以仍由同一把锁保护。
         private int subscriberCount;
 
         private SessionMailbox(String sessionId) {
@@ -122,7 +126,7 @@ public class AgentSessionDispatcher {
             stateLock.lock();
             try {
                 if (manualInterrupt) {
-                    clearPendingLocked("会话已被用户手动停止。", true, delayedEvents);
+                    clearPendingLocked(STEP_INTERRUPT, "会话已被用户手动停止。", true, delayedEvents);
                     runningToInterrupt = current;
                     if (runningToInterrupt == null) {
                         conversationManager.nextEpoch(sessionId);
@@ -139,16 +143,16 @@ public class AgentSessionDispatcher {
                         // 把新消息合并到queue的第一条消息中
                         case COLLECT -> {
                             if (mergeIntoPendingLocked(envelope)) {
-                                delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到待启动的问题。"));
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已合并到待启动的问题。"));
                                 startWorker = markWorkerStartLocked();
                                 return;
                             }
                         }
                         // 把旧消息都丢掉
                         case STEER -> {
-                            clearPendingLocked("被新的 STEER 请求替换。", true, delayedEvents);
+                            clearPendingLocked(mode.name(), "被新的 STEER 请求替换。", true, delayedEvents);
                             queue.offer(envelope);
-                            delayedEvents.add(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已替换尚未启动的待处理问题。"));
+                            delayedEvents.add(AgentEvent.state("", sessionId, 0, mode.name(), "queued", "STEER: 已替换尚未启动的待处理问题。"));
                             startWorker = markWorkerStartLocked();
                             return;
                         }
@@ -163,20 +167,20 @@ public class AgentSessionDispatcher {
                     switch (mode) {
                         case FOLLOW -> {
                             queue.offer(envelope);
-                            delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "FOLLOW: 已进入本地会话队列，等待当前执行完成。"));
+                            delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "FOLLOW: 已进入本地会话队列，等待当前执行完成。"));
                         }
                         case COLLECT -> {
                             if (mergeIntoPendingLocked(envelope)) {
-                                delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已合并到同会话待处理问题。"));
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已合并到同会话待处理问题。"));
                             } else {
                                 queue.offer(envelope);
-                                delayedEvents.add(AgentEvent.state("", sessionId, 0, "QUEUE", "queued", "COLLECT: 已加入待处理队列，等待当前执行完成。"));
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已加入待处理队列，等待当前执行完成。"));
                             }
                         }
                         case STEER -> {
-                            clearPendingLocked("被新的 STEER 请求替换。", true, delayedEvents);
+                            clearPendingLocked(mode.name(), "被新的 STEER 请求替换。", true, delayedEvents);
                             queue.offer(envelope);
-                            delayedEvents.add(AgentEvent.state("", sessionId, 0, "STEER", "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
+                            delayedEvents.add(AgentEvent.state("", sessionId, 0, mode.name(), "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
                             runningToInterrupt = current;
                         }
                     }
@@ -194,14 +198,14 @@ public class AgentSessionDispatcher {
             if (runningToInterrupt != null) {
                 if (manualInterrupt) {
                     log.info("agent_session interrupt requested, sessionId={}, hasRunning=true", sessionId);
-                    runningToInterrupt.interrupt("INTERRUPT", "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。", true);
+                    runningToInterrupt.interrupt(STEP_INTERRUPT, "interrupting", "INTERRUPT: 当前执行已收到手动停止请求。", true);
                 } else {
                     runningToInterrupt.interruptForSteer();
                 }
             } else if (manualInterrupt) {
                 log.info("agent_session interrupt requested, sessionId={}, hasRunning=false", sessionId);
             }
-            // 执行agent逻辑，是一个阻塞队列操作
+            // 执行agent逻辑，是一个阻塞队列操作。这里只会起一个线程，如果后面又有对话过来，startWorker=false
             if (startWorker) {
                 workerPool.submit(this::drainLoop);
             }
@@ -227,7 +231,7 @@ public class AgentSessionDispatcher {
                     return;
                 }
                 log.info("agent_session cancel, sessionId={}, reason={}", sessionId, reason);
-                clearPendingLocked(reason, false, null);
+                clearPendingLocked(STEP_INTERRUPT, reason, false, null);
                 running = current;
                 if (running == null) {
                     conversationManager.nextEpoch(sessionId);
@@ -237,7 +241,7 @@ public class AgentSessionDispatcher {
                 stateLock.unlock();
             }
             if (running != null) {
-                running.interrupt("INTERRUPT", "interrupting", reason, false);
+                running.interrupt(STEP_INTERRUPT, "interrupting", reason, false);
             }
         }
 
@@ -329,11 +333,11 @@ public class AgentSessionDispatcher {
             return target;
         }
 
-        private void clearPendingLocked(String reason, boolean emitEvents, List<AgentEvent> delayedEvents) {
+        private void clearPendingLocked(String step, String reason, boolean emitEvents, List<AgentEvent> delayedEvents) {
             List<QueuedEnvelope> dropped = new ArrayList<>();
             queue.drainTo(dropped);
             if (emitEvents && !dropped.isEmpty() && delayedEvents != null) {
-                delayedEvents.add(AgentEvent.state("", sessionId, 0, "STEER", "interrupted", reason));
+                delayedEvents.add(AgentEvent.state("", sessionId, 0, step, "interrupted", reason));
             }
         }
 
@@ -354,6 +358,7 @@ public class AgentSessionDispatcher {
         }
 
         private boolean isIdleLocked() {
+            // mailbox 回收依赖联合状态判断；这里只要拆成独立原子变量，就容易把“是否还能安全删除”看错。
             return current == null && queue.isEmpty() && subscriberCount == 0;
         }
 
@@ -373,6 +378,7 @@ public class AgentSessionDispatcher {
         try {
             return AgentDialogueMode.valueOf(raw.trim().toUpperCase());
         } catch (Exception ignored) {
+            log.warn("agent_session dialogue mode parse failed, raw={}", raw);
             return AgentDialogueMode.FOLLOW;
         }
     }
@@ -436,7 +442,7 @@ public class AgentSessionDispatcher {
         }
 
         private void interruptForSteer() {
-            interrupt("STEER", "interrupting", "STEER: 当前执行即将让出给最新问题。", true);
+            interrupt(AgentDialogueMode.STEER.name(), "interrupting", "STEER: 当前执行即将让出给最新问题。", true);
         }
 
         private void interrupt(String stage, String status, String reason, boolean emitEvents) {
