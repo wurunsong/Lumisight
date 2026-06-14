@@ -121,7 +121,8 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
         try {
             ExecutionContext context = prepareExecutionContext(request, sessionId);
-            AgentRequest effectiveRequest = resolveEffectiveRequest(request, context.effectiveQuestion(), traceId, sessionId, publisher);
+            // 生成真正用于执行的 request，并在这里决定是否切到多 agent 路径
+            AgentRequest effectiveRequest = resolveExecutionRequest(request, context.effectiveQuestion(), traceId, sessionId, publisher);
             // 获取该repoRoot下的长期记忆
             CompletableFuture<RelevantMemoryContext> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
                     effectiveRequest.taskType(),
@@ -230,7 +231,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
      * @param publisher 返回流
      * @return 结构化的agent请求
      */
-    private AgentRequest resolveEffectiveRequest(AgentRequest request, String effectiveQuestion, String traceId, String sessionId, AgentEventPublisher publisher) {
+    private AgentRequest resolveExecutionRequest(AgentRequest request, String effectiveQuestion, String traceId, String sessionId, AgentEventPublisher publisher) {
         MultiAgentModeDecider.Decision decision = multiAgentModeDecider.decide(request, effectiveQuestion);
         if (decision.multiAgentSelected()) {
             publisher.emit(AgentEvent.multiAgentSelected(

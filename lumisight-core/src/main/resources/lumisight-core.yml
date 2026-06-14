@@ -47,6 +47,8 @@ lumisight:
   ai:
     chat-api-key: ${CHAT_API_KEY:}
     embedding-api-key: ${EMBEDDING_API_KEY:}
+    task-chat-model: ${LUMISIGHT_AI_TASK_CHAT_MODEL:${CHAT_MODEL:deepseek-v4-pro}}
+    scheduler-chat-model: ${LUMISIGHT_AI_SCHEDULER_CHAT_MODEL:${SCHEDULER_CHAT_MODEL:${CHAT_MODEL:deepseek-v4-pro}}}
     chat-connect-timeout-seconds: ${LUMISIGHT_AI_CHAT_CONNECT_TIMEOUT_SECONDS:10}
     chat-read-timeout-seconds: ${LUMISIGHT_AI_CHAT_READ_TIMEOUT_SECONDS:120}
   kg:

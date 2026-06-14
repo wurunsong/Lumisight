@@ -146,6 +146,26 @@ public class AgentPromptService {
         ));
     }
 
+    public String multiAgentUpgradeSystemPrompt() {
+        return promptTemplateService.render("multi_agent_upgrade_system", Map.of());
+    }
+
+    public String multiAgentUpgradeUserPrompt(
+            String question,
+            String runMode,
+            String dialogueMode,
+            String repoRoot,
+            List<String> heuristicSignals
+    ) {
+        return promptTemplateService.render("multi_agent_upgrade_user", Map.of(
+                "question", safeText(question),
+                "runMode", safeText(runMode),
+                "dialogueMode", safeText(dialogueMode),
+                "repoRoot", safeText(repoRoot),
+                "heuristicSignals", String.valueOf(heuristicSignals)
+        ));
+    }
+
     private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentToolRegistry registry) {
         StringJoiner joiner = new StringJoiner("\n");
         List<AgentToolCategory> categories = List.of(
