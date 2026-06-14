@@ -102,6 +102,8 @@ public class SubAgentExecutionService {
                         parentSessionId,
                         envelope.taskId(),
                         depth,
+                        parent == null ? null : parent.topology(),
+                        MultiAgentExecutionScope.Phase.EXECUTION,
                         false,
                         properties.getSubagentMaxRounds(),
                         deadlineEpochMs,

@@ -32,6 +32,12 @@ public class AgentFlowSupport {
             AgentToolPermission.TODO_WRITE,
             AgentToolPermission.AGENT_SPAWN
     );
+    private static final Set<AgentToolPermission> SINGLE_AGENT_WRITE_PERMISSIONS = EnumSet.of(
+            AgentToolPermission.LOCAL_FS_WRITE
+    );
+    private static final Set<AgentToolPermission> LEAD_CONVERGENCE_WRITE_PERMISSIONS = EnumSet.of(
+            AgentToolPermission.LOCAL_FS_WRITE
+    );
 
     private final AgentToolRegistry agentToolRegistry;
     private final ChildAgentPermissionPolicy childAgentPermissionPolicy;
@@ -76,7 +82,6 @@ public class AgentFlowSupport {
 
     public Set<AgentToolPermission> enabledPermissions(AgentRequest request) {
         MultiAgentExecutionScope.Context multiAgentContext = MultiAgentExecutionScope.current();
-        // 当前在multiAgent模式，并且不是leadAgent
         if (multiAgentContext != null && multiAgentContext.role() != MultiAgentExecutionScope.Role.LEAD_AGENT) {
             return childAgentPermissionPolicy.permissionsFor(
                     multiAgentContext.role(),
@@ -85,6 +90,15 @@ public class AgentFlowSupport {
         }
         Set<AgentToolPermission> enabledPermissions = EnumSet.noneOf(AgentToolPermission.class);
         enabledPermissions.addAll(BASE_TOOL_PERMISSIONS);
+        if (request.runMode() != null && request.runMode().name().equals("NORMAL")) {
+            enabledPermissions.addAll(SINGLE_AGENT_WRITE_PERMISSIONS);
+        }
+        if (multiAgentContext != null
+                && multiAgentContext.role() == MultiAgentExecutionScope.Role.LEAD_AGENT
+                && multiAgentContext.phase() == MultiAgentExecutionScope.Phase.CONVERGENCE) {
+            enabledPermissions.addAll(LEAD_CONVERGENCE_WRITE_PERMISSIONS);
+            enabledPermissions.remove(AgentToolPermission.AGENT_SPAWN);
+        }
         if (request.includeRagContext()) {
             enabledPermissions.add(AgentToolPermission.HYBRID_VECTOR_READ);
         }
@@ -96,7 +110,6 @@ public class AgentFlowSupport {
             enabledPermissions.add(AgentToolPermission.LSP_JAVA_READ);
             enabledPermissions.add(AgentToolPermission.BUILD_COMPILE);
         }
-        // todo 后面提供写工具
         return enabledPermissions;
     }
 

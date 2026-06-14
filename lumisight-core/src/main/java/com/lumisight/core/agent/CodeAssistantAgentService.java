@@ -2,6 +2,7 @@ package com.lumisight.core.agent;
 
 import com.lumisight.core.agent.multiagent.service.MultiAgentCoordinator;
 import com.lumisight.core.agent.multiagent.service.MultiAgentModeDecider;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.context.AgentExecutionState;
 import com.lumisight.core.model.AgentContextItem;
@@ -123,7 +124,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             AgentExecutionState executionState = prepareExecutionContext(request, sessionId);
             // 生成真正用于执行的 request，并在这里决定是否切到多 agent 路径
             AgentRequest effectiveRequest = resolveExecutionRequest(request, executionState.effectiveQuestion(), traceId, sessionId, publisher);
-            // 获取该repoRoot下的项目长期记忆和根目录下的用户画像记忆
+            // 获取该repoRoot下的项目长期记忆和根目录下的用户画像记忆，异步获取，后面需要的时候再join
             CompletableFuture<RelevantMemoryBundle> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
                     effectiveRequest.taskType(),
                     executionState.resolvedRepoRoot(),
@@ -141,75 +142,112 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     effectiveRequest.dialogueMode()
             ));
             // open 会把 repoRoot、limit、userId 挂到当前线程作用域里，供后续工具通过 ToolRuntimeScope.required() 读取。
-            // 这里的 ignored 只是为了借助 try-with-resources 在流程结束后自动 close，避免线程上下文泄漏。
-            try (ToolRuntimeScope.Scope ignored = ToolRuntimeScope.open(executionState.resolvedRepoRoot(), executionState.limit(), effectiveRequest.userId())) {
+            // 这里持有 scope 只是为了借助 try-with-resources 在流程结束后自动 close，避免线程上下文泄漏。
+            try (ToolRuntimeScope.Scope toolRuntimeScope = ToolRuntimeScope.open(
+                    executionState.resolvedRepoRoot(),
+                    executionState.limit(),
+                    effectiveRequest.userId()
+            )) {
                 publishInitState(effectiveRequest, executionState, traceId, publisher);
                 // 获取skill，并构建结构化skill提示词
                 SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, executionState, traceId, publisher);
-                Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest);
                 RelevantMemoryBundle relevantMemoryBundle = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
                 // 调度多agent
                 // todo 这里的多agent调度有很大的问题，teamAgent最终的逻辑执行还是在CodeAssistantAgentService这个类里，会形成递归，
                 //  应该把前面的公共部分做一个隔离，具体方案后面再说
-                executionState = orchestrateMultiAgentIfNeeded(effectiveRequest, executionState, traceId, publisher);
-                // 处理上一轮对话没完成的工具调用
-                ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
+                MultiAgentOrchestrationResult orchestrationResult = orchestrateMultiAgentIfNeeded(
                         effectiveRequest,
                         executionState,
                         traceId,
-                        publisher,
-                        enabledPermissions
+                        publisher
                 );
-                if (resumeHandling.completed()) {
-                    sink.complete();
-                    return;
-                }
-                executionState = resumeHandling.executionState();
-
-                if (shouldInterruptExecution(executionState.sessionId(), executionState.runEpoch())) {
-                    appendInterruptedEvents(traceId, executionState.sessionId(), 0, executionState.effectiveQuestion(), executionState.contextSession(), publisher);
-                    sink.complete();
-                    return;
-                }
-                // emitPlanIfNeeded只有在被中断的时候才返回true
-                if (effectiveRequest.runMode() == AgentRunMode.PLAN
-                        && emitPlanIfNeeded(effectiveRequest, executionState, skillPlan, traceId, publisher, relevantMemoryBundle)) {
-                    sink.complete();
-                    return;
-                }
-
-                AgentLoopOrchestrator.OrchestrationResult result = agentLoopOrchestrator.run(
+                executionState = orchestrationResult.executionState();
+                continueExecutionAfterOrchestration(
                         effectiveRequest,
-                        executionState.effectiveQuestion(),
+                        executionState,
+                        orchestrationResult,
                         skillPlan,
-                        executionState.contextSession(),
-                        executionState.limit(),
-                        executionState.startRound(),
-                        publisher,
-                        sessionId,
+                        relevantMemoryBundle,
                         traceId,
-                        enabledPermissions,
-                        executionState.runEpoch(),
-                        relevantMemoryBundle
+                        sessionId,
+                        publisher,
+                        sink
                 );
-                executionState = executionState.withContextSession(result.contextSession());
-
-                if (result.askUser() || result.interrupted()) {
-                    sink.complete();
-                    return;
-                }
-                if (!conversationManager.isActiveEpoch(sessionId, executionState.runEpoch())) {
-                    publisher.emit(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
-                    sink.complete();
-                    return;
-                }
-
-                emitFinalAnswer(effectiveRequest, executionState, skillPlan, result, traceId, publisher, relevantMemoryBundle);
-                sink.complete();
+                return;
             }
         } catch (Throwable t) {
             sink.error(t);
+        }
+    }
+
+    private void continueExecutionAfterOrchestration(
+            AgentRequest effectiveRequest,
+            AgentExecutionState executionState,
+            MultiAgentOrchestrationResult orchestrationResult,
+            SkillPlan skillPlan,
+            RelevantMemoryBundle relevantMemoryBundle,
+            String traceId,
+            String sessionId,
+            AgentEventPublisher publisher,
+            FluxSink<AgentEvent> sink
+    ) {
+        // 处理上一轮对话没完成的工具调用；如果前面已经完成多 agent 编排，这里会临时进入 lead 收敛作用域。
+        try (MultiAgentExecutionScope.Scope leadConvergenceScope = openLeadConvergenceScope(orchestrationResult.leadConvergenceScope())) {
+            Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest);
+            ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
+                    effectiveRequest,
+                    executionState,
+                    traceId,
+                    publisher,
+                    enabledPermissions
+            );
+            if (resumeHandling.completed()) {
+                sink.complete();
+                return;
+            }
+            executionState = resumeHandling.executionState();
+
+            if (shouldInterruptExecution(executionState.sessionId(), executionState.runEpoch())) {
+                appendInterruptedEvents(traceId, executionState.sessionId(), 0, executionState.effectiveQuestion(), executionState.contextSession(), publisher);
+                sink.complete();
+                return;
+            }
+            // emitPlanIfNeeded只有在被中断的时候才返回true
+            if (effectiveRequest.runMode() == AgentRunMode.PLAN
+                    && emitPlanIfNeeded(effectiveRequest, executionState, skillPlan, traceId, publisher, relevantMemoryBundle)) {
+                sink.complete();
+                return;
+            }
+
+            AgentLoopOrchestrator.OrchestrationResult result = agentLoopOrchestrator.run(
+                    effectiveRequest,
+                    executionState.effectiveQuestion(),
+                    skillPlan,
+                    executionState.contextSession(),
+                    executionState.limit(),
+                    executionState.startRound(),
+                    publisher,
+                    sessionId,
+                    traceId,
+                    enabledPermissions,
+                    executionState.runEpoch(),
+                    relevantMemoryBundle
+            );
+            executionState = executionState.withContextSession(result.contextSession());
+
+            if (result.askUser() || result.interrupted()) {
+                sink.complete();
+                return;
+            }
+            if (!conversationManager.isActiveEpoch(sessionId, executionState.runEpoch())) {
+                publisher.emit(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
+                sink.complete();
+                return;
+            }
+
+            emitFinalAnswer(effectiveRequest, executionState, skillPlan, result, traceId, publisher, relevantMemoryBundle);
+            sink.complete();
         }
     }
 
@@ -361,14 +399,14 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
     }
 
-    private AgentExecutionState orchestrateMultiAgentIfNeeded(
+    private MultiAgentOrchestrationResult orchestrateMultiAgentIfNeeded(
             AgentRequest request,
             AgentExecutionState context,
             String traceId,
             AgentEventPublisher publisher
     ) {
         if (request.runMode() != AgentRunMode.MULTI_AGENT) {
-            return context;
+            return new MultiAgentOrchestrationResult(context, null);
         }
         AgentRequest orchestrationRequest = new AgentRequest(
                 request.taskType(),
@@ -487,7 +525,30 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         if (coordinationResult.results().isEmpty()) {
             publisher.emit(AgentEvent.multiAgentFallback(traceId, context.sessionId(), 0, "未获得可用的子任务结果，回退主 Agent 直跑"));
         }
-        return context.withContextSession(nextSession);
+        return new MultiAgentOrchestrationResult(
+                context.withContextSession(nextSession),
+                new MultiAgentExecutionScope.Context(
+                        MultiAgentExecutionScope.Role.LEAD_AGENT,
+                        coordinationResult.context().orchestrationId(),
+                        context.sessionId(),
+                        coordinationResult.plan().planId(),
+                        0,
+                        coordinationResult.plan().topology(),
+                        MultiAgentExecutionScope.Phase.CONVERGENCE,
+                        false,
+                        0,
+                        0L,
+                        coordinationResult.executionMode(),
+                        "lead"
+                )
+        );
+    }
+
+    private MultiAgentExecutionScope.Scope openLeadConvergenceScope(MultiAgentExecutionScope.Context leadConvergenceScope) {
+        if (leadConvergenceScope == null) {
+            return MultiAgentExecutionScope.open(null);
+        }
+        return MultiAgentExecutionScope.open(leadConvergenceScope);
     }
 
     private ResumeHandlingResult handlePendingResumeDecision(
@@ -645,5 +706,11 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         ));
     }
     private record ResumeHandlingResult(AgentExecutionState executionState, boolean completed) {
+    }
+
+    private record MultiAgentOrchestrationResult(
+            AgentExecutionState executionState,
+            MultiAgentExecutionScope.Context leadConvergenceScope
+    ) {
     }
 }

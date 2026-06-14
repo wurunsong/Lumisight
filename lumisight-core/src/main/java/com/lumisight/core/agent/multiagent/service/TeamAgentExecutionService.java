@@ -37,6 +37,8 @@ import java.util.stream.Collectors;
 public class TeamAgentExecutionService {
 
     private static final String LEAD_AGENT_ID = "lead";
+    // todo 继续完善 team agent 形态：当前 lead / worker 虽然有调度分工，但执行内核仍大量复用 sub agent 流程。
+    // todo 后面需要把 team 的协调者、执行者、汇总者职责进一步拉开，强化 inbox 协作、阶段边界和长期角色语义。
 
     private final AgentMailboxBus mailboxBus;
     private final ExecutingSubAgent executingSubAgent;
