@@ -1,8 +1,9 @@
 package com.lumisight.core.context.ambient;
 
+import com.lumisight.common.concurrent.ThreadContextRegistry;
+
 /**
  * 工具运行作用域
- * todo 后面抽象一个AgentRuntimeScope接口，作为非agent运行作用域的基类
  */
 public final class ToolRuntimeScope {
 
@@ -16,23 +17,27 @@ public final class ToolRuntimeScope {
     }
 
     public static Scope open(String repoRoot, Integer defaultLimit, String userId) {
-        return new Scope(SUPPORT.openValue(new Context(repoRoot, defaultLimit, userId)));
+        return new Scope(SUPPORT.open(new Context(repoRoot, defaultLimit, userId)));
     }
 
     public static Context required() {
-        return SUPPORT.requiredValue("Tool runtime scope is missing");
+        return SUPPORT.required("Tool runtime scope is missing");
     }
 
     public static Context current() {
-        return SUPPORT.currentValue();
+        return SUPPORT.current();
     }
 
     public static void restore(Context context) {
-        SUPPORT.restoreValue(context);
+        SUPPORT.restore(context);
     }
 
     public static void clear() {
-        SUPPORT.clearValue();
+        SUPPORT.clear();
+    }
+
+    public static ThreadContextRegistry.ContextCarrier carrier() {
+        return SUPPORT.threadContextCarrier();
     }
 
     public record Context(String repoRoot, Integer defaultLimit, String userId) {
@@ -51,6 +56,9 @@ public final class ToolRuntimeScope {
         }
     }
 
-    private static final class Support extends AbstractThreadLocalAgentContext<Context> {
+    private static final class Support extends AbstractAmbientScope<Context> {
+        private Support() {
+            super("toolRuntimeScope");
+        }
     }
 }

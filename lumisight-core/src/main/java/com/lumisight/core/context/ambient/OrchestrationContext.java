@@ -5,8 +5,7 @@ import com.lumisight.core.model.AgentRequest;
 import java.util.Map;
 
 /**
- * 多agent调度上下文
- * todo 后面抽象一个AgentRuntimeScope接口，作为非agent运行作用域的基类
+ * 多 agent 调度输入，描述一次编排请求本身，不属于线程绑定的 AmbientScope。
  */
 public record OrchestrationContext(
         String orchestrationId,

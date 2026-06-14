@@ -1,29 +1,47 @@
 package com.lumisight.core.context.ambient;
 
+import com.lumisight.common.concurrent.ThreadContextRegistry;
+
 /**
  * 多agent执行作用域，承载编排期需要透传的运行约束
- * todo 后面抽象一个AgentRuntimeScope接口，作为非agent运行作用域的基类
  */
 public final class MultiAgentExecutionScope {
 
-    private static final ThreadLocal<Context> HOLDER = new ThreadLocal<>();
+    private static final Support SUPPORT = new Support();
 
     private MultiAgentExecutionScope() {
     }
 
     public static Scope open(Context context) {
-        HOLDER.set(context);
-        return new Scope();
+        return new Scope(SUPPORT.open(context));
     }
 
     public static Context current() {
-        return HOLDER.get();
+        return SUPPORT.current();
+    }
+
+    public static void restore(Context context) {
+        SUPPORT.restore(context);
+    }
+
+    public static void clear() {
+        SUPPORT.clear();
+    }
+
+    public static ThreadContextRegistry.ContextCarrier carrier() {
+        return SUPPORT.threadContextCarrier();
     }
 
     public static final class Scope implements AutoCloseable {
+        private final AbstractThreadLocalAgentContext.Scope delegate;
+
+        private Scope(AbstractThreadLocalAgentContext.Scope delegate) {
+            this.delegate = delegate;
+        }
+
         @Override
         public void close() {
-            HOLDER.remove();
+            delegate.close();
         }
     }
 
@@ -51,6 +69,12 @@ public final class MultiAgentExecutionScope {
 
         public boolean isDeadlineExceeded() {
             return hasDeadline() && System.currentTimeMillis() >= deadlineEpochMs;
+        }
+    }
+
+    private static final class Support extends AbstractAmbientScope<Context> {
+        private Support() {
+            super("multiAgentExecutionScope");
         }
     }
 }

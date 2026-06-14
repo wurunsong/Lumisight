@@ -1,5 +1,7 @@
 package com.lumisight.core.context.ambient;
 
+import com.lumisight.common.concurrent.ThreadContextRegistry;
+
 public final class ToolInvocationScope {
 
     private static final Support SUPPORT = new Support();
@@ -8,19 +10,23 @@ public final class ToolInvocationScope {
     }
 
     public static Scope open(String sessionId, Integer round, String question) {
-        return new Scope(SUPPORT.openValue(new Context(sessionId, round == null ? 0 : round, question)));
+        return new Scope(SUPPORT.open(new Context(sessionId, round == null ? 0 : round, question)));
     }
 
     public static Context current() {
-        return SUPPORT.currentValue();
+        return SUPPORT.current();
     }
 
     public static void restore(Context context) {
-        SUPPORT.restoreValue(context);
+        SUPPORT.restore(context);
     }
 
     public static void clear() {
-        SUPPORT.clearValue();
+        SUPPORT.clear();
+    }
+
+    public static ThreadContextRegistry.ContextCarrier carrier() {
+        return SUPPORT.threadContextCarrier();
     }
 
     public record Context(String sessionId, int round, String question) {
@@ -39,6 +45,9 @@ public final class ToolInvocationScope {
         }
     }
 
-    private static final class Support extends AbstractThreadLocalAgentContext<Context> {
+    private static final class Support extends AbstractAmbientScope<Context> {
+        private Support() {
+            super("toolInvocationScope");
+        }
     }
 }

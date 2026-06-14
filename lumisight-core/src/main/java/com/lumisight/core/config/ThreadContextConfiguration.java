@@ -1,6 +1,7 @@
 package com.lumisight.core.config;
 
 import com.lumisight.common.concurrent.ThreadContextRegistry;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.context.ambient.ToolInvocationScope;
 import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import jakarta.annotation.PostConstruct;
@@ -12,18 +13,9 @@ public class ThreadContextConfiguration {
 
     @PostConstruct
     public void registerThreadContextCarriers() {
-        ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
-                "agentToolRuntimeContext",
-                ToolRuntimeScope::current,
-                ToolRuntimeScope::restore,
-                ToolRuntimeScope::clear
-        ));
-        ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
-                "agentToolInvocationContext",
-                ToolInvocationScope::current,
-                ToolInvocationScope::restore,
-                ToolInvocationScope::clear
-        ));
+        ThreadContextRegistry.register(ToolRuntimeScope.carrier());
+        ThreadContextRegistry.register(ToolInvocationScope.carrier());
+        ThreadContextRegistry.register(MultiAgentExecutionScope.carrier());
         ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "slf4jMdc",
                 MDC::getCopyOfContextMap,
