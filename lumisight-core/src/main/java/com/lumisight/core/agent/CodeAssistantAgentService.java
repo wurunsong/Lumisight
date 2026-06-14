@@ -144,7 +144,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             // 这里的 ignored 只是为了借助 try-with-resources 在流程结束后自动 close，避免线程上下文泄漏。
             try (ToolRuntimeScope.Scope ignored = ToolRuntimeScope.open(executionState.resolvedRepoRoot(), executionState.limit(), effectiveRequest.userId())) {
                 publishInitState(effectiveRequest, executionState, traceId, publisher);
-                // 获取skill
+                // 获取skill，并构建结构化skill提示词
                 SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, executionState, traceId, publisher);
                 Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest);
                 RelevantMemoryBundle relevantMemoryBundle = joinRelevantMemory(pendingRelevantMemory);
@@ -323,6 +323,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         boolean shouldResolveSkill = StringUtils.hasText(skillRef);
         // 用户未制定skill，用模型判断下是否有可用的skill
         if (!shouldResolveSkill) {
+            // skill选择路由
             SkillAutoRouter.RouteResult routeResult = skillAutoRouter.route(context.effectiveQuestion());
             publisher.emit(AgentEvent.skillRouted(
                     traceId,

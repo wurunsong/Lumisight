@@ -82,9 +82,7 @@ public class SkillAutoRouter {
                     if (accepted) {
                         return new RouteResult(skill.id(), confidence, reason, chosen, true);
                     }
-                    // 如果有配置默认skill，就返回默认skill
-                    String fallbackSkillId = resolveFallbackSkillId(skills);
-                    return new RouteResult(fallbackSkillId, confidence, reason, chosen, false);
+                    return RouteResult.noMatch(reason);
                 }
             }
             return RouteResult.noMatch("unknown_skill_id: " + chosen);
@@ -98,22 +96,6 @@ public class SkillAutoRouter {
             return 0d;
         }
         return Math.max(0d, Math.min(1d, value));
-    }
-
-    private String resolveFallbackSkillId(List<RegisteredSkill> skills) {
-        if (skillRoutingProperties.getLowConfidenceFallback() != SkillRoutingProperties.LowConfidenceFallback.DEFAULT_SKILL) {
-            return null;
-        }
-        if (!StringUtils.hasText(skillRoutingProperties.getDefaultSkillId())) {
-            return null;
-        }
-        String configured = skillRoutingProperties.getDefaultSkillId().trim();
-        for (RegisteredSkill skill : skills) {
-            if (skill.id().equals(configured) || skill.name().equalsIgnoreCase(configured)) {
-                return skill.id();
-            }
-        }
-        return null;
     }
 
     public record RouteResult(

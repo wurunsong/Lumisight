@@ -31,6 +31,7 @@ public class SkillRegistry {
 
     public ResolvedSkill resolve(SkillContext context) {
         AgentSkill skill = select(context);
+        // plan就是格式化一下skill提示词
         SkillPlan plan = skill.buildPlan(context);
         return new ResolvedSkill(skill.skillName(), plan);
     }

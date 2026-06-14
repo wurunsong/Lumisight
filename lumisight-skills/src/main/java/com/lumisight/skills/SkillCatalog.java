@@ -52,10 +52,16 @@ public class SkillCatalog {
         byPath.clear();
 
         List<Path> roots = normalizeRoots(properties.getAllowedPaths());
+        // 限制下skill数目，避免超过上下文限制
         for (Path root : roots) {
+            if (reachedSkillLimit()) {
+                log.warn("skill_catalog truncated, roots={}, maxRegisteredSkills={}", roots.size(), properties.getMaxRegisteredSkills());
+                break;
+            }
             scanRoot(root);
         }
-        log.info("skill_catalog loaded, roots={}, skills={}", roots.size(), byId.size());
+        log.info("skill_catalog loaded, roots={}, skills={}, maxRegisteredSkills={}",
+                roots.size(), byId.size(), properties.getMaxRegisteredSkills());
     }
 
     public synchronized Optional<RegisteredSkill> resolve(String ref) {
@@ -104,6 +110,7 @@ public class SkillCatalog {
             stream.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".md"))
                     .sorted(Comparator.comparing(Path::toString))
+                    .takeWhile(path -> !reachedSkillLimit())
                     .forEach(path -> registerSkill(path, root));
         } catch (Exception e) {
             log.warn("skill_catalog scan failed, root={}, error={}", root, e.getMessage());
@@ -112,6 +119,9 @@ public class SkillCatalog {
 
     private void registerSkill(Path file, Path root) {
         try {
+            if (reachedSkillLimit()) {
+                return;
+            }
             String content = Files.readString(file);
             ParsedSkillDocument doc = parser.parse(content);
             String relative = root.relativize(file).toString().replace('\\', '/');
@@ -123,6 +133,10 @@ public class SkillCatalog {
         } catch (Exception e) {
             log.warn("skill_catalog parse failed, file={}, error={}", file, e.getMessage());
         }
+    }
+
+    private boolean reachedSkillLimit() {
+        return byId.size() >= properties.getMaxRegisteredSkills();
     }
 
     private Path toAbsPath(String text) {
