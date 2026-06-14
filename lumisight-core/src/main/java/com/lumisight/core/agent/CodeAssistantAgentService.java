@@ -123,7 +123,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
             ExecutionContext context = prepareExecutionContext(request, sessionId);
             // 生成真正用于执行的 request，并在这里决定是否切到多 agent 路径
             AgentRequest effectiveRequest = resolveExecutionRequest(request, context.effectiveQuestion(), traceId, sessionId, publisher);
-            // 获取该repoRoot下的长期记忆
+            // 获取该repoRoot下的项目长期记忆和根目录下的用户画像记忆
             CompletableFuture<RelevantMemoryContext> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
                     effectiveRequest.taskType(),
                     context.resolvedRepoRoot(),
