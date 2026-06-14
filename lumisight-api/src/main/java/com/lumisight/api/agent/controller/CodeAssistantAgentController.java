@@ -51,7 +51,7 @@ public class CodeAssistantAgentController implements AgentTransportAdapter {
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestParam("sessionId") String sessionId) {
         String normalizedSessionId = requireSessionId(sessionId);
-        // 0 代表用不超时
+        // 0 代表永不超时
         SseEmitter emitter = new SseEmitter(0L);
         Disposable disposable = streamGateway.subscribe(normalizedSessionId, new SseEventChannel(emitter, normalizedSessionId));
         ActiveSseConnection connection = new ActiveSseConnection(normalizedSessionId, emitter, disposable);

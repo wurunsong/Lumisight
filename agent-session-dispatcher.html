@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumisight Agent Session Dispatcher</title>
+  <style>
+    :root {
+      --bg: #edf2f7;
+      --ink: #13263f;
+      --muted: #5d6f87;
+      --line: rgba(24, 50, 84, 0.12);
+      --paper: rgba(255, 255, 255, 0.84);
+      --navy: #0f2745;
+      --blue: #2d74ff;
+      --sky: #dbe9ff;
+      --mint: #ddf5ec;
+      --gold: #fff0d9;
+      --rose: #f4e9ff;
+      --teal: #0f8a74;
+      --shadow: 0 24px 60px rgba(18, 42, 72, 0.09);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 12% 12%, rgba(45, 116, 255, 0.15), transparent 24%),
+        radial-gradient(circle at 88% 10%, rgba(15, 138, 116, 0.12), transparent 20%),
+        linear-gradient(180deg, #f6f9fc 0%, #edf2f7 48%, #e9eff6 100%);
+    }
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 20px 54px;
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 32px;
+      padding: 34px 36px 36px;
+      color: #f4f8ff;
+      background:
+        radial-gradient(circle at top right, rgba(127, 182, 255, 0.34), transparent 24%),
+        linear-gradient(135deg, #0b203a 0%, #143b68 54%, #2465b0 100%);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      bottom: -70px;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 68%);
+      pointer-events: none;
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      max-width: 860px;
+      margin: 0;
+      color: rgba(236, 244, 255, 0.9);
+      font-size: 15px;
+      line-height: 1.8;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .badge {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: #eef5ff;
+      font-size: 12px;
+      letter-spacing: 0.01em;
+    }
+    .section {
+      margin-top: 24px;
+      padding: 24px;
+      border-radius: 28px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .section-head h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      color: var(--navy);
+    }
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+      max-width: 760px;
+    }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      position: relative;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 3%;
+      right: 3%;
+      top: 58px;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(45, 116, 255, 0.12), rgba(45, 116, 255, 0.42), rgba(15, 138, 116, 0.22));
+      z-index: 0;
+    }
+    .flow-card {
+      position: relative;
+      z-index: 1;
+      min-height: 192px;
+      padding: 18px 16px 16px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 12px 28px rgba(22, 45, 76, 0.06);
+    }
+    .flow-card.sky { background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); }
+    .flow-card.mint { background: linear-gradient(180deg, #ebfaf4 0%, #ffffff 100%); }
+    .flow-card.gold { background: linear-gradient(180deg, #fff5e7 0%, #ffffff 100%); }
+    .flow-card.rose { background: linear-gradient(180deg, #f7f0ff 0%, #ffffff 100%); }
+    .index {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1px solid rgba(20, 51, 89, 0.12);
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+    .flow-card h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      line-height: 1.3;
+      color: var(--navy);
+    }
+    .flow-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.72;
+    }
+    .presence-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .presence {
+      padding: 16px 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.9));
+      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.04);
+    }
+    .presence h3 {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 15px;
+    }
+    .presence p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .dual {
+      display: grid;
+      grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.82fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .diagram {
+      border-radius: 26px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,248,253,0.96));
+    }
+    .diagram h3,
+    .side-panel h3 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: var(--navy);
+    }
+    .swimlane {
+      display: grid;
+      grid-template-columns: 126px 1fr;
+      gap: 14px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+    .swimlane:first-of-type { margin-top: 0; }
+    .swimlane-label {
+      padding: 16px 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: #f3f7fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--navy);
+    }
+    .swimlane-track {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      position: relative;
+    }
+    .swimlane-track::before {
+      content: "";
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 46px;
+      height: 1px;
+      background: rgba(34, 74, 123, 0.14);
+      z-index: 0;
+    }
+    .lane-step {
+      position: relative;
+      z-index: 1;
+      min-height: 114px;
+      padding: 14px 12px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.96);
+      box-shadow: 0 8px 22px rgba(17, 40, 67, 0.05);
+    }
+    .lane-step .dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      margin-bottom: 12px;
+      background: var(--blue);
+      box-shadow: 0 0 0 6px rgba(45, 116, 255, 0.12);
+    }
+    .lane-step.mint .dot { background: var(--teal); box-shadow: 0 0 0 6px rgba(15, 138, 116, 0.12); }
+    .lane-step.gold .dot { background: #da9d2a; box-shadow: 0 0 0 6px rgba(218, 157, 42, 0.14); }
+    .lane-step.rose .dot { background: #7d56d6; box-shadow: 0 0 0 6px rgba(125, 86, 214, 0.12); }
+    .lane-step h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--navy);
+    }
+    .lane-step span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.66;
+    }
+    .side-panel {
+      padding: 20px;
+      border-radius: 26px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(246,249,253,0.96), rgba(255,255,255,0.96));
+    }
+    .note-list {
+      display: grid;
+      gap: 12px;
+    }
+    .note {
+      padding: 14px 14px 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.95);
+    }
+    .note h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--navy);
+    }
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.68;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .highlight {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.96);
+      box-shadow: 0 10px 24px rgba(17, 40, 67, 0.05);
+    }
+    .highlight h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: var(--navy);
+    }
+    .highlight p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.74;
+    }
+    @media (max-width: 1160px) {
+      .timeline,
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .dual {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 860px) {
+      .timeline,
+      .presence-strip,
+      .grid,
+      .swimlane-track {
+        grid-template-columns: 1fr;
+      }
+      .timeline::before,
+      .swimlane-track::before {
+        display: none;
+      }
+      .swimlane {
+        grid-template-columns: 1fr;
+      }
+      .hero h1 {
+        font-size: 32px;
+      }
+      .section,
+      .hero {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>AgentSessionDispatcher 信息流</h1>
+      <p>这页只讲一个主角：会话分发层怎样把同一个 `sessionId` 的命令、订阅、排队、执行和中断串成一条稳定的信息流。重点是把流程讲清楚，不把它写成源码导览。</p>
+      <div class="hero-badges">
+        <span class="badge">Session Mailbox</span>
+        <span class="badge">Single DrainLoop Per Session</span>
+        <span class="badge">FOLLOW / COLLECT / STEER</span>
+        <span class="badge">Interrupt And Resume Boundary</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Main Flow</span>
+          <h2>端到端主流程</h2>
+        </div>
+          <p>这一层做的不是模型推理本身，而是先把会话流量整理顺。只有这里先把顺序、抢占、排队和回收理清楚，后面的执行链路才不会乱。</p>
+      </div>
+      <div class="timeline">
+        <article class="flow-card sky">
+          <div class="index">01</div>
+          <h3>先落到同一个会话容器</h3>
+          <p>无论是发新命令还是建立订阅，系统都会先按 `sessionId` 找到同一个会话容器。这样同一个会话的后续动作才会始终围绕同一份状态展开。</p>
+        </article>
+        <article class="flow-card sky">
+          <div class="index">02</div>
+          <h3>先判断当前会话处在什么阶段</h3>
+          <p>新命令进来后，不会立刻执行，而是先看这个会话现在有没有正在跑的任务、有没有还没启动的待处理项，以及这次到底是顺序跟进、合并提问、抢占最新问题，还是手动停止。</p>
+        </article>
+        <article class="flow-card gold">
+          <div class="index">03</div>
+          <h3>把新命令整理成下一步动作</h3>
+          <p>顺序跟进就排队，合并模式就尽量把追加问题并进已有待处理项，抢占模式就丢掉还没启动的旧问题，手动停止则把待处理内容清掉，并准备终止当前这一轮。</p>
+        </article>
+        <article class="flow-card mint">
+          <div class="index">04</div>
+          <h3>同一个会话同时只让一条执行线往前走</h3>
+          <p>如果这个会话已经有人在消费待处理队列，就不再重复拉第二条执行线。这样同一个会话内部始终保持串行，不会一边排队一边并发把顺序打乱。</p>
+        </article>
+        <article class="flow-card mint">
+          <div class="index">05</div>
+          <h3>一条条取出并推进执行</h3>
+          <p>会话开始工作后，会按顺序从待处理列表里取出问题，逐条推进执行。执行过程中产生的状态变化和输出，也都会继续回到这个会话自己的事件流里。</p>
+        </article>
+        <article class="flow-card rose">
+          <div class="index">06</div>
+          <h3>真的空下来后才回收</h3>
+          <p>只有当这个会话已经没有正在执行的内容、没有待处理问题、也没有订阅者继续挂着时，它才会被清掉。回收看的不是某一个点，而是整条会话链路是不是都已经结束。</p>
+        </article>
+      </div>
+      <div class="presence-strip">
+        <article class="presence">
+          <h3>为什么不同会话能并发</h3>
+          <p>系统允许多个会话同时推进，但每个会话都只保留自己的一条执行主线。所以跨会话可以并发，同会话仍然是稳定顺序。</p>
+        </article>
+        <article class="presence">
+          <h3>为什么这里要先看状态再动作</h3>
+          <p>因为这层真正要处理的是会话生命周期，而不是单个请求。排队、执行、中断、订阅和回收都互相影响，所以每一步都得先确认当前会话处在哪个状态。</p>
+        </article>
+        <article class="presence">
+          <h3>这页不展开什么</h3>
+          <p>这里不展开模型怎么决策、工具怎么调用、最终答案怎么生成，只把会话分发层自己的流向讲清楚。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Branch Flow</span>
+          <h2>同会话调度与生命周期</h2>
+        </div>
+          <p>上面讲的是主干。下面把“不同对话模式会把会话推向哪里”和“一个会话什么时候算真正结束”拆成两条支线。</p>
+      </div>
+      <div class="dual">
+        <div class="diagram">
+          <h3>会话命令泳道图</h3>
+          <div class="swimlane">
+            <div class="swimlane-label">外部命令</div>
+            <div class="swimlane-track">
+              <article class="lane-step">
+                <div class="dot"></div>
+                <h4>进入同一会话</h4>
+                <span>新问题和订阅入口都会先落到同一个 `sessionId` 对应的会话容器。</span>
+              </article>
+              <article class="lane-step gold">
+                <div class="dot"></div>
+                <h4>判断这次是什么意图</h4>
+                <span>系统先分清这次是顺序追加、合并提问、最新问题抢占，还是用户主动停止。</span>
+              </article>
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <h4>决定要不要新开执行线</h4>
+                <span>如果当前会话已经有人在往前跑，就不再重复开第二条；如果还没人处理，才开始工作。</span>
+              </article>
+              <article class="lane-step rose">
+                <div class="dot"></div>
+                <h4>持续接收事件</h4>
+                <span>观察者看到的是这个会话统一的输出流，而不是每个问题各自拆开的零散流。</span>
+              </article>
+              <article class="lane-step rose">
+                <div class="dot"></div>
+                <h4>断开后进入收尾判断</h4>
+                <span>订阅离开并不一定立即清掉会话，还要再看这个会话是不是已经彻底空了。</span>
+              </article>
+            </div>
+          </div>
+          <div class="swimlane">
+            <div class="swimlane-label">会话容器</div>
+            <div class="swimlane-track">
+              <article class="lane-step">
+                <div class="dot"></div>
+                <h4>保留会话当前状态</h4>
+                <span>这里会记住还有哪些问题待处理、现在有没有正在执行、当前会话是否还有人订阅。</span>
+              </article>
+              <article class="lane-step gold">
+                <div class="dot"></div>
+                <h4>改写接下来的顺序</h4>
+                <span>不同模式不会直接改变结果内容，而是先改变“接下来这个会话应该按什么顺序继续”。</span>
+              </article>
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <h4>保持会话内串行</h4>
+                <span>同一个会话始终只有一条执行主线持续往前推进，避免内部顺序被并发打散。</span>
+              </article>
+              <article class="lane-step mint">
+                <div class="dot"></div>
+                <h4>需要时打断当前这轮</h4>
+                <span>如果用户主动停止，或者最新问题要抢占当前执行，就会把这轮工作明确停下来，而不是等它自然结束。</span>
+              </article>
+              <article class="lane-step rose">
+                <div class="dot"></div>
+                <h4>确认是否真正结束</h4>
+                <span>只有执行结束、待处理清空、订阅也离开之后，这个会话容器才算完成生命周期。</span>
+              </article>
+            </div>
+          </div>
+        </div>
+        <aside class="side-panel">
+          <h3>四种关键流程分支</h3>
+          <div class="note-list">
+            <article class="note">
+              <h4>FOLLOW</h4>
+              <p>最保守的路径。新问题只是排到后面，等当前这轮做完再继续，不抢占也不合并。</p>
+            </article>
+            <article class="note">
+              <h4>COLLECT</h4>
+              <p>适合“我再补一句”的场景。它只会尝试合并还没启动的待处理项，不去改已经开始跑的这一轮。</p>
+            </article>
+            <article class="note">
+              <h4>STEER</h4>
+              <p>适合“别管前面的了，先做最新这个”。它会先丢掉还没启动的旧问题，必要时再把当前这轮让出来给最新请求。</p>
+            </article>
+            <article class="note">
+              <h4>INTERRUPT</h4>
+              <p>手动停止不是抢占，而是明确结束当前推进。它会清空后续待处理内容，并在必要时把正在进行的这一轮停掉。</p>
+            </article>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Technical Highlights</span>
+          <h2>流程上的关键约束</h2>
+        </div>
+        <p>这里不再讲实现名词，只保留几条最重要的流程约束。它们解释了为什么这层看起来复杂，但又必须把流程收得这么紧。</p>
+      </div>
+      <div class="grid">
+        <article class="highlight">
+          <h3>一个会话只认一条主线</h3>
+          <p>同一个会话内部不会同时开多条执行主线。这样用户看到的顺序、追加、抢占和恢复才始终围绕同一条上下文往前走。</p>
+        </article>
+        <article class="highlight">
+          <h3>跨会话可以并发</h3>
+          <p>系统不会把所有会话都压成单线程。真正被限制成串行的是单个会话内部，不同会话之间仍然可以同时推进。</p>
+        </article>
+        <article class="highlight">
+          <h3>订阅和执行属于同一条生命线</h3>
+          <p>一个会话有没有人在看、有没有任务在跑、后面还有没有待处理内容，都会共同决定这个会话是不是还该留着。</p>
+        </article>
+        <article class="highlight">
+          <h3>停止是明确动作，不是顺带效果</h3>
+          <p>断开观察和停止执行不是一回事。真正的停止必须作为显式流程处理，否则会话层就会出现“看起来停了，其实后台还在跑”的错觉。</p>
+        </article>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
