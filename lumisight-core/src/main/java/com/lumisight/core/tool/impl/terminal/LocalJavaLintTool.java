@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.terminal;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -61,7 +61,7 @@ public class LocalJavaLintTool implements PermissionedAgentTool<LocalJavaLintToo
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
-            AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+            ToolRuntimeScope.Context context = ToolRuntimeScope.required();
             Path repoRoot = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
             String sourceFile = args.sourceFile() == null ? "" : args.sourceFile();
             String filePattern = args.filePattern() == null ? "" : args.filePattern();

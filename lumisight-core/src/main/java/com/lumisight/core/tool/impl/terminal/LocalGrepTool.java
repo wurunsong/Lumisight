@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.terminal;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -54,7 +54,7 @@ public class LocalGrepTool implements PermissionedAgentTool<LocalGrepTool.Args> 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
-            AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+            ToolRuntimeScope.Context context = ToolRuntimeScope.required();
             Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
             String pattern = args.pattern();
             String filePattern = args.filePattern() == null ? "" : args.filePattern();

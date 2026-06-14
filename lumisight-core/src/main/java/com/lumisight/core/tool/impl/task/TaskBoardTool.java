@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskBoardView;
 import com.lumisight.core.service.task.TaskService;
@@ -51,7 +51,7 @@ public class TaskBoardTool implements PermissionedAgentTool<TaskBoardTool.Args> 
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         TaskBoardView board = taskService.board(context.repoRoot());
         return List.of(TaskToolSupport.item(
                 "task_board",

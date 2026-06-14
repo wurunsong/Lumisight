@@ -2,8 +2,8 @@ package com.lumisight.core.tool.impl.task;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.context.ambient.AgentToolInvocationContext;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolInvocationScope;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskRecord;
 import com.lumisight.core.service.task.TaskBoardView;
@@ -26,11 +26,11 @@ final class TaskToolSupport {
         if (StringUtils.hasText(requestedOwner)) {
             return requestedOwner.trim();
         }
-        AgentToolRuntimeContext.Context runtime = AgentToolRuntimeContext.current();
+        ToolRuntimeScope.Context runtime = ToolRuntimeScope.current();
         if (runtime != null && StringUtils.hasText(runtime.userId())) {
             return runtime.userId().trim();
         }
-        AgentToolInvocationContext.Context invocation = AgentToolInvocationContext.current();
+        ToolInvocationScope.Context invocation = ToolInvocationScope.current();
         if (invocation != null && StringUtils.hasText(invocation.sessionId())) {
             return invocation.sessionId().trim();
         }

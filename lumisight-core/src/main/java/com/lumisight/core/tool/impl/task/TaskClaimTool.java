@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskClaimResult;
 import com.lumisight.core.service.task.TaskService;
@@ -66,7 +66,7 @@ public class TaskClaimTool implements PermissionedAgentTool<TaskClaimTool.Args> 
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         TaskClaimResult result = taskService.claim(context.repoRoot(), args.taskId(), TaskToolSupport.ownerOrDefault(args.owner()));
         return List.of(TaskToolSupport.item(
                 "task_claim",

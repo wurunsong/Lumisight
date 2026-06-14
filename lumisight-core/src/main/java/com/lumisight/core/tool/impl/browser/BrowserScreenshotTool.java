@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.browser;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.browser.BrowserAutomationService;
 import com.lumisight.core.service.browser.BrowserScreenshotResult;
@@ -57,7 +57,7 @@ public class BrowserScreenshotTool implements PermissionedAgentTool<BrowserScree
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context runtime = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context runtime = ToolRuntimeScope.required();
         BrowserScreenshotResult result = browserAutomationService.screenshot(
                 runtime.repoRoot(),
                 BrowserToolSupport.sessionId(),

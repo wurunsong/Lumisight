@@ -2,8 +2,8 @@ package com.lumisight.core.agent;
 
 import com.lumisight.core.agent.multiagent.service.MultiAgentCoordinator;
 import com.lumisight.core.agent.multiagent.service.MultiAgentModeDecider;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
-import com.lumisight.core.context.ExecutionContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
+import com.lumisight.core.context.AgentExecutionState;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
@@ -24,7 +24,7 @@ import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.hooks.dispatcher.AgentHookDispatcher;
 import com.lumisight.hooks.enums.AgentHookPoint;
 import com.lumisight.hooks.dto.AgentHookContext;
-import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.memory.dto.RelevantMemoryBundle;
 import com.lumisight.skills.dto.SkillContext;
 import com.lumisight.skills.dto.SkillPlan;
 import com.lumisight.skills.SkillRegistry;
@@ -120,14 +120,14 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
 
         try {
-            ExecutionContext context = prepareExecutionContext(request, sessionId);
+            AgentExecutionState executionState = prepareExecutionContext(request, sessionId);
             // 生成真正用于执行的 request，并在这里决定是否切到多 agent 路径
-            AgentRequest effectiveRequest = resolveExecutionRequest(request, context.effectiveQuestion(), traceId, sessionId, publisher);
+            AgentRequest effectiveRequest = resolveExecutionRequest(request, executionState.effectiveQuestion(), traceId, sessionId, publisher);
             // 获取该repoRoot下的项目长期记忆和根目录下的用户画像记忆
-            CompletableFuture<RelevantMemoryContext> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
+            CompletableFuture<RelevantMemoryBundle> pendingRelevantMemory = relevantMemoryService.prefetch(new AgentRequest(
                     effectiveRequest.taskType(),
-                    context.resolvedRepoRoot(),
-                    context.effectiveQuestion(),
+                    executionState.resolvedRepoRoot(),
+                    executionState.effectiveQuestion(),
                     effectiveRequest.skillPath(),
                     effectiveRequest.userId(),
                     sessionId,
@@ -140,22 +140,23 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     effectiveRequest.runMode(),
                     effectiveRequest.dialogueMode()
             ));
-            // open方法在线程上下文（不是agent上下文）保存仓库路径、agent上下文限制和userId
-            try (AgentToolRuntimeContext.Scope ignored = AgentToolRuntimeContext.open(context.resolvedRepoRoot(), context.limit(), effectiveRequest.userId())) {
-                publishInitState(effectiveRequest, context, traceId, publisher);
+            // open 会把 repoRoot、limit、userId 挂到当前线程作用域里，供后续工具通过 ToolRuntimeScope.required() 读取。
+            // 这里的 ignored 只是为了借助 try-with-resources 在流程结束后自动 close，避免线程上下文泄漏。
+            try (ToolRuntimeScope.Scope ignored = ToolRuntimeScope.open(executionState.resolvedRepoRoot(), executionState.limit(), effectiveRequest.userId())) {
+                publishInitState(effectiveRequest, executionState, traceId, publisher);
                 // 获取skill
-                SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, context, traceId, publisher);
+                SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, executionState, traceId, publisher);
                 Set<AgentToolPermission> enabledPermissions = agentFlowSupport.enabledPermissions(effectiveRequest);
-                RelevantMemoryContext relevantMemoryContext = joinRelevantMemory(pendingRelevantMemory);
+                RelevantMemoryBundle relevantMemoryBundle = joinRelevantMemory(pendingRelevantMemory);
                 publishSkillPlan(traceId, sessionId, publisher, skillPlan);
                 // 调度多agent
                 // todo 这里的多agent调度有很大的问题，teamAgent最终的逻辑执行还是在CodeAssistantAgentService这个类里，会形成递归，
                 //  应该把前面的公共部分做一个隔离，具体方案后面再说
-                context = orchestrateMultiAgentIfNeeded(effectiveRequest, context, traceId, publisher);
+                executionState = orchestrateMultiAgentIfNeeded(effectiveRequest, executionState, traceId, publisher);
                 // 处理上一轮对话没完成的工具调用
                 ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
                         effectiveRequest,
-                        context,
+                        executionState,
                         traceId,
                         publisher,
                         enabledPermissions
@@ -164,46 +165,47 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                     sink.complete();
                     return;
                 }
-                context = resumeHandling.context();
+                executionState = resumeHandling.executionState();
 
-                if (shouldInterruptExecution(context.sessionId(), context.runEpoch())) {
-                    appendInterruptedEvents(traceId, context.sessionId(), 0, context.effectiveQuestion(), context.contextSession(), publisher);
+                if (shouldInterruptExecution(executionState.sessionId(), executionState.runEpoch())) {
+                    appendInterruptedEvents(traceId, executionState.sessionId(), 0, executionState.effectiveQuestion(), executionState.contextSession(), publisher);
                     sink.complete();
                     return;
                 }
                 // emitPlanIfNeeded只有在被中断的时候才返回true
-                if (effectiveRequest.runMode() == AgentRunMode.PLAN && emitPlanIfNeeded(effectiveRequest, context, skillPlan, traceId, publisher, relevantMemoryContext)) {
+                if (effectiveRequest.runMode() == AgentRunMode.PLAN
+                        && emitPlanIfNeeded(effectiveRequest, executionState, skillPlan, traceId, publisher, relevantMemoryBundle)) {
                     sink.complete();
                     return;
                 }
 
                 AgentLoopOrchestrator.OrchestrationResult result = agentLoopOrchestrator.run(
                         effectiveRequest,
-                        context.effectiveQuestion(),
+                        executionState.effectiveQuestion(),
                         skillPlan,
-                        context.contextSession(),
-                        context.limit(),
-                        context.startRound(),
+                        executionState.contextSession(),
+                        executionState.limit(),
+                        executionState.startRound(),
                         publisher,
                         sessionId,
                         traceId,
                         enabledPermissions,
-                        context.runEpoch(),
-                        relevantMemoryContext
+                        executionState.runEpoch(),
+                        relevantMemoryBundle
                 );
-                context = context.withContextSession(result.contextSession());
+                executionState = executionState.withContextSession(result.contextSession());
 
                 if (result.askUser() || result.interrupted()) {
                     sink.complete();
                     return;
                 }
-                if (!conversationManager.isActiveEpoch(sessionId, context.runEpoch())) {
+                if (!conversationManager.isActiveEpoch(sessionId, executionState.runEpoch())) {
                     publisher.emit(AgentEvent.state(traceId, sessionId, 0, "STEER", "interrupted", "当前请求已被新的 STEER 问题抢占并终止。"));
                     sink.complete();
                     return;
                 }
 
-                emitFinalAnswer(effectiveRequest, context, skillPlan, result, traceId, publisher, relevantMemoryContext);
+                emitFinalAnswer(effectiveRequest, executionState, skillPlan, result, traceId, publisher, relevantMemoryBundle);
                 sink.complete();
             }
         } catch (Throwable t) {
@@ -211,14 +213,14 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
     }
 
-    private RelevantMemoryContext joinRelevantMemory(CompletableFuture<RelevantMemoryContext> pendingRelevantMemory) {
+    private RelevantMemoryBundle joinRelevantMemory(CompletableFuture<RelevantMemoryBundle> pendingRelevantMemory) {
         if (pendingRelevantMemory == null) {
-            return RelevantMemoryContext.empty();
+            return RelevantMemoryBundle.empty();
         }
         try {
             return pendingRelevantMemory.join();
         } catch (Exception e) {
-            return RelevantMemoryContext.empty();
+            return RelevantMemoryBundle.empty();
         }
     }
 
@@ -267,12 +269,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         );
     }
     /**
-     * 准备本轮对话的初始上下文，主要包含：当前提问和历史上下文
+     * 准备本轮对话的初始状态，主要包含：当前提问和历史上下文
      * @param request 用户请求
      * @param sessionId 会话 ID
      * @return 当前对话的初始上下文
      */
-    private ExecutionContext prepareExecutionContext(AgentRequest request, String sessionId) {
+    private AgentExecutionState prepareExecutionContext(AgentRequest request, String sessionId) {
         AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
         long runEpoch = conversationManager.nextEpoch(sessionId);
         String effectiveQuestion = request.question();
@@ -288,7 +290,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
         // 恢复当前 session 的历史上下文；resume 场景先归一化状态，再恢复一次即可。
         AgentContextSession contextSession = agentContextManager.restore(sessionId, resumeState);
-        return new ExecutionContext(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, startRound);
+        return new AgentExecutionState(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, startRound);
     }
 
     private AgentConversationManager.ConversationState normalizeResumeState(AgentConversationManager.ConversationState resumeState) {
@@ -307,7 +309,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         );
     }
 
-    private void publishInitState(AgentRequest request, ExecutionContext context, String traceId, AgentEventPublisher publisher) {
+    private void publishInitState(AgentRequest request, AgentExecutionState context, String traceId, AgentEventPublisher publisher) {
         if (request.resume() && context.resumeState() != null) {
             publisher.emit(AgentEvent.resumed(traceId, context.sessionId()));
         }
@@ -315,7 +317,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         publisher.emit(AgentEvent.dialogueMode(traceId, context.sessionId(), request.dialogueMode().name(), "当前对话模式: " + request.dialogueMode().name()));
     }
 
-    private SkillPlan resolveSkillPlan(AgentRequest request, ExecutionContext context, String traceId, AgentEventPublisher publisher) {
+    private SkillPlan resolveSkillPlan(AgentRequest request, AgentExecutionState context, String traceId, AgentEventPublisher publisher) {
         SkillPlan skillPlan = new SkillPlan("未指定技能，走默认编排", List.of(), "", "");
         String skillRef = request.skillPath();
         boolean shouldResolveSkill = StringUtils.hasText(skillRef);
@@ -358,9 +360,9 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
         }
     }
 
-    private ExecutionContext orchestrateMultiAgentIfNeeded(
+    private AgentExecutionState orchestrateMultiAgentIfNeeded(
             AgentRequest request,
-            ExecutionContext context,
+            AgentExecutionState context,
             String traceId,
             AgentEventPublisher publisher
     ) {
@@ -489,7 +491,7 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
     private ResumeHandlingResult handlePendingResumeDecision(
             AgentRequest request,
-            ExecutionContext context,
+            AgentExecutionState context,
             String traceId,
             AgentEventPublisher publisher,
             Set<AgentToolPermission> enabledPermissions
@@ -531,11 +533,11 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
     private boolean emitPlanIfNeeded(
             AgentRequest request,
-            ExecutionContext context,
+            AgentExecutionState context,
             SkillPlan skillPlan,
             String traceId,
             AgentEventPublisher publisher,
-            RelevantMemoryContext relevantMemoryContext
+            RelevantMemoryBundle relevantMemoryContext
     ) {
         if (request.runMode() != AgentRunMode.PLAN) {
             return false;
@@ -562,12 +564,12 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
 
     private void emitFinalAnswer(
             AgentRequest request,
-            ExecutionContext context,
+            AgentExecutionState context,
             SkillPlan skillPlan,
             AgentLoopOrchestrator.OrchestrationResult orchestrationResult,
             String traceId,
             AgentEventPublisher publisher,
-            RelevantMemoryContext relevantMemoryContext
+            RelevantMemoryBundle relevantMemoryContext
     ) {
         agentFinalResponseEmitter.emit(
                 request,
@@ -641,6 +643,6 @@ public class CodeAssistantAgentService implements AgentExecutionEngine {
                 metadata == null ? Map.of() : metadata
         ));
     }
-    private record ResumeHandlingResult(ExecutionContext context, boolean completed) {
+    private record ResumeHandlingResult(AgentExecutionState executionState, boolean completed) {
     }
 }

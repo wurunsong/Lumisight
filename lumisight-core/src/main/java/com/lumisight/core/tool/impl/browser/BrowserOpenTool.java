@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.browser;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.browser.BrowserAutomationService;
 import com.lumisight.core.service.browser.BrowserOpenResult;
@@ -64,7 +64,7 @@ public class BrowserOpenTool implements PermissionedAgentTool<BrowserOpenTool.Ar
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context runtime = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context runtime = ToolRuntimeScope.required();
         BrowserOpenResult result = browserAutomationService.open(runtime.repoRoot(), BrowserToolSupport.sessionId(), args.url());
         return List.of(BrowserToolSupport.item(
                 "browser_open",

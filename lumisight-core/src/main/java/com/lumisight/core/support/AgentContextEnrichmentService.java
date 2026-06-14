@@ -2,7 +2,7 @@ package com.lumisight.core.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.common.util.ValueParsers;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.port.SourceCodeLookupProvider;
@@ -67,13 +67,13 @@ public class AgentContextEnrichmentService implements AgentContextEnricher {
                 continue;
             }
             List<AgentContextItem> oneHop = knowledgeGraphOneHopProvider.retrieveByNodeId(
-                    AgentToolRuntimeContext.required().repoRoot(),
+                    ToolRuntimeScope.required().repoRoot(),
                     kgNodeId,
                     limit
             );
             enriched.addAll(oneHop);
             List<Map<String, Object>> methodNodes = knowledgeGraphOneHopProvider.retrieveMethodNodeLocationsByNodeId(
-                    AgentToolRuntimeContext.required().repoRoot(),
+                    ToolRuntimeScope.required().repoRoot(),
                     kgNodeId,
                     limit
             );
@@ -82,7 +82,7 @@ public class AgentContextEnrichmentService implements AgentContextEnricher {
                 Integer startLine = ValueParsers.asInteger(methodNode.get("startLine"));
                 Integer endLine = ValueParsers.asInteger(methodNode.get("endLine"));
                 enriched.addAll(sourceCodeLookupProvider.lookupMethodSource(
-                        AgentToolRuntimeContext.required().repoRoot(),
+                        ToolRuntimeScope.required().repoRoot(),
                         sourceFile,
                         startLine,
                         endLine

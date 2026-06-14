@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.browser;
 
-import com.lumisight.core.context.ambient.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.ToolInvocationScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.browser.BrowserElementSummary;
 import com.lumisight.core.service.browser.BrowserPageSnapshot;
@@ -17,11 +17,11 @@ final class BrowserToolSupport {
     }
 
     static String sessionId() {
-        AgentToolInvocationContext.Context context = AgentToolInvocationContext.current();
-        if (context == null || !StringUtils.hasText(context.sessionId())) {
+        ToolInvocationScope.Context invocationScope = ToolInvocationScope.current();
+        if (invocationScope == null || !StringUtils.hasText(invocationScope.sessionId())) {
             return "__browser_global__";
         }
-        return context.sessionId().trim();
+        return invocationScope.sessionId().trim();
     }
 
     static AgentContextItem item(String sourceType, String sourceId, String content, Map<String, Object> metadata) {

@@ -2,7 +2,7 @@ package com.lumisight.core.support;
 
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.service.ChildAgentPermissionPolicy;
-import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.ToolDecision;
@@ -75,9 +75,9 @@ public class AgentFlowSupport {
     }
 
     public Set<AgentToolPermission> enabledPermissions(AgentRequest request) {
-        MultiAgentExecutionContext.Context multiAgentContext = MultiAgentExecutionContext.current();
+        MultiAgentExecutionScope.Context multiAgentContext = MultiAgentExecutionScope.current();
         // 当前在multiAgent模式，并且不是leadAgent
-        if (multiAgentContext != null && multiAgentContext.role() != MultiAgentExecutionContext.Role.LEAD_AGENT) {
+        if (multiAgentContext != null && multiAgentContext.role() != MultiAgentExecutionScope.Role.LEAD_AGENT) {
             return childAgentPermissionPolicy.permissionsFor(
                     multiAgentContext.role(),
                     capabilityFromTaskType(request)

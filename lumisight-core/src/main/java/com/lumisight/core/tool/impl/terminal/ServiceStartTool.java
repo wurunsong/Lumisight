@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.terminal;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -56,7 +56,7 @@ public class ServiceStartTool implements PermissionedAgentTool<ServiceStartTool.
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         try {
-            AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+            ToolRuntimeScope.Context context = ToolRuntimeScope.required();
             Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
             Map<String, Object> result = environmentService.startService(root, args.serviceId(), args.path(), args.command(), Map.of());
             return List.of(new AgentContextItem("local", "serviceStart", "服务启动命令执行完成", result));

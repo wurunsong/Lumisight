@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskReleaseResult;
 import com.lumisight.core.service.task.TaskService;
@@ -66,7 +66,7 @@ public class TaskReleaseTool implements PermissionedAgentTool<TaskReleaseTool.Ar
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         TaskReleaseResult result = taskService.release(context.repoRoot(), args.taskId(), TaskToolSupport.ownerOrDefault(args.owner()));
         return List.of(TaskToolSupport.item(
                 "task_release",

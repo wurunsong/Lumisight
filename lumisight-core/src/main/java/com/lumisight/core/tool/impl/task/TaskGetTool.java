@@ -1,7 +1,7 @@
 package com.lumisight.core.tool.impl.task;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskService;
 import com.lumisight.core.service.task.TaskView;
@@ -67,7 +67,7 @@ public class TaskGetTool implements PermissionedAgentTool<TaskGetTool.Args> {
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         TaskView view = taskService.get(context.repoRoot(), args.taskId());
         return List.of(TaskToolSupport.item(
                 "task_get",

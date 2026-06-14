@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl;
 
-import com.lumisight.core.context.ambient.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.ToolInvocationScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.TodoTask;
 import com.lumisight.core.support.AgentSessionContextStore;
@@ -91,7 +91,7 @@ public class TodoWriteTool implements PermissionedAgentTool<TodoWriteTool.Args> 
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolInvocationContext.Context invocationContext = AgentToolInvocationContext.current();
+        ToolInvocationScope.Context invocationContext = ToolInvocationScope.current();
         String sessionId = invocationContext == null || invocationContext.sessionId() == null || invocationContext.sessionId().isBlank()
                 ? "__todo_global__"
                 : invocationContext.sessionId().trim();

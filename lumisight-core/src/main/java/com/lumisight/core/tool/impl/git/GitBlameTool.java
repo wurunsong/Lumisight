@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.git;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.common.exec.SandboxAccessSpec;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.sandbox.SandboxCommandRunner;
@@ -58,7 +58,7 @@ public class GitBlameTool implements PermissionedAgentTool<GitBlameTool.Args> {
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         Path root = GitRepoPathSupport.requireRepoRoot(context.repoRoot());
         String sourceFile = args.sourceFile();
         Integer startLine = args.startLine();

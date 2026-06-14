@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.SourceCodeLookupProvider;
 import com.lumisight.core.service.SourceCodeLookupProviderImpl;
@@ -69,7 +69,7 @@ public class MethodSourceLookupTool implements PermissionedAgentTool<MethodSourc
             @ToolParam(description = "起始行号（方法节点startLine）") Integer startLine,
             @ToolParam(description = "结束行号（方法节点endLine）") Integer endLine
     ) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         return sourceCodeLookupProvider.lookupMethodSource(context.repoRoot(), sourceFile, startLine, endLine);
     }
 }

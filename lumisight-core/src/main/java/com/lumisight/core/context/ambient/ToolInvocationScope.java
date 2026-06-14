@@ -1,26 +1,14 @@
 package com.lumisight.core.context.ambient;
 
-/**
- * 工具运行上下文
- * todo 后面抽象一个AgentAmbientContext接口，作为非agent运行上下文的基类
- */
-public final class AgentToolRuntimeContext {
+public final class ToolInvocationScope {
 
     private static final Support SUPPORT = new Support();
 
-    private AgentToolRuntimeContext() {
+    private ToolInvocationScope() {
     }
 
-    public static Scope open(String repoRoot, Integer defaultLimit) {
-        return open(repoRoot, defaultLimit, null);
-    }
-
-    public static Scope open(String repoRoot, Integer defaultLimit, String userId) {
-        return new Scope(SUPPORT.openValue(new Context(repoRoot, defaultLimit, userId)));
-    }
-
-    public static Context required() {
-        return SUPPORT.requiredValue("Agent tool runtime context is missing");
+    public static Scope open(String sessionId, Integer round, String question) {
+        return new Scope(SUPPORT.openValue(new Context(sessionId, round == null ? 0 : round, question)));
     }
 
     public static Context current() {
@@ -35,7 +23,7 @@ public final class AgentToolRuntimeContext {
         SUPPORT.clearValue();
     }
 
-    public record Context(String repoRoot, Integer defaultLimit, String userId) {
+    public record Context(String sessionId, int round, String question) {
     }
 
     public static final class Scope implements AutoCloseable {

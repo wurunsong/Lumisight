@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.memory;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -109,7 +109,7 @@ public class MemoryWriteTool implements PermissionedAgentTool<MemoryWriteTool.Ar
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         MemoryType type = MemoryType.parse(args.type());
         MemoryEntry entry = memoryService.save(
                 context.repoRoot(),

@@ -4,7 +4,7 @@ import com.lumisight.core.agent.CodeAssistantAgentService;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TaskContextEnvelope;
-import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;
@@ -39,7 +39,7 @@ public class SubAgentExecutionService {
     }
 
     public SubAgentResult execute(TaskContextEnvelope envelope, String parentSessionId) {
-        return execute(envelope, parentSessionId, MultiAgentExecutionContext.Role.SUB_AGENT, "subagent", null, null);
+        return execute(envelope, parentSessionId, MultiAgentExecutionScope.Role.SUB_AGENT, "subagent", null, null);
     }
 
     public SubAgentResult executeAsTeamAgent(
@@ -48,20 +48,20 @@ public class SubAgentExecutionService {
             String teamId,
             String agentId
     ) {
-        return execute(envelope, parentSessionId, MultiAgentExecutionContext.Role.TEAM_AGENT, agentId, teamId, agentId);
+        return execute(envelope, parentSessionId, MultiAgentExecutionScope.Role.TEAM_AGENT, agentId, teamId, agentId);
     }
 
     private SubAgentResult execute(
             TaskContextEnvelope envelope,
             String parentSessionId,
-            MultiAgentExecutionContext.Role role,
+            MultiAgentExecutionScope.Role role,
             String agentName,
             String teamId,
             String agentId
     ) {
         String childSessionId = "subagent-" + envelope.taskId() + "-" + UUID.randomUUID().toString().substring(0, 8);
         String orchestrationId = "orch-" + UUID.randomUUID();
-        MultiAgentExecutionContext.Context parent = MultiAgentExecutionContext.current();
+        MultiAgentExecutionScope.Context parent = MultiAgentExecutionScope.current();
         int depth = parent == null ? 1 : parent.depth() + 1;
         if (depth > properties.getMaxSubagentDepth()) {
             return new SubAgentResult(
@@ -95,8 +95,8 @@ public class SubAgentExecutionService {
                 AgentDialogueMode.FOLLOW
         );
         long deadlineEpochMs = System.currentTimeMillis() + Math.max(1, properties.getChildTimeoutMs());
-        try (MultiAgentExecutionContext.Scope ignored = MultiAgentExecutionContext.open(
-                new MultiAgentExecutionContext.Context(
+        try (MultiAgentExecutionScope.Scope ignored = MultiAgentExecutionScope.open(
+                new MultiAgentExecutionScope.Context(
                         role,
                         orchestrationId,
                         parentSessionId,

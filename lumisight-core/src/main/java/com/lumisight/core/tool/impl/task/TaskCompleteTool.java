@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskCompleteResult;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -64,7 +64,7 @@ public class TaskCompleteTool implements PermissionedAgentTool<TaskCompleteTool.
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         TaskCompleteResult result = taskService.complete(context.repoRoot(), args.taskId());
         return List.of(TaskToolSupport.item(
                 "task_complete",

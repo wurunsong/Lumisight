@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.terminal;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -42,7 +42,7 @@ public class LocalPwdTool implements PermissionedAgentTool<NoToolArgs> {
 
     @Override
     public List<AgentContextItem> invoke(NoToolArgs args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
         return List.of(new AgentContextItem(
                 "local",

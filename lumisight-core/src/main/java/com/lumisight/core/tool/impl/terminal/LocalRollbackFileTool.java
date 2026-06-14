@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.terminal;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.sandbox.SnapshotManager;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -54,7 +54,7 @@ public class LocalRollbackFileTool implements PermissionedAgentTool<LocalRollbac
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         Path root = LocalRepoPathSupport.requireRepoRoot(context.repoRoot());
         Map<String, Object> result = snapshotManager.rollback(root, args.snapshotId());
         return List.of(new AgentContextItem(

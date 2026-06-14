@@ -1,7 +1,7 @@
 package com.lumisight.core.tool.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lumisight.core.context.ambient.AgentToolInvocationContext;
+import com.lumisight.core.context.ambient.ToolInvocationScope;
 import com.lumisight.core.hooks.runtime.ToolHookContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentToolExecutionResult;
@@ -49,7 +49,7 @@ public class AgentToolExecutionService {
     }
 
     public AgentToolExecutionResult execute(ToolDecision decision, Set<AgentToolPermission> enabledPermissions, int limit, ToolHookContext hookContext) {
-        try (AgentToolInvocationContext.Scope ignored = AgentToolInvocationContext.open(hookContext.sessionId(), hookContext.round(), hookContext.question())) {
+        try (ToolInvocationScope.Scope ignored = ToolInvocationScope.open(hookContext.sessionId(), hookContext.round(), hookContext.question())) {
             String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
             String toolName = normalizeToolName(requestedToolName);
             Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());

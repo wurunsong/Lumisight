@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.KnowledgeGraphOneHopProvider;
 import com.lumisight.core.tool.AgentToolCategory;
@@ -64,7 +64,7 @@ public class KnowledgeGraphOneHopTool implements PermissionedAgentTool<Knowledge
             @ToolParam(description = "知识图谱节点ID（通常来自注释文档向量的kg_node_id）") String kgNodeId,
             @ToolParam(description = "最多返回多少条相邻边，建议 20-200") Integer limit
     ) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         int finalLimit = limit == null ? context.defaultLimit() : limit;
         return knowledgeGraphOneHopProvider.retrieveByNodeId(context.repoRoot(), kgNodeId, finalLimit);
     }

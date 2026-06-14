@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.memory;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -56,7 +56,7 @@ public class MemoryListTool implements PermissionedAgentTool<MemoryListTool.Args
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         int limit = args == null || args.limit() == null ? 10 : Math.max(1, Math.min(50, args.limit()));
         List<MemoryHeader> headers = memoryService.list(context.repoRoot(), context.userId());
         StringJoiner joiner = new StringJoiner("\n");

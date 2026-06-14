@@ -10,7 +10,7 @@ import com.lumisight.core.support.context.AgentContextAppendOptions;
 import com.lumisight.core.support.context.AgentContextManager;
 import com.lumisight.core.support.context.AgentContextProjection;
 import com.lumisight.core.support.context.AgentContextSession;
-import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.memory.dto.RelevantMemoryBundle;
 import com.lumisight.skills.dto.SkillPlan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
@@ -51,7 +51,7 @@ class AgentFinalResponseEmitter {
             AgentLoopOrchestrator.OrchestrationResult orchestrationResult,
             String traceId,
             AgentEventPublisher publisher,
-            RelevantMemoryContext memoryContext,
+            RelevantMemoryBundle memoryContext,
             Runnable beforeFinalHook,
             BooleanSupplier shouldInterruptExecution,
             Consumer<AgentContextSession> onInterrupted
@@ -110,7 +110,7 @@ class AgentFinalResponseEmitter {
             String finalPrompt,
             String traceId,
             AgentEventPublisher publisher,
-            RelevantMemoryContext memoryContext,
+            RelevantMemoryBundle memoryContext,
             BooleanSupplier shouldInterruptExecution
     ) {
         StringBuilder finalAnswerBuffer = new StringBuilder();

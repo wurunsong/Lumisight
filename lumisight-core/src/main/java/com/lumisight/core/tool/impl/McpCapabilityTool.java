@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -72,7 +72,7 @@ public class McpCapabilityTool implements PermissionedAgentTool<McpCapabilityToo
         if (args.args() != null) {
             capabilityArgs.putAll(args.args());
         }
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         capabilityArgs.putIfAbsent("repoRoot", context.repoRoot());
         capabilityArgs.putIfAbsent("limit", defaultLimit);
         Map<String, Object> result = capability.invoke(capabilityArgs);

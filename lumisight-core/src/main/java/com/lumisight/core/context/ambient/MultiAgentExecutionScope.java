@@ -1,14 +1,14 @@
 package com.lumisight.core.context.ambient;
 
 /**
- * 多agent编排上下文，更像是配置类，不像是上下文类
- * todo 后面抽象一个AgentAmbientContext接口，作为非agent运行上下文的基类
+ * 多agent执行作用域，承载编排期需要透传的运行约束
+ * todo 后面抽象一个AgentRuntimeScope接口，作为非agent运行作用域的基类
  */
-public final class MultiAgentExecutionContext {
+public final class MultiAgentExecutionScope {
 
     private static final ThreadLocal<Context> HOLDER = new ThreadLocal<>();
 
-    private MultiAgentExecutionContext() {
+    private MultiAgentExecutionScope() {
     }
 
     public static Scope open(Context context) {

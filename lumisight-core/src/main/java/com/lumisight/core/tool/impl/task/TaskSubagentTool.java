@@ -4,8 +4,8 @@ import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TaskContextEnvelope;
 import com.lumisight.core.agent.multiagent.service.SubAgentExecutionService;
-import com.lumisight.core.context.ambient.AgentToolInvocationContext;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolInvocationScope;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -81,8 +81,8 @@ public class TaskSubagentTool implements PermissionedAgentTool<TaskSubagentTool.
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context runtimeContext = AgentToolRuntimeContext.required();
-        AgentToolInvocationContext.Context invocationContext = AgentToolInvocationContext.current();
+        ToolRuntimeScope.Context runtimeContext = ToolRuntimeScope.required();
+        ToolInvocationScope.Context invocationContext = ToolInvocationScope.current();
         String parentSessionId = invocationContext == null || invocationContext.sessionId() == null
                 ? "lead"
                 : invocationContext.sessionId();

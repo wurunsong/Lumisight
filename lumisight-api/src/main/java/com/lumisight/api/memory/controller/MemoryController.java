@@ -8,7 +8,7 @@ import com.lumisight.core.support.RelevantMemoryService;
 import com.lumisight.memory.MemoryService;
 import com.lumisight.memory.enums.MemoryType;
 import com.lumisight.memory.dto.MemoryWriteRequest;
-import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.memory.dto.RelevantMemoryBundle;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -122,15 +122,15 @@ public class MemoryController {
             @RequestParam(required = false) String repoRoot,
             @RequestParam(required = false) String userId
     ) {
-        RelevantMemoryContext context = relevantMemoryService.resolveRelevant(
+        RelevantMemoryBundle memoryBundle = relevantMemoryService.resolveRelevant(
                 normalizeRepoRoot(repoRoot),
                 normalizeUserId(userId),
                 query
         );
         return new MemoryRelevantResponse(
-                context.entrypoint().content(),
-                context.selectedEntries().stream().map(MemoryEntryResponse::from).toList(),
-                context.remindersBlock()
+                memoryBundle.entrypoint().content(),
+                memoryBundle.selectedEntries().stream().map(MemoryEntryResponse::from).toList(),
+                memoryBundle.remindersBlock()
         );
     }
 

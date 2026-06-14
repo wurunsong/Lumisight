@@ -1,8 +1,8 @@
 package com.lumisight.core.config;
 
 import com.lumisight.common.concurrent.ThreadContextRegistry;
-import com.lumisight.core.context.ambient.AgentToolInvocationContext;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolInvocationScope;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Configuration;
@@ -14,15 +14,15 @@ public class ThreadContextConfiguration {
     public void registerThreadContextCarriers() {
         ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "agentToolRuntimeContext",
-                AgentToolRuntimeContext::current,
-                AgentToolRuntimeContext::restore,
-                AgentToolRuntimeContext::clear
+                ToolRuntimeScope::current,
+                ToolRuntimeScope::restore,
+                ToolRuntimeScope::clear
         ));
         ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "agentToolInvocationContext",
-                AgentToolInvocationContext::current,
-                AgentToolInvocationContext::restore,
-                AgentToolInvocationContext::clear
+                ToolInvocationScope::current,
+                ToolInvocationScope::restore,
+                ToolInvocationScope::clear
         ));
         ThreadContextRegistry.register(ThreadContextRegistry.ContextCarrier.of(
                 "slf4jMdc",

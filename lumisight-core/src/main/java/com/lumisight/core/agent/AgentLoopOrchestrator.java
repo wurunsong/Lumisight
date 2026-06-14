@@ -1,6 +1,6 @@
 package com.lumisight.core.agent;
 
-import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.hooks.runtime.HookedToolExecutor;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
@@ -25,7 +25,7 @@ import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.hooks.dto.AgentHookContext;
 import com.lumisight.hooks.dispatcher.AgentHookDispatcher;
 import com.lumisight.hooks.enums.AgentHookPoint;
-import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.memory.dto.RelevantMemoryBundle;
 import com.lumisight.skills.dto.SkillPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,10 +100,10 @@ class AgentLoopOrchestrator {
             String traceId,
             Set<AgentToolPermission> enabledPermissions,
             long runEpoch,
-            RelevantMemoryContext memoryContext
+            RelevantMemoryBundle memoryContext
     ) {
         int lastRound = Math.max(0, startRound - 1);
-        MultiAgentExecutionContext.Context executionContext = MultiAgentExecutionContext.current();
+        MultiAgentExecutionScope.Context executionContext = MultiAgentExecutionScope.current();
         int maxRounds = MAX_TOOL_ROUNDS;
         if (executionContext != null && executionContext.maxRounds() > 0) {
             maxRounds = Math.min(MAX_TOOL_ROUNDS, executionContext.maxRounds());

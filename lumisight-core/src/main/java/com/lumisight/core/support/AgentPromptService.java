@@ -1,6 +1,6 @@
 package com.lumisight.core.support;
 
-import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentRequest;
@@ -11,7 +11,7 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.AgentToolRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
-import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.memory.dto.RelevantMemoryBundle;
 import com.lumisight.skills.dto.SkillPlan;
 import org.springframework.stereotype.Component;
 
@@ -30,10 +30,10 @@ public class AgentPromptService {
     }
 
     public String systemPrompt(AgentTaskType taskType) {
-        return systemPrompt(taskType, RelevantMemoryContext.empty());
+        return systemPrompt(taskType, RelevantMemoryBundle.empty());
     }
 
-    public String systemPrompt(AgentTaskType taskType, RelevantMemoryContext memoryContext) {
+    public String systemPrompt(AgentTaskType taskType, RelevantMemoryBundle memoryContext) {
         String base = promptTemplateService.render(switch (taskType) {
             case BUG_FIX -> "system_bug_fix";
             case CHAT -> "system_chat";
@@ -54,7 +54,7 @@ public class AgentPromptService {
             List<AgentContextItem> contexts,
             int limit,
             SkillPlan skillPlan,
-            RelevantMemoryContext memoryContext
+            RelevantMemoryBundle memoryContext
     ) {
         return promptTemplateService.render("final_answer", Map.of(
                 "taskType", String.valueOf(request.taskType()),
@@ -74,7 +74,7 @@ public class AgentPromptService {
             Set<AgentToolPermission> enabledPermissions,
             AgentToolRegistry registry,
             SkillPlan skillPlan,
-            RelevantMemoryContext memoryContext
+            RelevantMemoryBundle memoryContext
     ) {
         String prompt = promptTemplateService.render("orchestrator_system", Map.of(
                 "systemPrompt", systemPrompt(taskType),
@@ -323,8 +323,8 @@ public class AgentPromptService {
                 + "- 提醒机制：系统可能会注入 <reminder>Update your todos.</reminder>，收到后请先刷新会话内 checklist，再继续执行。";
     }
 
-    private String memoryReminderBlock(RelevantMemoryContext memoryContext) {
-        RelevantMemoryContext safeContext = memoryContext == null ? RelevantMemoryContext.empty() : memoryContext;
+    private String memoryReminderBlock(RelevantMemoryBundle memoryContext) {
+        RelevantMemoryBundle safeContext = memoryContext == null ? RelevantMemoryBundle.empty() : memoryContext;
         StringBuilder builder = new StringBuilder();
         builder.append("长期记忆规则:\n");
         builder.append("- 只可依赖四类长期记忆：user / feedback / project / reference。\n");
@@ -340,17 +340,17 @@ public class AgentPromptService {
     }
 
     private String multiAgentExecutionBlock() {
-        MultiAgentExecutionContext.Context context = MultiAgentExecutionContext.current();
-        if (context == null) {
+        MultiAgentExecutionScope.Context executionScope = MultiAgentExecutionScope.current();
+        if (executionScope == null) {
             return "";
         }
-        if (context.role() == MultiAgentExecutionContext.Role.SUB_AGENT) {
+        if (executionScope.role() == MultiAgentExecutionScope.Role.SUB_AGENT) {
             return "子 Agent 约束:\n"
                     + "- 你运行在隔离子上下文中，只完成当前子任务。\n"
                     + "- 不要请求用户，不要再委派新的 agent，不要假设自己拥有写仓库权限。\n"
                     + "- 只输出完成当前任务所需的结论、证据和建议下一步。";
         }
-        if (context.role() == MultiAgentExecutionContext.Role.TEAM_AGENT) {
+        if (executionScope.role() == MultiAgentExecutionScope.Role.TEAM_AGENT) {
             return "Team Agent 约束:\n"
                     + "- 你是长期协作队友，只处理 inbox 分配给你的任务。\n"
                     + "- 不要创建新的 agent，不要直接面向用户给最终答案。\n"

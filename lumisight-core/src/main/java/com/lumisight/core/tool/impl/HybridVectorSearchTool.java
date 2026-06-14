@@ -1,7 +1,7 @@
 package com.lumisight.core.tool.impl;
 
 import com.lumisight.common.concurrent.NamedExecutors;
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.port.CodeVectorContextProvider;
 import com.lumisight.core.port.CommentVectorContextProvider;
@@ -90,7 +90,7 @@ public class HybridVectorSearchTool implements PermissionedAgentTool<HybridVecto
             @ToolParam(description = "自然语言查询（如意图说明、行为描述、概念问题）") String naturalLanguageQuery,
             @ToolParam(description = "每个向量库最多返回多少条，建议 3-10") Integer limit
     ) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         int finalLimit = limit == null ? context.defaultLimit() : limit;
 
         CompletableFuture<List<AgentContextItem>> codeFuture = CompletableFuture.supplyAsync(

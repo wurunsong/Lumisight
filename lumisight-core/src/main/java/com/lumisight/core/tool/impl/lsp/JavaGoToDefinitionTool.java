@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.lsp;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
@@ -53,7 +53,7 @@ public class JavaGoToDefinitionTool implements PermissionedAgentTool<JavaGoToDef
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         String symbol = args.symbol();
         int limit = args.limit() == null ? (defaultLimit <= 0 ? 20 : defaultLimit) : args.limit();
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         try {
             Path root = JavaLspPathSupport.requireRepoRoot(context.repoRoot());
             Pattern classPattern = Pattern.compile("\\b(class|interface|enum|record)\\s+" + Pattern.quote(symbol) + "\\b");

@@ -8,7 +8,7 @@ import com.lumisight.memory.dto.MemoryEntrypoint;
 import com.lumisight.memory.dto.MemoryHeader;
 import com.lumisight.memory.MemoryService;
 import com.lumisight.memory.enums.MemoryType;
-import com.lumisight.memory.dto.RelevantMemoryContext;
+import com.lumisight.memory.dto.RelevantMemoryBundle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -57,32 +57,32 @@ public class RelevantMemoryService {
      * @param request 结构化agent请求
      * @return 相关记忆
      */
-    public CompletableFuture<RelevantMemoryContext> prefetch(AgentRequest request) {
+    public CompletableFuture<RelevantMemoryBundle> prefetch(AgentRequest request) {
         return CompletableFuture.supplyAsync(() -> resolveRelevant(request.repoRoot(), request.userId(), request.question()));
     }
 
-    public RelevantMemoryContext resolveRelevant(String repoRoot, String userId, String query) {
+    public RelevantMemoryBundle resolveRelevant(String repoRoot, String userId, String query) {
         try {
             List<RelevantMemorySource> sources = resolveSources(repoRoot, userId, query);
             if (sources.isEmpty()) {
-                return RelevantMemoryContext.empty();
+                return RelevantMemoryBundle.empty();
             }
             // 获取全部记忆索引
             MemoryEntrypoint entrypoint = buildCombinedEntrypoint(sources, userId);
             // 获取记忆文件的头部
             List<SourceHeader> headers = loadSourceHeaders(sources, userId);
             if (headers.isEmpty() || !StringUtils.hasText(query)) {
-                return new RelevantMemoryContext(entrypoint, List.of(), "");
+                return new RelevantMemoryBundle(entrypoint, List.of(), "");
             }
             List<String> selectedKeys = selectRelevantKeys(query, headers);
             if (selectedKeys.isEmpty()) {
-                return new RelevantMemoryContext(entrypoint, List.of(), "");
+                return new RelevantMemoryBundle(entrypoint, List.of(), "");
             }
             List<MemoryEntry> entries = readSelectedEntries(userId, headers, selectedKeys);
-            return new RelevantMemoryContext(entrypoint, entries, renderSelectedReminders(entries));
+            return new RelevantMemoryBundle(entrypoint, entries, renderSelectedReminders(entries));
         } catch (Exception e) {
             log.warn("relevant_memory_prefetch_failed, error={}", e.getMessage());
-            return RelevantMemoryContext.empty();
+            return RelevantMemoryBundle.empty();
         }
     }
 
@@ -112,7 +112,7 @@ public class RelevantMemoryService {
             hasContent = true;
         }
         if (!hasContent) {
-            return RelevantMemoryContext.empty().entrypoint();
+            return RelevantMemoryBundle.empty().entrypoint();
         }
         return MemoryEntrypoint.empty(joiner.toString());
     }

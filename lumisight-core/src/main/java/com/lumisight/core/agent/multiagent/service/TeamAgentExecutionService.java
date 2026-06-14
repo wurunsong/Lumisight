@@ -3,7 +3,7 @@ package com.lumisight.core.agent.multiagent.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.common.concurrent.NamedExecutors;
 import com.lumisight.core.agent.multiagent.model.MultiAgentExecutionState;
-import com.lumisight.core.context.ambient.MultiAgentExecutionContext;
+import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
@@ -641,7 +641,7 @@ public class TeamAgentExecutionService {
     }
 
     private List<String> requiredPermissionNames(SubAgentCapability capability) {
-        Set<AgentToolPermission> permissions = childAgentPermissionPolicy.permissionsFor(MultiAgentExecutionContext.Role.TEAM_AGENT, capability);
+        Set<AgentToolPermission> permissions = childAgentPermissionPolicy.permissionsFor(MultiAgentExecutionScope.Role.TEAM_AGENT, capability);
         EnumSet<AgentToolPermission> leadApprovedSubset = EnumSet.of(
                 AgentToolPermission.BUILD_COMPILE,
                 AgentToolPermission.BROWSER_READ

@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskCreateRequest;
 import com.lumisight.core.service.task.TaskRecord;
@@ -76,7 +76,7 @@ public class TaskCreateTool implements PermissionedAgentTool<TaskCreateTool.Args
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         TaskRecord task = taskService.create(
                 context.repoRoot(),
                 new TaskCreateRequest(

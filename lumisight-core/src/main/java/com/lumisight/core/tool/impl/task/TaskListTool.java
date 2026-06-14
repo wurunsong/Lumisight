@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskProperties;
 import com.lumisight.core.service.task.TaskService;
@@ -60,7 +60,7 @@ public class TaskListTool implements PermissionedAgentTool<TaskListTool.Args> {
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         int requestedLimit = args == null || args.limit() == null ? 20 : args.limit();
         int limit = Math.max(1, Math.min(taskProperties.getMaxListLimit(), requestedLimit));
         List<TaskView> tasks = taskService.list(context.repoRoot()).stream()

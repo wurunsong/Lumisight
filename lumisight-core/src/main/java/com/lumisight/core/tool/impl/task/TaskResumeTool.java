@@ -1,6 +1,6 @@
 package com.lumisight.core.tool.impl.task;
 
-import com.lumisight.core.context.ambient.AgentToolRuntimeContext;
+import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.service.task.TaskResumeResult;
 import com.lumisight.core.service.task.TaskService;
@@ -59,7 +59,7 @@ public class TaskResumeTool implements PermissionedAgentTool<TaskResumeTool.Args
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
-        AgentToolRuntimeContext.Context context = AgentToolRuntimeContext.required();
+        ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         int limit = args == null || args.limit() == null ? 5 : args.limit();
         TaskResumeResult result = taskService.resume(
                 context.repoRoot(),
