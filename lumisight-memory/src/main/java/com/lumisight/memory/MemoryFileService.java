@@ -1,5 +1,7 @@
 package com.lumisight.memory;
 
+import static com.lumisight.memory.MemoryConstants.ENTRYPOINT_FILENAME;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.stream.Stream;
 
@@ -28,15 +31,14 @@ import com.lumisight.memory.dto.MemoryWriteRequest;
 import com.lumisight.memory.enums.MemoryType;
 import com.lumisight.memory.properties.MemoryProperties;
 
-/**
- * 如果传了repoRoot，则记忆保存在repoRoot/.lumisight/memory/userId/MEMORY.md
- * todo 如果没有传repoRoot，则记忆保存在～/.lumisight/memory/tmp/sessionId/MEMORY.md
- * ～/.lumisight/memory/userId/MEMORY.md保存的是这个用户的长期记忆画像
- */
 @Service
 public class MemoryFileService {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFileService.class);
+    private static final Set<String> MEMORY_FILENAME_PREFIXES = Stream.of(MemoryType.values())
+            .map(MemoryType::wireValue)
+            .map(prefix -> prefix + "_")
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private final MemoryProperties properties;
 
@@ -59,15 +61,16 @@ public class MemoryFileService {
     }
 
     public List<MemoryHeader> scanHeaders(String repoRoot, String userId) {
+        return scanHeaders(repoRoot, userId, properties.getRootDir());
+    }
+
+    public List<MemoryHeader> scanHeaders(String storageRoot, String userId, String memoryRootDir) {
         try {
-            // 获取记忆目录
-            Path dir = ensureMemoryDir(repoRoot, userId);
-            // 获取不为MEMORY.md的markdown文件
+            Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
             List<Path> files = listMemoryFiles(dir);
             List<MemoryHeader> headers = new ArrayList<>();
             for (Path file : files) {
                 try {
-                    // 读取记忆文件头
                     headers.add(readHeader(file));
                 } catch (Exception e) {
                     log.warn("memory_header_scan_failed, file={}, error={}", file, e.getMessage());
@@ -82,10 +85,14 @@ public class MemoryFileService {
     }
 
     public List<MemoryEntry> readEntries(String repoRoot, String userId, List<String> filenames) {
+        return readEntries(repoRoot, userId, properties.getRootDir(), filenames);
+    }
+
+    public List<MemoryEntry> readEntries(String storageRoot, String userId, String memoryRootDir, List<String> filenames) {
         if (filenames == null || filenames.isEmpty()) {
             return List.of();
         }
-        Path dir = ensureMemoryDirUnchecked(repoRoot, userId);
+        Path dir = ensureMemoryDirUnchecked(storageRoot, userId, memoryRootDir);
         List<MemoryEntry> entries = new ArrayList<>();
         for (String filename : filenames) {
             if (!StringUtils.hasText(filename) || filename.contains("/") || filename.contains("..")) {
@@ -128,11 +135,15 @@ public class MemoryFileService {
     }
 
     public MemoryEntrypoint loadEntrypoint(String repoRoot, String userId) {
+        return loadEntrypoint(repoRoot, userId, properties.getRootDir());
+    }
+
+    public MemoryEntrypoint loadEntrypoint(String storageRoot, String userId, String memoryRootDir) {
         try {
-            Path dir = ensureMemoryDir(repoRoot, userId);
-            Path entrypointFile = dir.resolve("MEMORY.md");
+            Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+            Path entrypointFile = dir.resolve(ENTRYPOINT_FILENAME);
             if (!Files.exists(entrypointFile)) {
-                return rebuildEntrypoint(repoRoot, userId);
+                return rebuildEntrypoint(storageRoot, userId, memoryRootDir);
             }
             String content = Files.readString(entrypointFile, StandardCharsets.UTF_8);
             return truncateEntrypoint(content);
@@ -148,12 +159,16 @@ public class MemoryFileService {
      * @return
      */
     public MemoryEntrypoint rebuildEntrypoint(String repoRoot, String userId) {
+        return rebuildEntrypoint(repoRoot, userId, properties.getRootDir());
+    }
+
+    public MemoryEntrypoint rebuildEntrypoint(String storageRoot, String userId, String memoryRootDir) {
         try {
-            Path dir = ensureMemoryDir(repoRoot, userId);
-            List<MemoryHeader> headers = scanHeaders(repoRoot, userId);
+            Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+            List<MemoryHeader> headers = scanHeaders(storageRoot, userId, memoryRootDir);
             String raw = renderEntrypoint(headers);
             MemoryEntrypoint entrypoint = truncateEntrypoint(raw);
-            Files.writeString(dir.resolve("MEMORY.md"), entrypoint.content(), StandardCharsets.UTF_8);
+            Files.writeString(dir.resolve(ENTRYPOINT_FILENAME), entrypoint.content(), StandardCharsets.UTF_8);
             return entrypoint;
         } catch (IOException e) {
             throw new IllegalStateException("failed to rebuild MEMORY.md", e);
@@ -222,6 +237,7 @@ public class MemoryFileService {
 
     private MemoryEntrypoint truncateEntrypoint(String raw) {
         String content = raw == null ? "" : raw;
+        // 行数+字节双截断
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         String[] lines = content.split("\\R", -1);
         boolean lineTruncated = lines.length > properties.getMaxEntrypointLines();
@@ -245,21 +261,26 @@ public class MemoryFileService {
             currentBytes += candidateBytes;
             keptLines++;
         }
-        // todo 这里做截断是否需要模型参与？
         builder.append("\n\n> WARNING: MEMORY.md 太大了，已按行数/字节上限截断；请删除或合并低价值记忆。");
         return new MemoryEntrypoint(builder.toString(), lineTruncated, byteTruncated, lines.length, bytes.length);
     }
 
     private List<Path> listMemoryFiles(Path dir) throws IOException {
         try (Stream<Path> stream = Files.list(dir)) {
-            // todo 这里最好有一个规范的记忆命名方式吧，只找markdown感觉会有问题
             return stream
                     .filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(".md"))
-                    .filter(path -> !Objects.equals(path.getFileName().toString(), "MEMORY.md"))
+                    .filter(this::isStructuredMemoryFile)
                     .sorted(Comparator.comparing(this::lastModifiedMillis).reversed())
                     .toList();
         }
+    }
+
+    private boolean isStructuredMemoryFile(Path path) {
+        String filename = path.getFileName().toString();
+        if (Objects.equals(filename, ENTRYPOINT_FILENAME) || !filename.endsWith(".md")) {
+            return false;
+        }
+        return MEMORY_FILENAME_PREFIXES.stream().anyMatch(filename::startsWith);
     }
 
     private MemoryHeader readHeader(Path file) throws IOException {
@@ -303,18 +324,26 @@ public class MemoryFileService {
     }
 
     private Path ensureMemoryDir(String repoRoot, String userId) throws IOException {
-        Path dir = ensureMemoryDirUnchecked(repoRoot, userId);
+        return ensureMemoryDir(repoRoot, userId, properties.getRootDir());
+    }
+
+    private Path ensureMemoryDir(String storageRoot, String userId, String memoryRootDir) throws IOException {
+        Path dir = ensureMemoryDirUnchecked(storageRoot, userId, memoryRootDir);
         Files.createDirectories(dir);
         return dir;
     }
 
     private Path ensureMemoryDirUnchecked(String repoRoot, String userId) {
+        return ensureMemoryDirUnchecked(repoRoot, userId, properties.getRootDir());
+    }
+
+    private Path ensureMemoryDirUnchecked(String storageRoot, String userId, String memoryRootDir) {
         String safeUserId = StringUtils.hasText(userId) ? userId.trim() : "default-user";
-        Path root = StringUtils.hasText(repoRoot)
-                ? Path.of(repoRoot)
+        Path root = StringUtils.hasText(storageRoot)
+                ? Path.of(storageRoot)
                 : Path.of(".").toAbsolutePath().normalize();
         return root
-                .resolve(properties.getRootDir())
+                .resolve(memoryRootDir)
                 .resolve(safeUserId)
                 .normalize();
     }

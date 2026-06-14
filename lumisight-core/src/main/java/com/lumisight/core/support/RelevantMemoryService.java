@@ -1,6 +1,8 @@
 package com.lumisight.core.support;
 
 import com.lumisight.core.model.AgentRequest;
+import com.lumisight.core.support.memory.RelevantMemorySource;
+import com.lumisight.core.support.memory.RelevantMemorySourceProvider;
 import com.lumisight.memory.dto.MemoryEntry;
 import com.lumisight.memory.dto.MemoryEntrypoint;
 import com.lumisight.memory.dto.MemoryHeader;
@@ -15,34 +17,39 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Component
 public class RelevantMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(RelevantMemoryService.class);
-    private static final Pattern FILENAME_PATTERN = Pattern.compile("[a-z0-9_\\-]+\\.md", Pattern.CASE_INSENSITIVE);
     private static final int MAX_RELEVANT = 5;
 
     private final ChatClient selectorChatClient;
+    private final AgentPromptService agentPromptService;
     private final StreamingChatClientSupport streamingChatClientSupport;
     private final MemoryService memoryService;
+    private final List<RelevantMemorySourceProvider> sourceProviders;
 
     public RelevantMemoryService(
             ChatClient.Builder chatClientBuilder,
+            AgentPromptService agentPromptService,
             StreamingChatClientSupport streamingChatClientSupport,
-            MemoryService memoryService
+            MemoryService memoryService,
+            List<RelevantMemorySourceProvider> sourceProviders
     ) {
         this.selectorChatClient = chatClientBuilder.build();
+        this.agentPromptService = agentPromptService;
         this.streamingChatClientSupport = streamingChatClientSupport;
         this.memoryService = memoryService;
+        this.sourceProviders = sourceProviders == null ? List.of() : List.copyOf(sourceProviders);
     }
 
     /**
@@ -56,21 +63,22 @@ public class RelevantMemoryService {
 
     public RelevantMemoryContext resolveRelevant(String repoRoot, String userId, String query) {
         try {
-            // todo 这里需要改成既从仓库获取仓库记忆，也从根目录获取长期记忆（有关于用户信息的记忆）
-            // 获取该用户在该仓库的记忆索引
-            MemoryEntrypoint entrypoint = memoryService.loadEntrypoint(repoRoot, userId);
-            // 获取该用户在该仓库的长期记忆header
-            List<MemoryHeader> headers = memoryService.scanHeaders(repoRoot, userId);
+            List<RelevantMemorySource> sources = resolveSources(repoRoot, userId, query);
+            if (sources.isEmpty()) {
+                return RelevantMemoryContext.empty();
+            }
+            // 获取全部记忆索引
+            MemoryEntrypoint entrypoint = buildCombinedEntrypoint(sources, userId);
+            // 获取记忆文件的头部
+            List<SourceHeader> headers = loadSourceHeaders(sources, userId);
             if (headers.isEmpty() || !StringUtils.hasText(query)) {
                 return new RelevantMemoryContext(entrypoint, List.of(), "");
             }
-            // 选取相关记忆文件名
-            List<String> selectedFilenames = selectRelevantFilenames(query, headers);
-            if (selectedFilenames.isEmpty()) {
+            List<String> selectedKeys = selectRelevantKeys(query, headers);
+            if (selectedKeys.isEmpty()) {
                 return new RelevantMemoryContext(entrypoint, List.of(), "");
             }
-            // 获取选中的记忆文件
-            List<MemoryEntry> entries = memoryService.readEntries(repoRoot, userId, selectedFilenames);
+            List<MemoryEntry> entries = readSelectedEntries(userId, headers, selectedKeys);
             return new RelevantMemoryContext(entrypoint, entries, renderSelectedReminders(entries));
         } catch (Exception e) {
             log.warn("relevant_memory_prefetch_failed, error={}", e.getMessage());
@@ -78,97 +86,175 @@ public class RelevantMemoryService {
         }
     }
 
-    private List<String> selectRelevantFilenames(String query, List<MemoryHeader> headers) {
+    private List<RelevantMemorySource> resolveSources(String repoRoot, String userId, String query) {
+        List<RelevantMemorySource> sources = new ArrayList<>();
+        for (RelevantMemorySourceProvider provider : sourceProviders) {
+            List<RelevantMemorySource> resolved = provider.resolveSources(repoRoot, userId, query);
+            if (resolved != null && !resolved.isEmpty()) {
+                sources.addAll(resolved);
+            }
+        }
+        return sources;
+    }
+
+    private MemoryEntrypoint buildCombinedEntrypoint(List<RelevantMemorySource> sources, String userId) {
+        StringJoiner joiner = new StringJoiner("\n\n");
+        joiner.add("# MEMORY");
+        boolean hasContent = false;
+        for (RelevantMemorySource source : sources) {
+            MemoryEntrypoint entrypoint = memoryService.loadEntrypoint(source.storageRoot(), userId, source.memoryRootDir());
+            String normalized = normalizeEntrypointContent(entrypoint.content());
+            if (!StringUtils.hasText(normalized)) {
+                continue;
+            }
+            joiner.add("## " + source.displayName());
+            joiner.add(normalized);
+            hasContent = true;
+        }
+        if (!hasContent) {
+            return RelevantMemoryContext.empty().entrypoint();
+        }
+        return MemoryEntrypoint.empty(joiner.toString());
+    }
+
+    private List<SourceHeader> loadSourceHeaders(List<RelevantMemorySource> sources, String userId) {
+        List<SourceHeader> headers = new ArrayList<>();
+        for (RelevantMemorySource source : sources) {
+            for (MemoryHeader header : memoryService.scanHeaders(source.storageRoot(), userId, source.memoryRootDir())) {
+                headers.add(new SourceHeader(source, selectorKey(source, header.filename()), header));
+            }
+        }
+        headers.sort(Comparator.comparingLong(SourceHeader::mtimeMs).reversed());
+        return headers;
+    }
+
+    private List<String> selectRelevantKeys(String query, List<SourceHeader> headers) {
+        // 用模型选择记忆
         List<String> selected = selectViaModel(query, headers);
         if (!selected.isEmpty()) {
             return selected;
         }
+        // 用关键词匹配 + 时间衰退的方式选择记忆
         return selectHeuristically(query, headers);
     }
 
-    private List<String> selectViaModel(String query, List<MemoryHeader> headers) {
+    private List<String> selectViaModel(String query, List<SourceHeader> headers) {
         try {
             String response = streamingChatClientSupport.collect(
                     selectorChatClient,
-                    """
-                    你是一个长期记忆选择器。你会看到用户当前问题，以及一批可用记忆的文件名、类型、日期和一句话摘要。
-                    只选择与当前问题最相关的记忆文件名，最多 5 条。
-
-                    返回规则：
-                    - 只返回文件名，每行一个，不能附加解释。
-                    - 如果没有明显相关项，只返回 NONE。
-                    - 优先选择稳定的跨会话信息：用户画像、明确反馈、正在进行的项目动态、外部参考指针。
-                    - 不要因为“代码位置、最近改动、项目结构”相似就选中；这些信息应优先从当前仓库实时获取。
-                    """,
-                    """
-                    用户问题:
-                    %s
-
-                    可用记忆:
-                    %s
-                    """.formatted(query.trim(), renderHeaders(headers))
+                    agentPromptService.relevantMemorySelectSystemPrompt(),
+                    agentPromptService.relevantMemorySelectUserPrompt(query.trim(), renderHeaders(headers))
             );
-            return parseSelectedFilenames(response, headers);
+            return parseSelectedKeys(response, headers);
         } catch (Exception e) {
             log.debug("relevant_memory_model_select_failed, error={}", e.getMessage());
             return List.of();
         }
     }
 
-    private List<String> selectHeuristically(String query, List<MemoryHeader> headers) {
-        // 把用户提问拆成一组去重后的关键词
+    private List<String> selectHeuristically(String query, List<SourceHeader> headers) {
         List<String> tokens = tokenize(query);
-        record ScoredHeader(MemoryHeader header, double score) {
+        record ScoredHeader(SourceHeader header, double score) {
         }
-        // todo 是否需要引入模型打分？
         List<ScoredHeader> scored = new ArrayList<>();
-        for (MemoryHeader header : headers) {
-            String haystack = (header.filename() + " " + header.name() + " " + header.description()).toLowerCase(Locale.ROOT);
-            // 先用关键词做一次粗筛
-            double score = typeHintScore(query, header.type());
+        for (SourceHeader header : headers) {
+            MemoryHeader memoryHeader = header.header();
+            String haystack = (
+                    header.source().displayName() + " "
+                            + memoryHeader.filename() + " "
+                            + memoryHeader.name() + " "
+                            + memoryHeader.description()
+            ).toLowerCase(Locale.ROOT);
+            double score = typeHintScore(query, memoryHeader.type());
             for (String token : tokens) {
                 if (token.length() >= 2 && haystack.contains(token)) {
                     score += 2.0;
                 }
             }
             if (score > 0) {
-                // 做一个时间衰减
-                score += header.mtimeMs() / 1_000_000_000_000.0;
+                score += memoryHeader.mtimeMs() / 1_000_000_000_000.0;
                 scored.add(new ScoredHeader(header, score));
             }
         }
         return scored.stream()
                 .sorted(Comparator.comparingDouble(ScoredHeader::score).reversed())
                 .limit(MAX_RELEVANT)
-                .map(item -> item.header().filename())
+                .map(item -> item.header().selectorKey())
                 .toList();
     }
 
-    private String renderHeaders(List<MemoryHeader> headers) {
+    private String renderHeaders(List<SourceHeader> headers) {
         StringJoiner joiner = new StringJoiner("\n");
-        for (MemoryHeader header : headers) {
-            joiner.add("- [%s] %s: %s".formatted(header.type().wireValue(), header.filename(), header.description()));
+        for (SourceHeader header : headers) {
+            joiner.add("- [%s] (%s) %s / %s: %s".formatted(
+                    header.selectorKey(),
+                    header.source().displayName(),
+                    header.header().type().wireValue(),
+                    header.header().filename(),
+                    header.header().description()
+            ));
         }
         return joiner.length() == 0 ? "- none" : joiner.toString();
     }
 
-    private List<String> parseSelectedFilenames(String raw, List<MemoryHeader> headers) {
+    private List<String> parseSelectedKeys(String raw, List<SourceHeader> headers) {
         if (!StringUtils.hasText(raw) || "NONE".equalsIgnoreCase(raw.trim())) {
             return List.of();
         }
-        Set<String> allowed = headers.stream().map(MemoryHeader::filename).collect(java.util.stream.Collectors.toSet());
+        Set<String> allowed = headers.stream().map(SourceHeader::selectorKey).collect(java.util.stream.Collectors.toSet());
         LinkedHashSet<String> selected = new LinkedHashSet<>();
-        Matcher matcher = FILENAME_PATTERN.matcher(raw);
-        while (matcher.find()) {
-            String filename = matcher.group();
-            if (allowed.contains(filename)) {
-                selected.add(filename);
-            }
-            if (selected.size() >= MAX_RELEVANT) {
-                break;
+        for (String line : raw.split("\\R")) {
+            String candidate = line.trim();
+            if (allowed.contains(candidate)) {
+                selected.add(candidate);
+                if (selected.size() >= MAX_RELEVANT) {
+                    break;
+                }
             }
         }
         return List.copyOf(selected);
+    }
+
+    private List<MemoryEntry> readSelectedEntries(String userId, List<SourceHeader> headers, List<String> selectedKeys) {
+        Map<String, SourceHeader> headerByKey = new LinkedHashMap<>();
+        for (SourceHeader header : headers) {
+            headerByKey.put(header.selectorKey(), header);
+        }
+
+        Map<String, Map<String, MemoryEntry>> entriesByKey = new LinkedHashMap<>();
+        Map<RelevantMemorySource, List<String>> filenamesBySource = new LinkedHashMap<>();
+        // 先按来源分桶，避免项目记忆和用户画像记忆混在一起读，也避免同名文件跨来源冲突。
+        for (String selectedKey : selectedKeys) {
+            SourceHeader header = headerByKey.get(selectedKey);
+            if (header == null) {
+                continue;
+            }
+            filenamesBySource.computeIfAbsent(header.source(), ignored -> new ArrayList<>()).add(header.header().filename());
+        }
+
+        for (Map.Entry<RelevantMemorySource, List<String>> entry : filenamesBySource.entrySet()) {
+            RelevantMemorySource source = entry.getKey();
+            List<MemoryEntry> sourceEntries = memoryService.readEntries(source.storageRoot(), userId, source.memoryRootDir(), entry.getValue());
+            Map<String, MemoryEntry> byFilename = new LinkedHashMap<>();
+            for (MemoryEntry sourceEntry : sourceEntries) {
+                byFilename.put(sourceEntry.filename(), sourceEntry);
+            }
+            entriesByKey.put(source.sourceId(), byFilename);
+        }
+
+        List<MemoryEntry> selectedEntries = new ArrayList<>();
+        // 最后再按 selectedKeys 的原始顺序回放，保证模型选中的优先级不会被批量读取过程打乱。
+        for (String selectedKey : selectedKeys) {
+            SourceHeader header = headerByKey.get(selectedKey);
+            if (header == null) {
+                continue;
+            }
+            MemoryEntry entry = entriesByKey.getOrDefault(header.source().sourceId(), Map.of()).get(header.header().filename());
+            if (entry != null) {
+                selectedEntries.add(entry);
+            }
+        }
+        return selectedEntries;
     }
 
     private String renderSelectedReminders(List<MemoryEntry> entries) {
@@ -224,5 +310,30 @@ public class RelevantMemoryService {
             }
         }
         return List.copyOf(tokens);
+    }
+
+    private String selectorKey(RelevantMemorySource source, String filename) {
+        return source.sourceId() + "__" + filename;
+    }
+
+    private String normalizeEntrypointContent(String content) {
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        String trimmed = content.trim();
+        if (trimmed.startsWith("# MEMORY")) {
+            trimmed = trimmed.substring("# MEMORY".length()).trim();
+        }
+        return trimmed;
+    }
+
+    private record SourceHeader(
+            RelevantMemorySource source,
+            String selectorKey,
+            MemoryHeader header
+    ) {
+        private long mtimeMs() {
+            return header.mtimeMs();
+        }
     }
 }

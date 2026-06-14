@@ -39,12 +39,24 @@ public class MemoryService {
         return memoryFileService.loadEntrypoint(repoRoot, userId);
     }
 
+    public MemoryEntrypoint loadEntrypoint(String storageRoot, String userId, String memoryRootDir) {
+        return memoryFileService.loadEntrypoint(storageRoot, userId, memoryRootDir);
+    }
+
     public List<MemoryHeader> scanHeaders(String repoRoot, String userId) {
         return memoryFileService.scanHeaders(repoRoot, userId);
     }
 
+    public List<MemoryHeader> scanHeaders(String storageRoot, String userId, String memoryRootDir) {
+        return memoryFileService.scanHeaders(storageRoot, userId, memoryRootDir);
+    }
+
     public List<MemoryEntry> readEntries(String repoRoot, String userId, List<String> filenames) {
         return memoryFileService.readEntries(repoRoot, userId, filenames);
+    }
+
+    public List<MemoryEntry> readEntries(String storageRoot, String userId, String memoryRootDir, List<String> filenames) {
+        return memoryFileService.readEntries(storageRoot, userId, memoryRootDir, filenames);
     }
 
     public String renderSelectorManifest(String repoRoot, String userId) {

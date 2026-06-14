@@ -166,6 +166,17 @@ public class AgentPromptService {
         ));
     }
 
+    public String relevantMemorySelectSystemPrompt() {
+        return promptTemplateService.render("relevant_memory_select_system", Map.of());
+    }
+
+    public String relevantMemorySelectUserPrompt(String query, String headersBlock) {
+        return promptTemplateService.render("relevant_memory_select_user", Map.of(
+                "query", safeText(query),
+                "headersBlock", safeText(headersBlock)
+        ));
+    }
+
     private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentToolRegistry registry) {
         StringJoiner joiner = new StringJoiner("\n");
         List<AgentToolCategory> categories = List.of(
