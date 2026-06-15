@@ -40,15 +40,16 @@ class PrimaryMultiAgentExecutionStrategy implements AgentMultiAgentExecutionStra
     }
 
     @Override
-    public MultiAgentOrchestrationOutcome orchestrateIfNeeded(
+    public MultiAgentPlanOutcome planIfNeeded(
             AgentRequestContext requestContext,
             AgentExecutionState executionState,
             AgentEventPublisher publisher
     ) {
         AgentRequest effectiveRequest = requestContext.effectiveRequest();
+        // 如果运行模式不是multi agent，直接返回skipped
         if (!requestContext.profile().allowMultiAgentOrchestration()
                 || effectiveRequest.runMode() != AgentRunMode.MULTI_AGENT) {
-            return MultiAgentOrchestrationOutcome.noop(executionState);
+            return MultiAgentPlanOutcome.skipped(executionState);
         }
         // 编排阶段始终基于 executionState 里的 repoRoot / effectiveQuestion 重新组装请求，
         // 避免 resume、repoRoot 归一化后的信息在 plan 阶段丢失。
@@ -68,29 +69,41 @@ class PrimaryMultiAgentExecutionStrategy implements AgentMultiAgentExecutionStra
                 effectiveRequest.runMode(),
                 effectiveRequest.dialogueMode()
         );
-        MultiAgentOrchestrationService.OrchestrationResult coordinationResult = multiAgentOrchestrationService.orchestrate(
+        // 规划多agent的执行计划
+        MultiAgentOrchestrationService.PlannedOrchestration plannedOrchestration = multiAgentOrchestrationService.plan(
                 orchestrationRequest,
-                Map.of("shouldStop", (BooleanSupplier) () -> conversationManager.isActiveEpoch(executionState.sessionId(), executionState.runEpoch()))
+                Map.of("shouldStop", (BooleanSupplier) () -> !conversationManager.isActiveEpoch(executionState.sessionId(), executionState.runEpoch()))
         );
         Map<String, Object> orchestrationPayload = new LinkedHashMap<>();
-        orchestrationPayload.put("planId", coordinationResult.plan().planId());
-        orchestrationPayload.put("coordinationId", coordinationResult.coordinationId());
-        orchestrationPayload.put("orchestrationMode", coordinationResult.plan().orchestrationMode().name());
-        orchestrationPayload.put("taskCount", coordinationResult.plan().tasks() == null ? 0 : coordinationResult.plan().tasks().size());
-        orchestrationPayload.put("executionMode", coordinationResult.executionMode());
-        orchestrationPayload.put("planNarrative", coordinationResult.plan().metadata().getOrDefault("planNarrative", ""));
-        orchestrationPayload.put("boundaryNotes", coordinationResult.plan().metadata().getOrDefault("boundaryNotes", List.of()));
-        orchestrationPayload.put("taskBriefs", coordinationResult.plan().metadata().getOrDefault("taskBriefs", List.of()));
-        orchestrationPayload.put("lifecycleEvents", coordinationResult.lifecycleEvents());
-        orchestrationPayload.put("taskStates", coordinationResult.executionState().taskStates());
-        orchestrationPayload.put("currentWave", coordinationResult.executionState().currentWave());
-        orchestrationPayload.put("schedulerState", coordinationResult.executionState().schedulerState());
+        orchestrationPayload.put("planId", plannedOrchestration.plan().planId());
+        orchestrationPayload.put("orchestrationMode", plannedOrchestration.plan().orchestrationMode().name());
+        orchestrationPayload.put("taskCount", plannedOrchestration.plan().tasks() == null ? 0 : plannedOrchestration.plan().tasks().size());
+        orchestrationPayload.put("executionMode", "SUB_AGENT");
+        orchestrationPayload.put("planNarrative", plannedOrchestration.plan().metadata().getOrDefault("planNarrative", ""));
+        orchestrationPayload.put("boundaryNotes", plannedOrchestration.plan().metadata().getOrDefault("boundaryNotes", List.of()));
+        orchestrationPayload.put("taskBriefs", plannedOrchestration.plan().metadata().getOrDefault("taskBriefs", List.of()));
+        orchestrationPayload.put("waves", plannedOrchestration.waves());
         publisher.emit(AgentEvent.orchestrationPlan(
                 requestContext.traceId(),
                 executionState.sessionId(),
                 0,
                 orchestrationPayload
         ));
+        return new MultiAgentPlanOutcome(executionState, plannedOrchestration);
+    }
+
+    @Override
+    public MultiAgentOrchestrationOutcome executePlanIfNeeded(
+            MultiAgentPlanOutcome planOutcome,
+            AgentRequestContext requestContext,
+            AgentEventPublisher publisher
+    ) {
+        if (planOutcome == null || !planOutcome.planned()) {
+            AgentExecutionState executionState = planOutcome == null ? null : planOutcome.executionState();
+            return MultiAgentOrchestrationOutcome.noop(executionState);
+        }
+        AgentExecutionState executionState = planOutcome.executionState();
+        MultiAgentOrchestrationService.OrchestrationResult coordinationResult = multiAgentOrchestrationService.execute(planOutcome.plannedOrchestration());
         AgentContextSession nextSession = agentContextManager.append(
                 executionState.sessionId(),
                 executionState.contextSession(),
@@ -102,6 +115,7 @@ class PrimaryMultiAgentExecutionStrategy implements AgentMultiAgentExecutionStra
                                 "planId", coordinationResult.plan().planId(),
                                 "coordinationId", coordinationResult.coordinationId(),
                                 "orchestrationMode", coordinationResult.plan().orchestrationMode().name(),
+                                "waves", coordinationResult.waves(),
                                 "executionMode", coordinationResult.executionMode(),
                                 "taskStates", coordinationResult.executionState().taskStates(),
                                 "currentWave", coordinationResult.executionState().currentWave(),

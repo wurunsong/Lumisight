@@ -62,6 +62,7 @@ public class HeuristicOrchestrationPlanner implements OrchestrationPlanner {
     }
 
     private List<SubAgentTask> buildTasks(OrchestrationContext context) {
+        // todo 这里需要模型来进行编排，不然调度器不就是个纯硬编码的模块了？
         String question = context.request().question() == null ? "" : context.request().question();
         List<SubAgentTask> tasks = new ArrayList<>();
         if (question.contains("前端") && question.contains("后端")) {

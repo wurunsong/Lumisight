@@ -11,11 +11,21 @@ import org.springframework.stereotype.Component;
 class NoopMultiAgentExecutionStrategy implements AgentMultiAgentExecutionStrategy {
 
     @Override
-    public MultiAgentOrchestrationOutcome orchestrateIfNeeded(
+    public MultiAgentPlanOutcome planIfNeeded(
             AgentRequestContext requestContext,
             AgentExecutionState executionState,
             AgentEventPublisher publisher
     ) {
+        return MultiAgentPlanOutcome.skipped(executionState);
+    }
+
+    @Override
+    public MultiAgentOrchestrationOutcome executePlanIfNeeded(
+            MultiAgentPlanOutcome planOutcome,
+            AgentRequestContext requestContext,
+            AgentEventPublisher publisher
+    ) {
+        AgentExecutionState executionState = planOutcome == null ? null : planOutcome.executionState();
         return MultiAgentOrchestrationOutcome.noop(executionState);
     }
 }

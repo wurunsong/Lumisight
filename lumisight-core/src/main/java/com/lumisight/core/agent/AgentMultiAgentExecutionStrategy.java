@@ -8,9 +8,15 @@ import com.lumisight.core.context.AgentExecutionState;
  */
 interface AgentMultiAgentExecutionStrategy {
 
-    MultiAgentOrchestrationOutcome orchestrateIfNeeded(
+    MultiAgentPlanOutcome planIfNeeded(
             AgentRequestContext requestContext,
             AgentExecutionState executionState,
+            AgentEventPublisher publisher
+    );
+
+    MultiAgentOrchestrationOutcome executePlanIfNeeded(
+            MultiAgentPlanOutcome planOutcome,
+            AgentRequestContext requestContext,
             AgentEventPublisher publisher
     );
 }

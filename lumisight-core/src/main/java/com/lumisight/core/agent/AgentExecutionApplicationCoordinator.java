@@ -57,7 +57,6 @@ class AgentExecutionApplicationCoordinator {
     private final RelevantMemoryService relevantMemoryService;
     private final ChatClient llmChatClient;
     private final AgentExecutionKernel agentExecutionKernel;
-    private final AgentLoopTaskRunner agentLoopTaskRunner;
 
     AgentExecutionApplicationCoordinator(
             AgentSessionContextStore conversationManager,
@@ -73,8 +72,7 @@ class AgentExecutionApplicationCoordinator {
             AgentFinalResponseEmitter agentFinalResponseEmitter,
             RelevantMemoryService relevantMemoryService,
             ChatClient.Builder chatClientBuilder,
-            AgentExecutionKernel agentExecutionKernel,
-            AgentLoopTaskRunner agentLoopTaskRunner
+            AgentExecutionKernel agentExecutionKernel
     ) {
         this.conversationManager = conversationManager;
         this.skillRegistry = skillRegistry;
@@ -90,26 +88,11 @@ class AgentExecutionApplicationCoordinator {
         this.relevantMemoryService = relevantMemoryService;
         this.llmChatClient = chatClientBuilder.build();
         this.agentExecutionKernel = agentExecutionKernel;
-        this.agentLoopTaskRunner = agentLoopTaskRunner;
     }
 
-    AgentExecutionResult executePrepared(
+    AgentLoopAssemblyContext prepareLoopContext(
             PreparedAgentExecution preparedExecution,
-            AgentEventPublisher publisher,
-            AgentMultiAgentExecutionStrategy multiAgentExecutionStrategy
-    ) {
-        AgentLoopPreparationResult preparationResult = prepareLoop(preparedExecution, publisher, multiAgentExecutionStrategy);
-        if (preparationResult.completed()) {
-            return preparationResult.completedResult();
-        }
-        AgentExecutionLoop.LoopExecutionResult loopResult = executeLoopTask(preparationResult.preparedLoopExecution(), publisher);
-        return completeLoop(preparationResult.preparedLoopExecution(), loopResult, publisher);
-    }
-
-    AgentLoopPreparationResult prepareLoop(
-            PreparedAgentExecution preparedExecution,
-            AgentEventPublisher publisher,
-            AgentMultiAgentExecutionStrategy multiAgentExecutionStrategy
+            AgentEventPublisher publisher
     ) {
         AgentExecutionCommand command = preparedExecution.command();
         AgentExecutionState executionState = preparedExecution.executionState();
@@ -138,17 +121,61 @@ class AgentExecutionApplicationCoordinator {
         SkillPlan skillPlan = resolveSkillPlan(effectiveRequest, executionState, command.traceId(), publisher);
         RelevantMemoryBundle relevantMemoryBundle = joinRelevantMemory(pendingRelevantMemory);
         publishSkillPlan(command.traceId(), command.sessionId(), publisher, skillPlan);
-        // 获取编排调度信息
-        MultiAgentOrchestrationOutcome orchestrationOutcome = multiAgentExecutionStrategy.orchestrateIfNeeded(
+        return new AgentLoopAssemblyContext(
+                command,
                 requestContext,
                 executionState,
+                skillPlan,
+                relevantMemoryBundle,
+                null
+        );
+    }
+
+    MultiAgentPlanOutcome planMultiAgentIfNeeded(
+            AgentLoopAssemblyContext loopContext,
+            AgentEventPublisher publisher,
+            AgentMultiAgentExecutionStrategy multiAgentExecutionStrategy
+    ) {
+        // 这里只做多 agent 规划：决定子任务、编排方式和 wave 划分，不执行任何 sub-agent loop。
+        return multiAgentExecutionStrategy.planIfNeeded(
+                loopContext.requestContext(),
+                loopContext.executionState(),
                 publisher
         );
-        executionState = orchestrationOutcome.executionState();
+    }
 
+    AgentLoopAssemblyContext executeMultiAgentPlanIfNeeded(
+            AgentLoopAssemblyContext loopContext,
+            MultiAgentPlanOutcome planOutcome,
+            AgentEventPublisher publisher,
+            AgentMultiAgentExecutionStrategy multiAgentExecutionStrategy
+    ) {
+        // 规划完成后才显式进入执行阶段：sub-agent wave 在这里被投递线程池，fan-in 后写回 lead 收敛上下文。
+        MultiAgentOrchestrationOutcome orchestrationOutcome = multiAgentExecutionStrategy.executePlanIfNeeded(
+                planOutcome,
+                loopContext.requestContext(),
+                publisher
+        );
+        MultiAgentExecutionScope.Context executionScope = orchestrationOutcome.leadConvergenceScope() == null
+                ? MultiAgentExecutionScope.current()
+                : orchestrationOutcome.leadConvergenceScope();
+        return loopContext.withLeadCoordination(orchestrationOutcome.executionState(), executionScope);
+    }
+
+    PreparedAgentLoopTask prepareExecutableAgentLoop(
+            AgentLoopAssemblyContext loopContext,
+            AgentEventPublisher publisher
+    ) {
+        AgentRequestContext requestContext = loopContext.requestContext();
+        AgentExecutionState executionState = loopContext.executionState();
+        String taskKind = requestContext.profile().kind() == AgentExecutionKind.SUB_AGENT
+                ? "subagent-loop"
+                : "primary-loop";
+        // 获取工具权限
         Set<AgentToolPermission> enabledPermissions = agentPermissionProfileResolver
                 .resolve(requestContext.effectiveRequest())
                 .enabledPermissions();
+        // 执行上一轮没执行完的工具
         ResumeHandlingResult resumeHandling = handlePendingResumeDecision(
                 requestContext.effectiveRequest(),
                 executionState,
@@ -157,7 +184,12 @@ class AgentExecutionApplicationCoordinator {
                 enabledPermissions
         );
         if (resumeHandling.completed()) {
-            return AgentLoopPreparationResult.completed(new AgentExecutionResult(executionState, AgentExecutionStatus.AWAITING_HUMAN_GATE));
+            return PreparedAgentLoopTask.completed(
+                    requestContext.sessionId(),
+                    taskKind,
+                    publisher,
+                    new AgentExecutionResult(executionState, AgentExecutionStatus.AWAITING_HUMAN_GATE)
+            );
         }
         executionState = resumeHandling.executionState();
 
@@ -170,31 +202,77 @@ class AgentExecutionApplicationCoordinator {
                     executionState.contextSession(),
                     publisher
             );
-            return AgentLoopPreparationResult.completed(new AgentExecutionResult(executionState, AgentExecutionStatus.INTERRUPTED));
+            return PreparedAgentLoopTask.completed(
+                    requestContext.sessionId(),
+                    taskKind,
+                    publisher,
+                    new AgentExecutionResult(executionState, AgentExecutionStatus.INTERRUPTED)
+            );
         }
+        // 计划模式，先把计划返回给用户评估
         if (requestContext.effectiveRequest().runMode() == AgentRunMode.PLAN
-                && emitPlanIfNeeded(requestContext.effectiveRequest(), executionState, skillPlan, requestContext.traceId(), publisher, relevantMemoryBundle)) {
-            return AgentLoopPreparationResult.completed(new AgentExecutionResult(executionState, AgentExecutionStatus.INTERRUPTED));
+                && emitPlanIfNeeded(requestContext.effectiveRequest(), executionState, loopContext.skillPlan(), requestContext.traceId(), publisher, loopContext.relevantMemoryBundle())) {
+            return PreparedAgentLoopTask.completed(
+                    requestContext.sessionId(),
+                    taskKind,
+                    publisher,
+                    new AgentExecutionResult(executionState, AgentExecutionStatus.INTERRUPTED)
+            );
         }
 
         PreparedLoopExecution preparedLoopExecution = new PreparedLoopExecution(
                 requestContext,
                 executionState,
-                skillPlan,
-                relevantMemoryBundle,
+                loopContext.skillPlan(),
+                loopContext.relevantMemoryBundle(),
                 enabledPermissions,
-                orchestrationOutcome.leadConvergenceScope() == null
-                        ? MultiAgentExecutionScope.current()
-                        : orchestrationOutcome.leadConvergenceScope()
+                loopContext.executionScope() == null ? MultiAgentExecutionScope.current() : loopContext.executionScope()
         );
-        return AgentLoopPreparationResult.ready(preparedLoopExecution);
+        // application 层在这里完成 loop task 的封装；下游只需要把 executableTask 透传给线程池。
+        return PreparedAgentLoopTask.ready(
+                requestContext.sessionId(),
+                taskKind,
+                publisher,
+                new AgentLoopTask<>(
+                        requestContext.sessionId(),
+                        taskKind,
+                        () -> new CompletedAgentLoopTask(
+                                requestContext.sessionId(),
+                                preparedLoopExecution,
+                                publisher,
+                                agentExecutionKernel.executeLoop(preparedLoopExecution, publisher)
+                        )
+                )
+        );
     }
 
-    AgentExecutionResult completeLoop(
-            PreparedLoopExecution preparedLoopExecution,
-            AgentExecutionLoop.LoopExecutionResult loopResult,
-            AgentEventPublisher publisher
+    record AgentLoopAssemblyContext(
+            AgentExecutionCommand command,
+            AgentRequestContext requestContext,
+            AgentExecutionState executionState,
+            SkillPlan skillPlan,
+            RelevantMemoryBundle relevantMemoryBundle,
+            MultiAgentExecutionScope.Context executionScope
     ) {
+        AgentLoopAssemblyContext withLeadCoordination(
+                AgentExecutionState nextExecutionState,
+                MultiAgentExecutionScope.Context nextExecutionScope
+        ) {
+            return new AgentLoopAssemblyContext(
+                    command,
+                    requestContext,
+                    nextExecutionState,
+                    skillPlan,
+                    relevantMemoryBundle,
+                    nextExecutionScope
+            );
+        }
+    }
+
+    AgentExecutionResult completeAfterLoop(CompletedAgentLoopTask completedTask) {
+        PreparedLoopExecution preparedLoopExecution = completedTask.preparedLoopExecution();
+        AgentExecutionLoop.LoopExecutionResult loopResult = completedTask.loopResult();
+        AgentEventPublisher publisher = completedTask.publisher();
         AgentRequestContext requestContext = preparedLoopExecution.requestContext();
         AgentExecutionState executionState = preparedLoopExecution.executionState();
         executionState = executionState.withContextSession(loopResult.contextSession());
@@ -218,30 +296,6 @@ class AgentExecutionApplicationCoordinator {
                 preparedLoopExecution.relevantMemoryBundle()
         );
         return new AgentExecutionResult(executionState, AgentExecutionStatus.COMPLETED);
-    }
-
-    AgentExecutionLoop.LoopExecutionResult executeLoopTask(
-            PreparedLoopExecution preparedLoopExecution,
-            AgentEventPublisher publisher
-    ) {
-        AgentRequestContext requestContext = preparedLoopExecution.requestContext();
-        String taskKind = requestContext.profile().kind() == AgentExecutionKind.SUB_AGENT
-                ? "subagent-loop"
-                : "primary-loop";
-        // 到这里 application 层已经完成记忆、skill、编排、权限和 resume 判断。
-        // 线程池里只跑真正的 agent loop，避免把策略判决伪装成 loop task。
-        return agentLoopTaskRunner.runBlocking(new AgentLoopTask<>(
-                requestContext.sessionId(),
-                taskKind,
-                () -> executeKernelLoop(preparedLoopExecution, publisher)
-        ));
-    }
-
-    AgentExecutionLoop.LoopExecutionResult executeKernelLoop(
-            PreparedLoopExecution preparedLoopExecution,
-            AgentEventPublisher publisher
-    ) {
-        return agentExecutionKernel.executeLoop(preparedLoopExecution, publisher);
     }
 
     private RelevantMemoryBundle joinRelevantMemory(CompletableFuture<RelevantMemoryBundle> pendingRelevantMemory) {

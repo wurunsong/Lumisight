@@ -6,23 +6,33 @@ package com.lumisight.core.agent;
  */
 public final class CompletedAgentLoopTask {
 
-    private final PreparedAgentLoopTask preparedTask;
+    private final String taskId;
+    private final PreparedLoopExecution preparedLoopExecution;
+    private final AgentEventPublisher publisher;
     private final AgentExecutionLoop.LoopExecutionResult loopResult;
 
     CompletedAgentLoopTask(
-            PreparedAgentLoopTask preparedTask,
+            String taskId,
+            PreparedLoopExecution preparedLoopExecution,
+            AgentEventPublisher publisher,
             AgentExecutionLoop.LoopExecutionResult loopResult
     ) {
-        this.preparedTask = preparedTask;
+        this.taskId = taskId;
+        this.preparedLoopExecution = preparedLoopExecution;
+        this.publisher = publisher;
         this.loopResult = loopResult;
     }
 
     public String taskId() {
-        return preparedTask.taskId();
+        return taskId;
     }
 
-    PreparedAgentLoopTask preparedTask() {
-        return preparedTask;
+    PreparedLoopExecution preparedLoopExecution() {
+        return preparedLoopExecution;
+    }
+
+    AgentEventPublisher publisher() {
+        return publisher;
     }
 
     AgentExecutionLoop.LoopExecutionResult loopResult() {

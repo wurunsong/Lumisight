@@ -18,15 +18,18 @@ public class AgentExecutionTaskDispatcher {
 
     private final AgentExecutionPreparationService agentExecutionPreparationService;
     private final AgentExecutionApplicationCoordinator agentExecutionApplicationCoordinator;
+    private final AgentLoopTaskRunner agentLoopTaskRunner;
     private final NoopMultiAgentExecutionStrategy noopMultiAgentExecutionStrategy;
 
     AgentExecutionTaskDispatcher(
             AgentExecutionPreparationService agentExecutionPreparationService,
             AgentExecutionApplicationCoordinator agentExecutionApplicationCoordinator,
+            AgentLoopTaskRunner agentLoopTaskRunner,
             NoopMultiAgentExecutionStrategy noopMultiAgentExecutionStrategy
     ) {
         this.agentExecutionPreparationService = agentExecutionPreparationService;
         this.agentExecutionApplicationCoordinator = agentExecutionApplicationCoordinator;
+        this.agentLoopTaskRunner = agentLoopTaskRunner;
         this.noopMultiAgentExecutionStrategy = noopMultiAgentExecutionStrategy;
     }
 
@@ -35,24 +38,37 @@ public class AgentExecutionTaskDispatcher {
             AgentEventPublisher publisher,
             AgentMultiAgentExecutionStrategy multiAgentExecutionStrategy
     ) {
+        // 1. 获取执行时需要的稳定请求状态，并在 preparation 层完成 single / multi-agent 路由。
         PreparedAgentExecution preparedExecution = agentExecutionPreparationService.prepare(command, publisher);
-        AgentLoopPreparationResult preparationResult = agentExecutionApplicationCoordinator.prepareLoop(
+        // 2. 拼接公共执行材料：上下文、记忆、skill 等。这里不执行 agent loop。
+        AgentExecutionApplicationCoordinator.AgentLoopAssemblyContext loopContext = agentExecutionApplicationCoordinator.prepareLoopContext(
                 preparedExecution,
+                publisher
+        );
+        // 3. 多 agent 才会让协调 agent 生成子任务计划和 wave 划分；单 agent 这里返回 skipped。
+        MultiAgentPlanOutcome multiAgentPlan = agentExecutionApplicationCoordinator.planMultiAgentIfNeeded(
+                loopContext,
                 publisher,
                 multiAgentExecutionStrategy
         );
-        if (preparationResult.completed()) {
-            return preparationResult.completedResult();
+        // 4. 多 agent 才会把规划好的 wave 投递给 sub-agent，并把 fan-in 结果汇总回 lead 上下文。
+        AgentExecutionApplicationCoordinator.AgentLoopAssemblyContext coordinatedContext = agentExecutionApplicationCoordinator.executeMultiAgentPlanIfNeeded(
+                loopContext,
+                multiAgentPlan,
+                publisher,
+                multiAgentExecutionStrategy
+        );
+        // 5. 单 agent 直接准备自己的 loop；多 agent 准备 lead 汇总后的收敛 loop。
+        PreparedAgentLoopTask preparedTask = agentExecutionApplicationCoordinator.prepareExecutableAgentLoop(
+                coordinatedContext,
+                publisher
+        );
+        if (preparedTask.completedBeforeLoop()) {
+            return preparedTask.completedResult();
         }
-        AgentExecutionLoop.LoopExecutionResult loopResult = agentExecutionApplicationCoordinator.executeLoopTask(
-                preparationResult.preparedLoopExecution(),
-                publisher
-        );
-        return agentExecutionApplicationCoordinator.completeLoop(
-                preparationResult.preparedLoopExecution(),
-                loopResult,
-                publisher
-        );
+        // 6. 真正的当前 agent loop 统一由线程池执行：single 是主 loop，multi 是 lead convergence loop。
+        CompletedAgentLoopTask completedTask = agentLoopTaskRunner.runBlocking(preparedTask.executableTask());
+        return agentExecutionApplicationCoordinator.completeAfterLoop(completedTask);
     }
 
     public List<AgentEvent> dispatchChild(AgentRequest request, AgentExecutionProfile profile) {
@@ -78,40 +94,34 @@ public class AgentExecutionTaskDispatcher {
                 profile
         );
         PreparedAgentExecution preparedExecution = agentExecutionPreparationService.prepare(command, publisher);
-        AgentLoopPreparationResult preparationResult = agentExecutionApplicationCoordinator.prepareLoop(
+        AgentExecutionApplicationCoordinator.AgentLoopAssemblyContext loopContext = agentExecutionApplicationCoordinator.prepareLoopContext(
                 preparedExecution,
+                publisher
+        );
+        MultiAgentPlanOutcome multiAgentPlan = agentExecutionApplicationCoordinator.planMultiAgentIfNeeded(
+                loopContext,
                 publisher,
                 noopMultiAgentExecutionStrategy
         );
-        String taskKind = profile.kind() == AgentExecutionKind.SUB_AGENT ? "subagent-loop" : "primary-loop";
-        return new PreparedAgentLoopTask(request.sessionId(), taskKind, publisher, preparationResult);
+        AgentExecutionApplicationCoordinator.AgentLoopAssemblyContext coordinatedContext = agentExecutionApplicationCoordinator.executeMultiAgentPlanIfNeeded(
+                loopContext,
+                multiAgentPlan,
+                publisher,
+                noopMultiAgentExecutionStrategy
+        );
+        return agentExecutionApplicationCoordinator.prepareExecutableAgentLoop(
+                coordinatedContext,
+                publisher
+        );
     }
 
     public AgentLoopTask<CompletedAgentLoopTask> toAgentLoopTask(PreparedAgentLoopTask preparedTask) {
-        if (preparedTask.completedBeforeLoop()) {
-            throw new IllegalStateException("prepared task already completed before loop: " + preparedTask.taskId());
-        }
-        return new AgentLoopTask<>(
-                preparedTask.taskId(),
-                preparedTask.taskKind(),
-                () -> new CompletedAgentLoopTask(
-                        preparedTask,
-                        agentExecutionApplicationCoordinator.executeKernelLoop(
-                                preparedTask.preparationResult().preparedLoopExecution(),
-                                preparedTask.publisher()
-                        )
-                )
-        );
+        return preparedTask.executableTask();
     }
 
     public List<AgentEvent> completePreparedLoopTask(CompletedAgentLoopTask completedTask) {
-        PreparedAgentLoopTask preparedTask = completedTask.preparedTask();
-        agentExecutionApplicationCoordinator.completeLoop(
-                preparedTask.preparationResult().preparedLoopExecution(),
-                completedTask.loopResult(),
-                preparedTask.publisher()
-        );
-        return List.copyOf(preparedTask.publisher().history());
+        agentExecutionApplicationCoordinator.completeAfterLoop(completedTask);
+        return List.copyOf(completedTask.publisher().history());
     }
 
     public List<AgentEvent> completedEvents(PreparedAgentLoopTask preparedTask) {

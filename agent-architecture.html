@@ -211,6 +211,59 @@
       gap: 18px;
       align-items: start;
     }
+    .phase-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .phase-card {
+      position: relative;
+      min-height: 138px;
+      padding: 18px 16px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245,249,255,0.94));
+      box-shadow: 0 12px 28px rgba(20, 44, 72, 0.05);
+    }
+    .phase-card::after {
+      content: "";
+      position: absolute;
+      top: 44px;
+      right: -13px;
+      width: 14px;
+      height: 2px;
+      background: rgba(45, 116, 255, 0.32);
+    }
+    .phase-card:last-child::after {
+      display: none;
+    }
+    .phase-card strong {
+      display: block;
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+    .phase-card span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    .phase-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      margin-bottom: 14px;
+      border-radius: 50%;
+      color: #0f2745;
+      background: var(--gold);
+      border: 1px solid rgba(20, 51, 89, 0.1);
+      font-size: 12px;
+      font-weight: 800;
+    }
     .diagram {
       border-radius: 26px;
       padding: 20px;
@@ -363,11 +416,15 @@
       .signal-grid,
       .presence-strip,
       .highlights,
+      .phase-flow,
       .swimlane-track {
         grid-template-columns: 1fr;
       }
       .timeline::before,
       .swimlane-track::before {
+        display: none;
+      }
+      .phase-card::after {
         display: none;
       }
       .dual,
@@ -384,7 +441,7 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 多 Agent 主流程</h1>
-      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。现在这条链路收成了同一个执行模型：入口只接请求，应用层先完成策略判决、记忆、skill、权限和编排，只有真正进入 agent loop 时，才封装成任务信息加 loop handler 交给同一个线程池执行器。</p>
+      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。现在这条链路收成了同一个执行模型：入口只接请求，准备层先判断单 / 多 Agent，应用层再把公共材料、计划、调度会话、wave 执行和 Lead 收敛拆成显式阶段；只有真正进入 agent loop 时，才封装成任务信息加 loop handler 交给同一个线程池执行器。</p>
       <div class="hero-badges">
         <span class="badge">Unified Loop Task</span>
         <span class="badge">Single Agent by Default</span>
@@ -414,18 +471,18 @@
         </article>
         <article class="flow-card mint">
           <span class="index">03</span>
-          <h3>统一任务分发</h3>
-          <p>无论 primary 还是 sub-agent，都会先走同一个分发器完成准备；此时只确定执行画像和策略边界，不把判断逻辑塞进线程池。</p>
+          <h3>组装公共材料</h3>
+          <p>分发器先拼好上下文、记忆、skill 和基础请求状态；这一步只准备执行材料，不执行 sub-agent，也不把判断逻辑塞进线程池。</p>
         </article>
         <article class="flow-card gold">
           <span class="index">04</span>
-          <h3>应用层完成编排</h3>
-          <p>应用协调层解析 skill、预取记忆、处理权限和恢复点；如果是多 Agent，Lead 在这里拆任务，选择 serial / parallel / hybrid 编排方式，再由调度器生成执行批次并收集子任务结果。</p>
+          <h3>多 Agent 先规划</h3>
+          <p>单 Agent 会跳过这一步；多 Agent 由 Lead 生成子任务计划，选择 serial / parallel / hybrid，并提前得到 wave 划分。</p>
         </article>
         <article class="flow-card rose">
           <span class="index">05</span>
           <h3>线程池执行 loop</h3>
-          <p>准备和编排完成后，真正的 agent loop 才作为 task 进入线程池。单 Agent 是一个 loop task；多 Agent 是每个 wave 的多个 loop task。</p>
+          <p>单 Agent 直接把自己的 loop task 投进线程池；多 Agent 由调度器拿到下一波 wavePlan，再交给 executor 把 sub-agent loop task 投进线程池。</p>
         </article>
         <article class="flow-card sky">
           <span class="index">06</span>
@@ -455,7 +512,35 @@
           <span class="eyebrow">Multi-Agent Branch</span>
           <h2>多 Agent 信息流</h2>
         </div>
-        <p>只有在准备层确定需要升级时，请求才会进入这条支线。这里强调的是 Lead 如何把复杂任务切成 wave，以及每个 worker 如何在编排完成后通过同一个 loop task 模型进入 agent loop。</p>
+        <p>只有在准备层确定需要升级时，请求才会进入这条支线。这里强调的是 Lead 先生成 plan 和 wave 摘要，调度器再打开调度会话、选择 runnable wave、落状态，executor 只负责把已规划好的 loop task 投进线程池。</p>
+      </div>
+
+      <div class="phase-flow">
+        <article class="phase-card">
+          <div class="phase-label">01</div>
+          <strong>Lead 生成计划</strong>
+          <span>先决定子任务、依赖和 serial / parallel / hybrid，不执行 worker。</span>
+        </article>
+        <article class="phase-card">
+          <div class="phase-label">02</div>
+          <strong>Scheduler 打开会话</strong>
+          <span>恢复 task state、completed、permissions 和 lifecycle，形成可推进的调度上下文。</span>
+        </article>
+        <article class="phase-card">
+          <div class="phase-label">03</div>
+          <strong>Scheduler 产出 wavePlan</strong>
+          <span>选择 runnable 子任务，计算并发度，把下一波任务整理成可执行批次。</span>
+        </article>
+        <article class="phase-card">
+          <div class="phase-label">04</div>
+          <strong>Executor 执行 wave</strong>
+          <span>只拿 wavePlan，把 sub-agent loop task 交给统一线程池并收回局部结果。</span>
+        </article>
+        <article class="phase-card">
+          <div class="phase-label">05</div>
+          <strong>Fan-in 给 Lead</strong>
+          <span>调度器更新状态并持久化，最后把结果交回 Lead convergence loop。</span>
+        </article>
       </div>
 
       <div class="dual">
@@ -477,13 +562,13 @@
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
-                <strong>按 wave 派发</strong>
-                <span>把子任务整理成当前 wave 的 loop task，交给线程池。</span>
+                <strong>规划 wave 划分</strong>
+                <span>先输出计划摘要，真正 runnable 由调度器推进。</span>
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
-                <strong>汇总结果与状态</strong>
-                <span>收 summary、task state、lifecycle。</span>
+                <strong>调度并汇总</strong>
+                <span>scheduler 产出 wavePlan，executor 执行后回填 task state。</span>
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
@@ -528,7 +613,11 @@
         <div class="side-panel">
           <article class="note-card">
             <h3>恢复点</h3>
-            <p>Lead 不会等全部结束才记状态，而是每完成一波就保存当前进度。所以如果中途 interrupt，系统会在 wave 边界停住；下一次 `resume` 继续剩余任务，而不是从头再跑整套流程。</p>
+            <p>调度器不会等全部结束才记状态，而是每完成一波就保存当前进度。所以如果中途 interrupt，系统会在 wave 边界停住；下一次 `resume` 继续剩余任务，而不是从头再跑整套流程。</p>
+          </article>
+          <article class="note-card">
+            <h3>调度器边界</h3>
+            <p>选择下一波、过滤 runnable、推进 task state、保存 lifecycle 都在 scheduler；executor 只执行已经确定的 wavePlan，不再参与编排判断。</p>
           </article>
           <article class="note-card">
             <h3>升级边界</h3>
@@ -556,7 +645,7 @@
         </article>
         <article class="signal">
           <h3>为什么能恢复</h3>
-          <p>因为执行状态不是临时留在内存里，而是随着 wave 推进被持续保存下来。</p>
+          <p>因为调度会话会随着 wave 推进持续保存 task state、completed 和 lifecycle。</p>
         </article>
       </div>
     </section>
@@ -583,7 +672,7 @@
           <h3>入口、应用层、内核已经拆开</h3>
           <ul>
             <li>入口层只负责把请求接成事件流，不再承担整条执行主干。</li>
-            <li>应用层负责 single / multi 判决、skill、权限、resume、plan 和最终答复。</li>
+            <li>准备层负责 single / multi 判决；应用层负责公共材料、multi plan、sub-agent 调度、权限、resume 和最终答复。</li>
             <li>执行内核只打开运行作用域并驱动统一 loop，避免策略逻辑继续回流到 kernel。</li>
           </ul>
         </article>
@@ -599,18 +688,18 @@
         <article class="highlight">
           <h3>Lead 负责拆分与收口</h3>
           <ul>
-            <li>Lead 负责生成 plan、管理依赖、派发任务和汇总结果。</li>
+            <li>Lead 先生成 plan 和 wave 摘要，再显式进入 sub-agent 调度阶段。</li>
             <li>当前会按 `SERIAL`、`PARALLEL`、`HYBRID` 选择不同的 agent 编排方式。</li>
             <li>worker 只是局部执行者，不持有最终回答权。</li>
             <li>主会话始终保持唯一的结果收敛点。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>Worker 支持批次并发</h3>
+          <h3>调度器与执行器分离</h3>
           <ul>
-            <li>同一波任务会先完成准备，再把各自的 kernel loop 变成一组 `AgentLoopTask` 提交线程池。</li>
-            <li>并发后仍由 Lead 统一收集 task state 和结论。</li>
-            <li>这让多模块扫描和分工分析真正产生收益。</li>
+            <li>Scheduler 负责恢复状态、选择 runnable、生成 wavePlan 和持久化进度。</li>
+            <li>Executor 只负责把当前 wave 的 kernel loop 变成一组 `AgentLoopTask` 提交线程池。</li>
+            <li>这让“怎么调度”和“怎么执行”不再挤在同一个方法里。</li>
           </ul>
         </article>
         <article class="highlight">
