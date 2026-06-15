@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 public class JavaGoToDefinitionTool implements PermissionedAgentTool<JavaGoToDefinitionTool.Args> {
 
     public record Args(
-            @ToolArg(description = "要跳转的符号名", required = true, example = "CodeAssistantAgentService") String symbol,
+            @ToolArg(description = "要跳转的符号名", required = true, example = "AgentExecutionEntryService") String symbol,
             @ToolArg(description = "最多返回定义条数", example = "10") Integer limit
     ) {
     }

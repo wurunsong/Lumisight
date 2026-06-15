@@ -41,9 +41,9 @@ import java.util.Map;
 import java.util.Set;
 
 @Component
-class AgentLoopOrchestrator {
+class AgentExecutionLoop {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentLoopOrchestrator.class);
+    private static final Logger log = LoggerFactory.getLogger(AgentExecutionLoop.class);
     private static final int MAX_TOOL_ROUNDS = 6;
     private static final String AUTO_SELF_HEAL_SOURCE_ID = "auto_self_heal";
 
@@ -60,7 +60,7 @@ class AgentLoopOrchestrator {
     private final AgentContextManager agentContextManager;
     private final AgentSelfHealProperties selfHealProperties;
 
-    AgentLoopOrchestrator(
+    AgentExecutionLoop(
             ChatClient.Builder chatClientBuilder,
             AgentToolRegistry agentToolRegistry,
             AgentPromptService agentPromptService,
@@ -88,7 +88,7 @@ class AgentLoopOrchestrator {
         this.selfHealProperties = selfHealProperties;
     }
 
-    OrchestrationResult run(
+    LoopExecutionResult run(
             AgentRequest request,
             String effectiveQuestion,
             SkillPlan skillPlan,
@@ -112,10 +112,10 @@ class AgentLoopOrchestrator {
             lastRound = round;
             if (executionContext != null && executionContext.isDeadlineExceeded()) {
                 publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "timeout", "达到本次子任务的安全时间上限"));
-                return new OrchestrationResult("已达到当前子任务的安全时间上限，请基于已收集证据收敛结论。", false, false, Math.max(0, round - 1), contextSession);
+                return new LoopExecutionResult("已达到当前子任务的安全时间上限，请基于已收集证据收敛结论。", false, false, Math.max(0, round - 1), contextSession);
             }
             // todo 中断的逻辑分散在各个地方，如何统一处理？
-            OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
+            LoopExecutionResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
             if (interruptedResult != null) {
                 return interruptedResult;
             }
@@ -226,7 +226,7 @@ class AgentLoopOrchestrator {
                 break;
             }
         }
-        return new OrchestrationResult(null, false, false, Math.max(0, lastRound), contextSession);
+        return new LoopExecutionResult(null, false, false, Math.max(0, lastRound), contextSession);
     }
 
     AgentToolExecutionResult executePendingDecision(
@@ -295,7 +295,7 @@ class AgentLoopOrchestrator {
                         gatedDecision.toolName(),
                         "即将执行写操作工具 `" + gatedDecision.toolName() + "`，请确认后继续（approveRiskyToolCall=true）。"
                 ));
-                return new ToolBatchOutcome(contextSession, false, new OrchestrationResult(null, true, false, round, contextSession));
+                return new ToolBatchOutcome(contextSession, false, new LoopExecutionResult(null, true, false, round, contextSession));
             }
 
             publisher.emit(AgentEvent.state(
@@ -327,7 +327,7 @@ class AgentLoopOrchestrator {
                     round,
                     effectiveQuestion
             );
-            OrchestrationResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
+            LoopExecutionResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
             if (interruptedResult != null) {
                 return new ToolBatchOutcome(contextSession, false, interruptedResult);
             }
@@ -398,7 +398,7 @@ class AgentLoopOrchestrator {
             publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.ASK_USER.name(), "waiting_user", "等待用户补充信息"));
             publisher.emit(AgentEvent.askUser(traceId, sessionId, round, question));
             fireHook(AgentHookPoint.ON_ASK_USER, sessionId, round, effectiveQuestion, null, Map.of("askUserQuestion", question));
-            return new FinalDecisionOutcome(new OrchestrationResult(null, true, false, round, contextSession), null);
+            return new FinalDecisionOutcome(new LoopExecutionResult(null, true, false, round, contextSession), null);
         }
         // 如果不是最终决策，直接返回。
         if (!"final".equalsIgnoreCase(decision.action()) || !StringUtils.hasText(decision.finalAnswer())) {
@@ -426,7 +426,7 @@ class AgentLoopOrchestrator {
         }
         if (verifyResult.pass()) {
             publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.FINAL.name(), "ok", "决策直接给出最终答案"));
-            return new FinalDecisionOutcome(new OrchestrationResult(decision.finalAnswer(), false, false, round, contextSession), null);
+            return new FinalDecisionOutcome(new LoopExecutionResult(decision.finalAnswer(), false, false, round, contextSession), null);
         }
         return new FinalDecisionOutcome(null, verifyResult.reason());
     }
@@ -536,7 +536,7 @@ class AgentLoopOrchestrator {
         return new AutoSelfHealOutcome(contextSession, true);
     }
 
-    private OrchestrationResult checkInterrupted(
+    private LoopExecutionResult checkInterrupted(
             String traceId,
             String sessionId,
             int round,
@@ -549,7 +549,7 @@ class AgentLoopOrchestrator {
             return null;
         }
         appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contextSession, publisher);
-        return new OrchestrationResult(null, false, true, round, contextSession);
+        return new LoopExecutionResult(null, false, true, round, contextSession);
     }
 
     private void appendInterruptedEvents(
@@ -887,15 +887,15 @@ class AgentLoopOrchestrator {
         );
     }
 
-    record OrchestrationResult(String directAnswer, boolean askUser, boolean interrupted, int finalRound, AgentContextSession contextSession) {
+    record LoopExecutionResult(String directAnswer, boolean askUser, boolean interrupted, int finalRound, AgentContextSession contextSession) {
     }
 
-    private record ToolBatchOutcome(AgentContextSession contextSession, boolean producedContext, OrchestrationResult terminalResult) {
+    private record ToolBatchOutcome(AgentContextSession contextSession, boolean producedContext, LoopExecutionResult terminalResult) {
     }
 
     private record AutoSelfHealOutcome(AgentContextSession contextSession, boolean producedContext) {
     }
 
-    private record FinalDecisionOutcome(OrchestrationResult terminalResult, String verifyFailureReason) {
+    private record FinalDecisionOutcome(LoopExecutionResult terminalResult, String verifyFailureReason) {
     }
 }

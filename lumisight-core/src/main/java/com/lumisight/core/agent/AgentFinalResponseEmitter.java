@@ -48,7 +48,7 @@ class AgentFinalResponseEmitter {
             int limit,
             SkillPlan skillPlan,
             AgentContextSession contextSession,
-            AgentLoopOrchestrator.OrchestrationResult orchestrationResult,
+            AgentExecutionLoop.LoopExecutionResult orchestrationResult,
             String traceId,
             AgentEventPublisher publisher,
             RelevantMemoryBundle memoryContext,

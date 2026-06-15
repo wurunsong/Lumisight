@@ -384,12 +384,12 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 多 Agent 主流程</h1>
-      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。也就是说，先让人一眼看懂“请求怎么进来、什么时候升级、任务怎么分发、结果怎么回收”，再补计划执行、环境操作、离线反思和 RAG 评测这些工程闭环，不把两件事混成同一张说明书。</p>
+      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。现在这条链路收成了同一个执行模型：入口只接请求，应用层先完成策略判决、记忆、skill、权限和编排，只有真正进入 agent loop 时，才封装成任务信息加 loop handler 交给同一个线程池执行器。</p>
       <div class="hero-badges">
+        <span class="badge">Unified Loop Task</span>
         <span class="badge">Single Agent by Default</span>
-        <span class="badge">Lead Orchestration</span>
-        <span class="badge">Worker Parallel Waves</span>
-        <span class="badge">Resume from Saved State</span>
+        <span class="badge">Serial / Parallel / Hybrid</span>
+        <span class="badge">Pure Loop Runtime</span>
       </div>
     </section>
 
@@ -399,38 +399,38 @@
           <span class="eyebrow">Main Flow</span>
           <h2>端到端主流程</h2>
         </div>
-        <p>这是用户视角下的总流程图。重点不是工具名，而是一个请求从进入系统，到决定是否升级成多 Agent，再到收敛为同一个最终回答，中间的信息如何流动。</p>
+        <p>这是用户视角下的总流程图。重点不是类名，而是一个请求从进入系统，到决定是否升级成多 Agent，再到收敛为同一个最终回答，中间的信息如何流动，以及每一层各自只承担哪一段职责。</p>
       </div>
       <div class="timeline">
         <article class="flow-card sky">
           <span class="index">01</span>
-          <h3>请求进入</h3>
-          <p>用户问题、会话上下文和控制动作一起进入统一入口，先归到同一个 session 视角里，并准备接上历史上下文。</p>
+          <h3>入口接住请求</h3>
+          <p>用户问题、会话上下文和控制动作先进入统一入口，变成同一个 session 视角下的事件流，而不是直接散进后面的执行细节。</p>
         </article>
         <article class="flow-card">
           <span class="index">02</span>
-          <h3>会话调度</h3>
-          <p>系统先决定这是继续当前执行、打断改道，还是恢复上次停住的会话，同时恢复该 session 的上下文状态。</p>
+          <h3>准备层确定路径</h3>
+          <p>系统恢复会话态、归一化问题，并在进入执行前确定这次是单 Agent 直跑，还是需要进入多 Agent 编排。</p>
         </article>
         <article class="flow-card mint">
           <span class="index">03</span>
-          <h3>模式判断</h3>
-          <p>简单任务留在单 Agent；只有明显需要拆分、并行或分角色处理时，才升级到多 Agent。</p>
+          <h3>统一任务分发</h3>
+          <p>无论 primary 还是 sub-agent，都会先走同一个分发器完成准备；此时只确定执行画像和策略边界，不把判断逻辑塞进线程池。</p>
         </article>
         <article class="flow-card gold">
           <span class="index">04</span>
-          <h3>Lead 制定计划</h3>
-          <p>Lead 把请求拆成任务、依赖和执行顺序，也会吸收记忆、上下文、外挂检索与计划系统当前状态带回来的补充证据。</p>
+          <h3>应用层完成编排</h3>
+          <p>应用协调层解析 skill、预取记忆、处理权限和恢复点；如果是多 Agent，Lead 在这里拆任务，选择 serial / parallel / hybrid 编排方式，再由调度器生成执行批次并收集子任务结果。</p>
         </article>
         <article class="flow-card rose">
           <span class="index">05</span>
-          <h3>执行与回流</h3>
-          <p>任务被执行后，结果、状态和证据重新汇回 Lead，并写回上下文账本，而不是散落成多个独立对话。</p>
+          <h3>线程池执行 loop</h3>
+          <p>准备和编排完成后，真正的 agent loop 才作为 task 进入线程池。单 Agent 是一个 loop task；多 Agent 是每个 wave 的多个 loop task。</p>
         </article>
         <article class="flow-card sky">
           <span class="index">06</span>
-          <h3>统一最终回答</h3>
-          <p>所有中间结果都收敛回主会话，再由主 Agent / Lead 产出事件流和最终答案；必要时把长期事实沉淀回记忆层，并在后台形成可复用的反思结果。</p>
+          <h3>主会话统一收敛</h3>
+          <p>所有中间结果最终都回到主会话，再由主 Agent / Lead 输出事件流和最终答案；子 Agent 不绕回入口层，也不单独持有最终回答权。</p>
         </article>
       </div>
       <div class="presence-strip">
@@ -455,7 +455,7 @@
           <span class="eyebrow">Multi-Agent Branch</span>
           <h2>多 Agent 信息流</h2>
         </div>
-        <p>只有在第 3 步确定需要升级时，请求才会进入这条支线。这里强调的是 Lead 和 worker 之间的信息交换关系，以及中断后从哪里继续。</p>
+        <p>只有在准备层确定需要升级时，请求才会进入这条支线。这里强调的是 Lead 如何把复杂任务切成 wave，以及每个 worker 如何在编排完成后通过同一个 loop task 模型进入 agent loop。</p>
       </div>
 
       <div class="dual">
@@ -478,7 +478,7 @@
               <article class="lane-step">
                 <div class="dot"></div>
                 <strong>按 wave 派发</strong>
-                <span>把 task 写给对应 worker。</span>
+                <span>把子任务整理成当前 wave 的 loop task，交给线程池。</span>
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
@@ -499,12 +499,12 @@
               <article class="lane-step worker">
                 <div class="dot"></div>
                 <strong>等待 assignment</strong>
-                <span>从 team inbox 读取自己的任务。</span>
+                <span>从当前 wave 的 AgentLoopTask 集合里拿到自己的任务。</span>
               </article>
               <article class="lane-step worker">
                 <div class="dot"></div>
-                <strong>必要时先申请权限</strong>
-                <span>不是所有动作都能直接执行。</span>
+                <strong>继承只读边界</strong>
+                <span>worker 通过同一个 loop 通道执行，但不会拿到写权限。</span>
               </article>
               <article class="lane-step worker">
                 <div class="dot"></div>
@@ -514,7 +514,7 @@
               <article class="lane-step worker">
                 <div class="dot"></div>
                 <strong>回传结果</strong>
-                <span>把结论、状态和 idle 通知交回 Lead。</span>
+                <span>把结论、状态和生命周期结果直接返回给 Lead。</span>
               </article>
               <article class="lane-step worker">
                 <div class="dot"></div>
@@ -532,15 +532,15 @@
           </article>
           <article class="note-card">
             <h3>升级边界</h3>
-            <p>多 Agent 不是默认行为。只有当请求天然带有“分别分析”“并行看多个模块”“前后端协同”“修复和验证分工”等信号时，系统才认为拆分比单 Agent 更值得。</p>
+            <p>多 Agent 不是默认行为。只有当请求天然带有“分别分析”“并行看多个模块”“前后端协同”“修复和验证分工”等信号时，系统才认为拆分比单 Agent 更值得；sub-agent 自己不会再次向下升级。</p>
           </article>
           <article class="note-card">
             <h3>最终收口</h3>
-            <p>无论拆成多少 worker，最后负责写入、验证、事件输出和回答用户的仍然是主 Agent / Lead。worker 提供的是局部结果，不是最终对话主体。</p>
+            <p>无论拆成多少 worker，最后负责写入、验证、事件输出和回答用户的仍然是主 Agent / Lead。worker 提供的是局部结果，不会绕回外部入口，也不会绕开主会话单独收口。</p>
           </article>
           <article class="note-card">
-            <h3>执行基底</h3>
-            <p>多 Agent 之下并不是“任意 shell”，而是计划系统、受控环境工具、服务日志检查和离线反思一起构成可持续推进的执行底座，Lead 只是把这些能力调度起来。</p>
+            <h3>权限边界</h3>
+            <p>single agent 可以带写能力继续推进，但仍要经过 human gate；fan-out 期间的 sub-agent 一律只读；只有 lead 在 fan-in 完成后的收敛阶段，才重新获得有限写权限。</p>
           </article>
         </div>
       </div>
@@ -580,28 +580,45 @@
           </ul>
         </article>
         <article class="highlight">
+          <h3>入口、应用层、内核已经拆开</h3>
+          <ul>
+            <li>入口层只负责把请求接成事件流，不再承担整条执行主干。</li>
+            <li>应用层负责 single / multi 判决、skill、权限、resume、plan 和最终答复。</li>
+            <li>执行内核只打开运行作用域并驱动统一 loop，避免策略逻辑继续回流到 kernel。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>统一任务分发器消除递归入口</h3>
+          <ul>
+            <li>`AgentExecutionTaskDispatcher` 只统一准备 primary / sub-agent，不再把整条应用层流程塞进线程池。</li>
+            <li>只有 `AgentExecutionKernel.executeLoop(...)` 会被封装成 `AgentLoopTask`。</li>
+            <li>sub-agent 不再调用外部入口服务，也不会形成 `executePrimary -> executeChild` 的绕路。</li>
+            <li>中间调度可以复杂，但最终线程池执行通道保持同构。</li>
+          </ul>
+        </article>
+        <article class="highlight">
           <h3>Lead 负责拆分与收口</h3>
           <ul>
             <li>Lead 负责生成 plan、管理依赖、派发任务和汇总结果。</li>
-            <li>当前会按 `SERIAL_DAG`、`FAN_OUT_FAN_IN`、`HYBRID` 选择不同的编排形态。</li>
+            <li>当前会按 `SERIAL`、`PARALLEL`、`HYBRID` 选择不同的 agent 编排方式。</li>
             <li>worker 只是局部执行者，不持有最终回答权。</li>
             <li>主会话始终保持唯一的结果收敛点。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>Worker 支持并发 wave</h3>
+          <h3>Worker 支持批次并发</h3>
           <ul>
-            <li>同一波任务可以并发执行，而不是逐个串行处理。</li>
+            <li>同一波任务会先完成准备，再把各自的 kernel loop 变成一组 `AgentLoopTask` 提交线程池。</li>
             <li>并发后仍由 Lead 统一收集 task state 和结论。</li>
             <li>这让多模块扫描和分工分析真正产生收益。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>权限不是默认放开</h3>
+          <h3>权限不再散落在流程里</h3>
           <ul>
-            <li>worker 碰到需要额外能力的动作时，会先向 Lead 申请。</li>
-            <li>批准后再继续，不批准则返回被阻断的结果。</li>
-            <li>多 Agent 协作仍然服从同一套可控边界。</li>
+            <li>权限判断已经独立成统一策略，而不是继续塞在主执行流程中间。</li>
+            <li>single agent、lead 收敛阶段、sub-agent 各自有明确边界。</li>
+            <li>这样看流程时能先看信息怎么流，再看不同角色各自能做什么。</li>
           </ul>
         </article>
         <article class="highlight">

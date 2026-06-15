@@ -5,13 +5,13 @@ import java.util.Map;
 
 public record MultiAgentExecutionState(
         String orchestrationId,
+        String coordinationId,
         String mode,
-        TopologyType topology,
+        AgentOrchestrationMode orchestrationMode,
         OrchestrationPlan plan,
         Map<String, TaskExecutionStatus> taskStates,
         List<SubAgentResult> childSummaries,
-        Map<String, Long> inboxOffsets,
-        int currentRound,
-        Map<String, Object> fallbackState
+        int currentWave,
+        Map<String, Object> schedulerState
 ) {
 }

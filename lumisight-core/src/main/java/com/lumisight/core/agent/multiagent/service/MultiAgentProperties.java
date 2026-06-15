@@ -11,14 +11,14 @@ public class MultiAgentProperties {
     private boolean autoUpgradeEnabled = true;
     private double autoUpgradeThreshold = 0.9d;
     private boolean allowSubagent = true;
-    private boolean allowTeamAgent = true;
     private int maxSubagentDepth = 1;
     private int maxTasksPerPlan = 8;
     private int maxParallelAgents = 3;
     private int subagentMaxRounds = 6;
     private int childContextLimit = 6;
     private int childTimeoutMs = 120000;
-    private String teamRootDir = ".lumisight/teams";
+    // 例如: <repoRoot>/.lumisight/multi-agent/team-session-123/execution-state.json
+    private String coordinationRootDir = ".lumisight/multi-agent";
 
     public boolean isEnabled() {
         return enabled;
@@ -50,14 +50,6 @@ public class MultiAgentProperties {
 
     public void setAllowSubagent(boolean allowSubagent) {
         this.allowSubagent = allowSubagent;
-    }
-
-    public boolean isAllowTeamAgent() {
-        return allowTeamAgent;
-    }
-
-    public void setAllowTeamAgent(boolean allowTeamAgent) {
-        this.allowTeamAgent = allowTeamAgent;
     }
 
     public int getMaxSubagentDepth() {
@@ -108,11 +100,11 @@ public class MultiAgentProperties {
         this.childTimeoutMs = childTimeoutMs;
     }
 
-    public String getTeamRootDir() {
-        return teamRootDir;
+    public String getCoordinationRootDir() {
+        return coordinationRootDir;
     }
 
-    public void setTeamRootDir(String teamRootDir) {
-        this.teamRootDir = teamRootDir;
+    public void setCoordinationRootDir(String coordinationRootDir) {
+        this.coordinationRootDir = coordinationRootDir;
     }
 }

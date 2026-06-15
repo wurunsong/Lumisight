@@ -26,7 +26,7 @@ import java.util.stream.Stream;
 public class LocalCompileJavaTool implements PermissionedAgentTool<LocalCompileJavaTool.Args> {
 
     public record Args(
-            @ToolArg(description = "单文件相对路径", example = "lumisight-core/src/main/java/com/lumisight/core/agent/CodeAssistantAgentService.java") String sourceFile,
+            @ToolArg(description = "单文件相对路径", example = "lumisight-core/src/main/java/com/lumisight/core/agent/AgentExecutionEntryService.java") String sourceFile,
             @ToolArg(description = "批量匹配模式", example = "agent") String filePattern,
             @ToolArg(description = "最多编译文件数", example = "50") Integer maxFiles
     ) {

@@ -260,7 +260,7 @@ public record AgentEvent(
         );
     }
 
-    public static AgentEvent teamAgentLifecycle(
+    public static AgentEvent subAgentLifecycle(
             String traceId,
             String sessionId,
             Integer round,
@@ -269,8 +269,8 @@ public record AgentEvent(
             Map<String, Object> payload
     ) {
         return base(
-                "TEAM_AGENT_LIFECYCLE",
-                "Team Agent 生命周期事件",
+                "SUB_AGENT_LIFECYCLE",
+                "子 Agent 生命周期事件",
                 null,
                 payload == null ? mergeLifecyclePayload(Map.of(), agentId, action) : mergeLifecyclePayload(payload, agentId, action),
                 traceId,

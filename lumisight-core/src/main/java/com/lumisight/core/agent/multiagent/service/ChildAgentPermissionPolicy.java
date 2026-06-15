@@ -1,7 +1,6 @@
 package com.lumisight.core.agent.multiagent.service;
 
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
-import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
 import com.lumisight.core.tool.AgentToolPermission;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +10,7 @@ import java.util.Set;
 @Component
 public class ChildAgentPermissionPolicy {
 
-    public Set<AgentToolPermission> permissionsFor(MultiAgentExecutionScope.Role role, SubAgentCapability capability) {
+    public Set<AgentToolPermission> permissionsFor(SubAgentCapability capability) {
         EnumSet<AgentToolPermission> permissions = EnumSet.of(
                 AgentToolPermission.LOCAL_FS_READ,
                 AgentToolPermission.GIT_READ,

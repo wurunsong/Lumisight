@@ -1,5 +1,7 @@
 package com.lumisight.core.agent.multiagent.service;
 
+import com.lumisight.core.agent.AgentLoopTask;
+import com.lumisight.core.agent.CompletedAgentLoopTask;
 import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
@@ -16,7 +18,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * todo 这个subAgent类被subAgent模式和teamAgent模式混用。。。
+ * 子任务执行适配器。
+ * 只负责把编排任务转成统一的 TaskContextEnvelope，再交给 SubAgentExecutionService 执行。
  */
 @Component
 @Order(0)
@@ -43,8 +46,28 @@ public class ExecutingSubAgent implements SubAgent {
         return subAgentExecutionService.execute(buildEnvelope(task), context.request().sessionId());
     }
 
-    public SubAgentResult executeAsTeamAgent(SubAgentTask task, OrchestrationContext context, String teamId, String agentId) {
-        return subAgentExecutionService.executeAsTeamAgent(buildEnvelope(task), context.request().sessionId(), teamId, agentId);
+    public SubAgentResult executeAssigned(SubAgentTask task, OrchestrationContext context, String coordinationId, String workerId) {
+        return subAgentExecutionService.executeAssigned(buildEnvelope(task), context.request().sessionId(), coordinationId, workerId);
+    }
+
+    public SubAgentExecutionService.PreparedSubAgentExecution prepareAssigned(
+            SubAgentTask task,
+            OrchestrationContext context,
+            String coordinationId,
+            String workerId
+    ) {
+        return subAgentExecutionService.prepareAssigned(buildEnvelope(task), context.request().sessionId(), coordinationId, workerId);
+    }
+
+    public AgentLoopTask<CompletedAgentLoopTask> toAgentLoopTask(SubAgentExecutionService.PreparedSubAgentExecution preparedExecution) {
+        return subAgentExecutionService.toAgentLoopTask(preparedExecution);
+    }
+
+    public SubAgentResult completePrepared(
+            SubAgentExecutionService.PreparedSubAgentExecution preparedExecution,
+            CompletedAgentLoopTask completedLoop
+    ) {
+        return subAgentExecutionService.completePrepared(preparedExecution, completedLoop);
     }
 
     private TaskContextEnvelope buildEnvelope(SubAgentTask task) {

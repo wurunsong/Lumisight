@@ -1,6 +1,11 @@
 package com.lumisight.core.agent.multiagent.service;
 
-import com.lumisight.core.agent.CodeAssistantAgentService;
+import com.lumisight.core.agent.AgentExecutionProfile;
+import com.lumisight.core.agent.AgentExecutionTaskDispatcher;
+import com.lumisight.core.agent.AgentLoopTask;
+import com.lumisight.core.agent.AgentLoopTaskRunner;
+import com.lumisight.core.agent.CompletedAgentLoopTask;
+import com.lumisight.core.agent.PreparedAgentLoopTask;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TaskContextEnvelope;
@@ -11,10 +16,8 @@ import com.lumisight.core.model.AgentRunMode;
 import com.lumisight.core.model.AgentTaskType;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.support.AgentSessionContextStore;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,39 +27,88 @@ import java.util.UUID;
 @Component
 public class SubAgentExecutionService {
 
-    private final ObjectProvider<CodeAssistantAgentService> codeAssistantAgentServiceProvider;
+    private final AgentExecutionTaskDispatcher agentExecutionTaskDispatcher;
+    private final AgentLoopTaskRunner agentLoopTaskRunner;
     private final AgentSessionContextStore sessionContextStore;
     private final MultiAgentProperties properties;
 
     public SubAgentExecutionService(
-            ObjectProvider<CodeAssistantAgentService> codeAssistantAgentServiceProvider,
+            AgentExecutionTaskDispatcher agentExecutionTaskDispatcher,
+            AgentLoopTaskRunner agentLoopTaskRunner,
             AgentSessionContextStore sessionContextStore,
             MultiAgentProperties properties
     ) {
-        this.codeAssistantAgentServiceProvider = codeAssistantAgentServiceProvider;
+        this.agentExecutionTaskDispatcher = agentExecutionTaskDispatcher;
+        this.agentLoopTaskRunner = agentLoopTaskRunner;
         this.sessionContextStore = sessionContextStore;
         this.properties = properties;
     }
 
     public SubAgentResult execute(TaskContextEnvelope envelope, String parentSessionId) {
-        return execute(envelope, parentSessionId, MultiAgentExecutionScope.Role.SUB_AGENT, "subagent", null, null);
+        return execute(envelope, parentSessionId, "subagent", null, null);
     }
 
-    public SubAgentResult executeAsTeamAgent(
+    public SubAgentResult executeAssigned(
             TaskContextEnvelope envelope,
             String parentSessionId,
-            String teamId,
-            String agentId
+            String coordinationId,
+            String workerId
     ) {
-        return execute(envelope, parentSessionId, MultiAgentExecutionScope.Role.TEAM_AGENT, agentId, teamId, agentId);
+        return execute(envelope, parentSessionId, workerId, coordinationId, workerId);
     }
 
     private SubAgentResult execute(
             TaskContextEnvelope envelope,
             String parentSessionId,
-            MultiAgentExecutionScope.Role role,
             String agentName,
-            String teamId,
+            String coordinationId,
+            String agentId
+    ) {
+        PreparedSubAgentExecution preparedExecution = prepare(envelope, parentSessionId, agentName, coordinationId, agentId);
+        if (preparedExecution.completedBeforeLoop()) {
+            return completePrepared(preparedExecution, null);
+        }
+        CompletedAgentLoopTask completedLoop = agentLoopTaskRunner.runBlocking(toAgentLoopTask(preparedExecution));
+        return completePrepared(preparedExecution, completedLoop);
+    }
+
+    public PreparedSubAgentExecution prepareAssigned(
+            TaskContextEnvelope envelope,
+            String parentSessionId,
+            String coordinationId,
+            String workerId
+    ) {
+        return prepare(envelope, parentSessionId, workerId, coordinationId, workerId);
+    }
+
+    public AgentLoopTask<CompletedAgentLoopTask> toAgentLoopTask(PreparedSubAgentExecution preparedExecution) {
+        return agentExecutionTaskDispatcher.toAgentLoopTask(preparedExecution.loopTask());
+    }
+
+    public SubAgentResult completePrepared(
+            PreparedSubAgentExecution preparedExecution,
+            CompletedAgentLoopTask completedLoop
+    ) {
+        try {
+            if (preparedExecution.immediateResult() != null) {
+                return preparedExecution.immediateResult();
+            }
+            List<AgentEvent> events = preparedExecution.loopTask().completedBeforeLoop()
+                    ? agentExecutionTaskDispatcher.completedEvents(preparedExecution.loopTask())
+                    : agentExecutionTaskDispatcher.completePreparedLoopTask(completedLoop);
+            return summarize(preparedExecution.envelope(), preparedExecution.agentName(), events == null ? List.of() : events);
+        } catch (Exception e) {
+            return failedResult(preparedExecution.envelope(), preparedExecution.agentName(), e);
+        } finally {
+            sessionContextStore.clear(preparedExecution.childSessionId());
+        }
+    }
+
+    private PreparedSubAgentExecution prepare(
+            TaskContextEnvelope envelope,
+            String parentSessionId,
+            String agentName,
+            String coordinationId,
             String agentId
     ) {
         String childSessionId = "subagent-" + envelope.taskId() + "-" + UUID.randomUUID().toString().substring(0, 8);
@@ -64,7 +116,7 @@ public class SubAgentExecutionService {
         MultiAgentExecutionScope.Context parent = MultiAgentExecutionScope.current();
         int depth = parent == null ? 1 : parent.depth() + 1;
         if (depth > properties.getMaxSubagentDepth()) {
-            return new SubAgentResult(
+            return PreparedSubAgentExecution.completed(envelope, agentName, childSessionId, new SubAgentResult(
                     envelope.taskId(),
                     "subagent",
                     false,
@@ -74,7 +126,7 @@ public class SubAgentExecutionService {
                     List.of("由 Lead 继续执行该任务"),
                     0.0d,
                     Map.of("depth", depth, "maxDepth", properties.getMaxSubagentDepth())
-            );
+            ));
         }
 
         String childQuestion = buildQuestion(envelope);
@@ -95,50 +147,54 @@ public class SubAgentExecutionService {
                 AgentDialogueMode.FOLLOW
         );
         long deadlineEpochMs = System.currentTimeMillis() + Math.max(1, properties.getChildTimeoutMs());
+        MultiAgentExecutionScope.Context childScope = new MultiAgentExecutionScope.Context(
+                MultiAgentExecutionScope.Role.SUB_AGENT,
+                orchestrationId,
+                parentSessionId,
+                envelope.taskId(),
+                depth,
+                parent == null ? null : parent.orchestrationMode(),
+                MultiAgentExecutionScope.Phase.EXECUTION,
+                false,
+                properties.getSubagentMaxRounds(),
+                deadlineEpochMs,
+                coordinationId,
+                agentId
+        );
         try (MultiAgentExecutionScope.Scope ignored = MultiAgentExecutionScope.open(
-                new MultiAgentExecutionScope.Context(
-                        role,
-                        orchestrationId,
-                        parentSessionId,
-                        envelope.taskId(),
-                        depth,
-                        parent == null ? null : parent.topology(),
-                        MultiAgentExecutionScope.Phase.EXECUTION,
-                        false,
-                        properties.getSubagentMaxRounds(),
-                        deadlineEpochMs,
-                        teamId,
-                        agentId
-                )
+                childScope
         )) {
-            List<AgentEvent> events = codeAssistantAgentServiceProvider.getObject()
-                    .run(childRequest)
-                    .collectList()
-                    .timeout(Duration.ofMillis(Math.max(1, properties.getChildTimeoutMs())))
-                    .block();
-            return summarize(envelope, agentName, events == null ? List.of() : events);
-        } catch (Exception e) {
-            return new SubAgentResult(
-                    envelope.taskId(),
-                    agentName,
-                    false,
-                    "子 Agent 执行失败或超时: " + e.getMessage(),
-                    List.of("subagent execution failed"),
-                    List.of(),
-                    List.of("Lead 继续接管，或缩小子任务范围后重试"),
-                    0.15d,
-                    Map.of(
-                            "taskId", envelope.taskId(),
-                            "capability", envelope.capability().name(),
-                            "error", e.getClass().getSimpleName()
-                    )
+            // 子 agent 在这里完成 request / scope / 权限等准备；线程池里的任务只负责执行已经准备好的 loop。
+            PreparedAgentLoopTask loopTask = agentExecutionTaskDispatcher.prepareChildLoopTask(
+                    childRequest,
+                    AgentExecutionProfile.subAgent()
             );
-        } finally {
-            sessionContextStore.clear(childSessionId);
+            return PreparedSubAgentExecution.ready(envelope, agentName, childSessionId, loopTask);
+        } catch (Exception e) {
+            return PreparedSubAgentExecution.completed(envelope, agentName, childSessionId, failedResult(envelope, agentName, e));
         }
     }
 
+    private SubAgentResult failedResult(TaskContextEnvelope envelope, String agentName, Exception e) {
+        return new SubAgentResult(
+                envelope.taskId(),
+                agentName,
+                false,
+                "子 Agent 执行失败或超时: " + e.getMessage(),
+                List.of("subagent execution failed"),
+                List.of(),
+                List.of("Lead 继续接管，或缩小子任务范围后重试"),
+                0.15d,
+                Map.of(
+                        "taskId", envelope.taskId(),
+                        "capability", envelope.capability().name(),
+                        "error", e.getClass().getSimpleName()
+                )
+        );
+    }
+
     private SubAgentResult summarize(TaskContextEnvelope envelope, String agentName, List<AgentEvent> events) {
+        // 上层 lead 只需要结构化子任务结论，不应暴露完整事件流，因此这里统一做一次事件到结果的收口。
         String finalAnswer = events.stream()
                 .filter(event -> "FINAL".equals(event.type()))
                 .map(AgentEvent::message)
@@ -216,5 +272,36 @@ public class SubAgentExecutionService {
             case BUG_FIX -> AgentTaskType.BUG_FIX;
             case BUILD_ANALYSIS, TEST_ANALYSIS, GIT_ANALYSIS, CODE_EXPLAIN, REFACTOR -> AgentTaskType.CODE_EXPLAIN;
         };
+    }
+
+    public record PreparedSubAgentExecution(
+            TaskContextEnvelope envelope,
+            String agentName,
+            String childSessionId,
+            PreparedAgentLoopTask loopTask,
+            SubAgentResult immediateResult
+    ) {
+
+        static PreparedSubAgentExecution ready(
+                TaskContextEnvelope envelope,
+                String agentName,
+                String childSessionId,
+                PreparedAgentLoopTask loopTask
+        ) {
+            return new PreparedSubAgentExecution(envelope, agentName, childSessionId, loopTask, null);
+        }
+
+        static PreparedSubAgentExecution completed(
+                TaskContextEnvelope envelope,
+                String agentName,
+                String childSessionId,
+                SubAgentResult immediateResult
+        ) {
+            return new PreparedSubAgentExecution(envelope, agentName, childSessionId, null, immediateResult);
+        }
+
+        boolean completedBeforeLoop() {
+            return immediateResult != null || loopTask.completedBeforeLoop();
+        }
     }
 }

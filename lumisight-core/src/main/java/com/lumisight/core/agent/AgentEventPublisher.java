@@ -5,19 +5,24 @@ import reactor.core.publisher.FluxSink;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 final class AgentEventPublisher {
 
-    private final FluxSink<AgentEvent> sink;
+    private final Consumer<AgentEvent> emitter;
     private final List<AgentEvent> history = new ArrayList<>();
 
-    AgentEventPublisher(FluxSink<AgentEvent> sink) {
-        this.sink = sink;
+    AgentEventPublisher(Consumer<AgentEvent> emitter) {
+        this.emitter = emitter;
+    }
+
+    static AgentEventPublisher streaming(FluxSink<AgentEvent> sink) {
+        return new AgentEventPublisher(sink::next);
     }
 
     void emit(AgentEvent event) {
         history.add(event);
-        sink.next(event);
+        emitter.accept(event);
     }
 
     List<AgentEvent> history() {

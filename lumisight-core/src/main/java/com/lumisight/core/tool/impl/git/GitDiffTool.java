@@ -19,7 +19,7 @@ import java.util.Map;
 public class GitDiffTool implements PermissionedAgentTool<GitDiffTool.Args> {
 
     public record Args(
-            @ToolArg(description = "文件相对路径", example = "lumisight-core/src/main/java/com/lumisight/core/agent/CodeAssistantAgentService.java") String sourceFile,
+            @ToolArg(description = "文件相对路径", example = "lumisight-core/src/main/java/com/lumisight/core/agent/AgentExecutionEntryService.java") String sourceFile,
             @ToolArg(description = "是否查看暂存区", example = "false") Boolean staged
     ) {
     }

@@ -71,13 +71,13 @@ Phase 2 的目标是引入 team mailbox 和显式生命周期，让多任务协�
 
 结论：`Phase 2 已完成基础版`
 
-## Phase 3：topology + team orchestration
+## Phase 3：agent orchestration mode + team orchestration
 
-Phase 3 的目标是把 team protocol 真正接到拓扑编排里，而不是只有 mailbox 能收发消息。
+Phase 3 的目标是把 team protocol 真正接到 agent 编排方式里，而不是只有 mailbox 能收发消息。
 
 已完成：
 
-- `SERIAL_DAG / FAN_OUT_FAN_IN / HYBRID` 三种拓扑
+- `SERIAL / PARALLEL / HYBRID` 三种 agent 编排方式
 - `DefaultOrchestratorAgent` 会基于问题形态构造多任务计划
 - `MultiAgentCoordinator` 在主执行链路里返回完整 `executionState`
 - 依赖波次构建、失败依赖阻断、HYBRID 模式下的继续收敛
@@ -100,7 +100,7 @@ Phase 3 的目标是把 team protocol 真正接到拓扑编排里，而不是只
 - `task_subagent` 隔离执行与最小权限
 - Lead/team mailbox 协议
 - team worker 权限申请与批准
-- 拓扑驱动的 wave 调度
+- 编排方式驱动的 wave 调度
 - 同 wave 并发执行
 - 执行状态持久化
 - wave 边界暂停与 `resume`
@@ -131,7 +131,7 @@ Phase 3 的目标是把 team protocol 真正接到拓扑编排里，而不是只
 
 建议后续顺序：
 
-1. 提升 planner 质量，让任务拆解和拓扑选择更像真实开发代理
+1. 提升 planner 质量，让任务拆解和编排方式选择更像真实开发代理
 2. 引入更长期的 role identity，而不是每次请求临时生成 worker
 3. 建立 team 级共享 artifact / scratchpad / evidence 汇聚层
 4. 扩充多 Agent 集成测试，覆盖真实主链路与恢复行为
@@ -141,4 +141,4 @@ Phase 3 的目标是把 team protocol 真正接到拓扑编排里，而不是只
 
 一句话总结当前状态：
 
-> Lumisight 的多 Agent 已经不再是“只有骨架”的阶段，而是具备了主链路接入、team 协议、拓扑调度、并发执行、状态持久化和恢复能力的基础版实现；但它现在更准确地说是“请求内 Lead 编排系统”，还不是长期自治的多角色开发团队。
+> Lumisight 的多 Agent 已经不再是“只有骨架”的阶段，而是具备了主链路接入、team 协议、编排方式调度、并发执行、状态持久化和恢复能力的基础版实现；但它现在更准确地说是“请求内 Lead 编排系统”，还不是长期自治的多角色开发团队。

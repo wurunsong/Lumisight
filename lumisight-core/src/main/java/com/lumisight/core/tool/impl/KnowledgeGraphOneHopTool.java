@@ -17,7 +17,7 @@ import java.util.List;
 public class KnowledgeGraphOneHopTool implements PermissionedAgentTool<KnowledgeGraphOneHopTool.Args> {
 
     public record Args(
-            @ToolArg(description = "图谱节点ID", required = true, example = "method:com.lumisight.core.agent.CodeAssistantAgentService#execute") String kgNodeId,
+            @ToolArg(description = "图谱节点ID", required = true, example = "method:com.lumisight.core.agent.AgentExecutionEntryService#execute") String kgNodeId,
             @ToolArg(description = "返回条数", example = "50") Integer limit
     ) {
     }

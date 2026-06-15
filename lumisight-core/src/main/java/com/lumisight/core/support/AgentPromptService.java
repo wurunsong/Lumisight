@@ -350,12 +350,6 @@ public class AgentPromptService {
                     + "- 不要请求用户，不要再委派新的 agent，不要假设自己拥有写仓库权限。\n"
                     + "- 只输出完成当前任务所需的结论、证据和建议下一步。";
         }
-        if (executionScope.role() == MultiAgentExecutionScope.Role.TEAM_AGENT) {
-            return "Team Agent 约束:\n"
-                    + "- 你是长期协作队友，只处理 inbox 分配给你的任务。\n"
-                    + "- 不要创建新的 agent，不要直接面向用户给最终答案。\n"
-                    + "- 返回结构化结论与证据引用，等待 Lead 汇总。";
-        }
         return "";
     }
 

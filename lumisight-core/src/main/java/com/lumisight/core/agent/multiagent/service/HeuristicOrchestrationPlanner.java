@@ -1,15 +1,11 @@
 package com.lumisight.core.agent.multiagent.service;
 
-import com.lumisight.core.model.AgentTaskType;
-import com.lumisight.core.context.ambient.OrchestrationContext;
+import com.lumisight.core.agent.multiagent.model.AgentOrchestrationMode;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
-import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.SubAgentTask;
-import com.lumisight.core.agent.multiagent.model.TopologyType;
-import com.lumisight.core.agent.multiagent.port.OrchestratorAgent;
-import com.lumisight.core.agent.multiagent.port.SubAgent;
-import com.lumisight.core.agent.multiagent.port.TaskRouter;
+import com.lumisight.core.context.ambient.OrchestrationContext;
+import com.lumisight.core.model.AgentTaskType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -21,30 +17,29 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * todo 这里面都没有调用模型，怎么能叫做调度agent？
+ * 当前先用启发式规则做编排规划，负责把请求拆成 plan / task / orchestration mode。
+ * todo 这里的 buildTask / decideOrchestrationMode 仍然比较启发式，后面可以替换成专门的规划模型。
  */
 @Component
-public class DefaultOrchestratorAgent implements OrchestratorAgent {
+public class HeuristicOrchestrationPlanner implements OrchestrationPlanner {
 
-    private final TaskRouter taskRouter;
     private final MultiAgentProperties properties;
 
-    public DefaultOrchestratorAgent(TaskRouter taskRouter, MultiAgentProperties properties) {
-        this.taskRouter = taskRouter;
+    public HeuristicOrchestrationPlanner(MultiAgentProperties properties) {
         this.properties = properties;
     }
 
     @Override
     public OrchestrationPlan createPlan(OrchestrationContext context) {
         List<SubAgentTask> tasks = buildTasks(context);
-        TopologyType topology = decideTopology(context, tasks);
+        AgentOrchestrationMode orchestrationMode = decideOrchestrationMode(context, tasks);
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("mode", topology == TopologyType.SERIAL_DAG ? "single-step-default" : "multi-step-orchestration");
+        metadata.put("mode", orchestrationMode == AgentOrchestrationMode.SERIAL ? "single-step-default" : "multi-step-orchestration");
         metadata.put("taskCount", tasks.size());
-        metadata.put("planNarrative", buildPlanNarrative(context, topology, tasks));
+        metadata.put("planNarrative", buildPlanNarrative(context, orchestrationMode, tasks));
         metadata.put("boundaryNotes", List.of(
                 "主 Agent / Lead 负责最终写仓库、编译验证和最终回答",
-                "team worker 只返回局部结论和证据，不直接面向用户收口",
+                "sub-agent 只返回局部结论和证据，不直接面向用户收口",
                 "当前多 Agent 是请求内协作系统，不是长期自治团队"
         ));
         metadata.put("taskBriefs", tasks.stream().map(this::taskBrief).toList());
@@ -52,43 +47,10 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
                 context.orchestrationId(),
                 "完成用户请求: " + context.request().question(),
                 tasks,
-                topology,
+                orchestrationMode,
                 "汇总所有子任务结果，仅由 lead 执行最终写入或最终回答",
                 Map.copyOf(metadata)
         );
-    }
-
-    @Override
-    public List<SubAgentResult> executePlan(OrchestrationPlan plan, OrchestrationContext context) {
-        List<SubAgentResult> results = new ArrayList<>();
-        // todo 这个子任务的调度，底层看起来也没有并发，是不是有问题呢？
-        for (SubAgentTask task : plan.tasks()) {
-            // router路由到可执行该任务的agent
-            SubAgent agent = taskRouter.route(task);
-            results.add(agent.execute(task, context));
-        }
-        return results;
-    }
-
-    @Override
-    public String summarize(OrchestrationPlan plan, List<SubAgentResult> results, OrchestrationContext context) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("OrchestrationId: ").append(plan.planId()).append("\n");
-        builder.append("Goal: ").append(plan.goal()).append("\n");
-        builder.append("Topology: ").append(plan.topology().name()).append("\n");
-        if (plan.metadata() != null && plan.metadata().get("planNarrative") != null) {
-            builder.append("Plan: ").append(plan.metadata().get("planNarrative")).append("\n");
-        }
-        builder.append("Boundaries:\n");
-        builder.append("- 只有 lead 负责最终写入、编译验证和最终回答\n");
-        builder.append("- worker 只返回局部结论与证据\n");
-        builder.append("Results:\n");
-        for (SubAgentResult result : results) {
-            builder.append("- [").append(result.agentName()).append("] ")
-                    .append(result.summary())
-                    .append("\n");
-        }
-        return builder.toString();
     }
 
     private SubAgentCapability mapCapability(OrchestrationContext context) {
@@ -99,11 +61,6 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
         return SubAgentCapability.CODE_EXPLAIN;
     }
 
-    /**
-     * todo 这个buildTask太粗糙了，可以用关键词正则粗筛，但还是需要调用模型的
-     * @param context
-     * @return
-     */
     private List<SubAgentTask> buildTasks(OrchestrationContext context) {
         String question = context.request().question() == null ? "" : context.request().question();
         List<SubAgentTask> tasks = new ArrayList<>();
@@ -125,25 +82,15 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
         return tasks.stream().limit(Math.max(1, properties.getMaxTasksPerPlan())).toList();
     }
 
-    /**
-     * agent 的拓扑
-     * todo 这个decideTopology太粗糙了，可以用关键词正则粗筛，但还是需要调用模型的
-     * @param context
-     * @param tasks
-     * @return
-     */
-    private TopologyType decideTopology(OrchestrationContext context, List<SubAgentTask> tasks) {
-        // 串行
+    private AgentOrchestrationMode decideOrchestrationMode(OrchestrationContext context, List<SubAgentTask> tasks) {
         if (tasks.size() <= 1) {
-            return TopologyType.SERIAL_DAG;
+            return AgentOrchestrationMode.SERIAL;
         }
         String question = context.request().question() == null ? "" : context.request().question();
-        // 串行+并行
         if (question.contains("测试") && (question.contains("修复") || question.contains("重构"))) {
-            return TopologyType.HYBRID;
+            return AgentOrchestrationMode.HYBRID;
         }
-        // 并行
-        return TopologyType.FAN_OUT_FAN_IN;
+        return AgentOrchestrationMode.PARALLEL;
     }
 
     private SubAgentTask task(
@@ -174,13 +121,13 @@ public class DefaultOrchestratorAgent implements OrchestratorAgent {
         );
     }
 
-    private String buildPlanNarrative(OrchestrationContext context, TopologyType topology, List<SubAgentTask> tasks) {
+    private String buildPlanNarrative(OrchestrationContext context, AgentOrchestrationMode orchestrationMode, List<SubAgentTask> tasks) {
         String question = context.request().question() == null ? "" : context.request().question().trim();
         String titles = tasks.stream().map(SubAgentTask::title).collect(Collectors.joining(" -> "));
         if (!StringUtils.hasText(question)) {
-            return "按 " + topology.name() + " 执行 " + titles;
+            return "按 " + orchestrationMode.name() + " 编排执行 " + titles;
         }
-        return "针对“" + question + "”按 " + topology.name() + " 拆成 " + titles;
+        return "针对“" + question + "”按 " + orchestrationMode.name() + " 编排拆成 " + titles;
     }
 
     private Map<String, Object> taskBrief(SubAgentTask task) {

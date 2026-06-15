@@ -21,9 +21,9 @@ public class MultiAgentExecutionStateStore {
         this.objectMapper = objectMapper;
     }
 
-    public Optional<MultiAgentExecutionState> load(String repoRoot, String teamId) {
+    public Optional<MultiAgentExecutionState> load(String repoRoot, String coordinationId) {
         try {
-            Path stateFile = statePath(repoRoot, teamId);
+            Path stateFile = statePath(repoRoot, coordinationId);
             if (!Files.exists(stateFile)) {
                 return Optional.empty();
             }
@@ -33,9 +33,9 @@ public class MultiAgentExecutionStateStore {
         }
     }
 
-    public void save(String repoRoot, String teamId, MultiAgentExecutionState state) {
+    public void save(String repoRoot, String coordinationId, MultiAgentExecutionState state) {
         try {
-            Path stateFile = statePath(repoRoot, teamId);
+            Path stateFile = statePath(repoRoot, coordinationId);
             Files.createDirectories(stateFile.getParent());
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(), state);
         } catch (Exception e) {
@@ -43,18 +43,18 @@ public class MultiAgentExecutionStateStore {
         }
     }
 
-    public void clear(String repoRoot, String teamId) {
+    public void clear(String repoRoot, String coordinationId) {
         try {
-            Files.deleteIfExists(statePath(repoRoot, teamId));
+            Files.deleteIfExists(statePath(repoRoot, coordinationId));
         } catch (Exception e) {
             throw new IllegalStateException("failed to clear multi-agent execution state", e);
         }
     }
 
-    public Path statePath(String repoRoot, String teamId) {
+    public Path statePath(String repoRoot, String coordinationId) {
         return Path.of(repoRoot)
-                .resolve(properties.getTeamRootDir())
-                .resolve(teamId)
+                .resolve(properties.getCoordinationRootDir())
+                .resolve(coordinationId)
                 .resolve(STATE_FILE_NAME);
     }
 }

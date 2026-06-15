@@ -1,7 +1,7 @@
 package com.lumisight.core.context.ambient;
 
 import com.lumisight.common.concurrent.ThreadContextRegistry;
-import com.lumisight.core.agent.multiagent.model.TopologyType;
+import com.lumisight.core.agent.multiagent.model.AgentOrchestrationMode;
 
 /**
  * 多agent执行作用域，承载编排期需要透传的运行约束
@@ -48,8 +48,7 @@ public final class MultiAgentExecutionScope {
 
     public enum Role {
         LEAD_AGENT,
-        SUB_AGENT,
-        TEAM_AGENT
+        SUB_AGENT
     }
 
     public enum Phase {
@@ -63,12 +62,12 @@ public final class MultiAgentExecutionScope {
             String parentSessionId,
             String taskId,
             int depth,
-            TopologyType topology,
+            AgentOrchestrationMode orchestrationMode,
             Phase phase,
             boolean allowSpawn,
             int maxRounds,
             long deadlineEpochMs,
-            String teamId,
+            String coordinationId,
             String agentId
     ) {
         public boolean hasDeadline() {
