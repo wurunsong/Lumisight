@@ -53,17 +53,20 @@ public class DefaultAgentContextManager implements AgentContextManager {
     private final AgentContextArtifactStore artifactStore;
     private final ChatClient chatClient;
     private final StreamingChatClientSupport streamingChatClientSupport;
+    private final AgentTokenEstimator tokenEstimator;
 
     public DefaultAgentContextManager(
             AgentContextManagementProperties properties,
             AgentContextArtifactStore artifactStore,
             ChatClient.Builder chatClientBuilder,
-            StreamingChatClientSupport streamingChatClientSupport
+            StreamingChatClientSupport streamingChatClientSupport,
+            AgentTokenEstimator tokenEstimator
     ) {
         this.properties = properties;
         this.artifactStore = artifactStore;
         this.chatClient = chatClientBuilder.build();
         this.streamingChatClientSupport = streamingChatClientSupport;
+        this.tokenEstimator = tokenEstimator;
     }
 
     @Override
@@ -192,11 +195,10 @@ public class DefaultAgentContextManager implements AgentContextManager {
             SkillPlan skillPlan,
             ProjectionPurpose purpose
     ) {
-        // 上下文投影前先做一次snip+micro压缩
-        WriteTimeCompactionResult writeResult = applyWriteTimeCompaction(sessionId, input);
-        AgentContextSession session = writeResult.session();
-        List<AgentContextCompressionStage> stages = new ArrayList<>(writeResult.stages());
-        Map<String, Object> metrics = new LinkedHashMap<>(writeResult.metrics());
+        // snip/micro 是写入时压缩，已在 append/appendToolResult 中完成；投影阶段只负责按用途生成本轮视图。
+        AgentContextSession session = input;
+        List<AgentContextCompressionStage> stages = new ArrayList<>();
+        Map<String, Object> metrics = new LinkedHashMap<>();
 
         int estimatedTokens = estimateTokens(session.entries());
         boolean autoCompacted = false;
@@ -204,9 +206,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 - properties.getResponseReserveTokens()
                 - properties.getAutoCompactBufferTokens();
         if (estimatedTokens > autoCompactThreshold && session.autoCompactFailureCount() < properties.getMaxAutoCompactFailures()) {
-            // 做一次上下文压缩
-            // todo 应该先compact还是先project？
-            // autoCompact会用模型对现有上下文进行压缩，并且会从原始上下文中恢复热点上下文、skill上下文和plan上下文
+            // autoCompact 是极限窗口下的模型摘要压缩；它先保住长期工作状态，再进入本轮 projection 裁剪。
             CompactionStepResult autoCompactResult = autoCompact(sessionId, session, request, skillPlan, purpose);
             session = autoCompactResult.session();
             estimatedTokens = estimateTokens(session.entries());
@@ -665,10 +665,10 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private WriteTimeCompactionResult applyWriteTimeCompaction(String sessionId, AgentContextSession session) {
-        // 通过snip方式对上下文进行一轮压缩
+        // 通过snip方式对上下文进行一轮压缩，snip就是对旧的上下文进行删除
         CompactionStepResult snipResult = applySnip(session);
         AgentContextSession compacted = snipResult.session();
-        // todo snip和micro的区别是？没看出来啊
+        // micro会对单条上下文进行瘦身
         CompactionStepResult microResult = applyMicroCompact(compacted);
         compacted = microResult.session();
 
@@ -679,8 +679,13 @@ public class DefaultAgentContextManager implements AgentContextManager {
         return new WriteTimeCompactionResult(compacted, List.copyOf(stages), Map.copyOf(metrics));
     }
 
+    /**
+     * snip 是写入时的硬裁剪：当整段上下文超过 snipTriggerTokens 时，
+     * 只从较旧、低优先级、非保护的 conversation 中删除内容，直到接近 snipTargetTokens。
+     * 它不会把 conversation 裁到只剩 keepRecent 条，而是保证最近 keepRecent 条可删除 conversation 不参与删除候选。
+     */
     private CompactionStepResult applySnip(AgentContextSession session) {
-        // todo token的计算是？
+        // token 估算统一走 AgentTokenEstimator；当前实现使用 Spring AI JTokkit，并带安全系数兜底。
         int estimatedTokens = estimateTokens(session.entries());
         // token未超过阈值，不处理
         if (estimatedTokens <= properties.getSnipTriggerTokens()) {
@@ -690,20 +695,21 @@ public class DefaultAgentContextManager implements AgentContextManager {
         List<Integer> removableIndexes = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             AgentContextEntry entry = entries.get(i);
-            // todo 这里判断上下文的重要性，isAlwaysProjected是不是可以再细化
             if (entry.kind() == AgentContextEntryKind.CONVERSATION
                     && entry.priority() <= 60
+                    // isAlwaysProjected代表必须保留的上下文，不应该被删除
                     && !isAlwaysProjected(entry)
                     // sourceType=context_marker的消息是上下文管理器生成的，不应该被删除
                     && !"context_marker".equals(entry.item().sourceType())) {
                 removableIndexes.add(i);
             }
         }
-        // todo 这里keepRecent是至少删除的条目数？语义有点混乱，是不是应该保证剩余条数？再调研
+        // keepRecent 代表在可删除的 conversation 里，至少保留最近多少条。
         int keepRecent = properties.getSnipKeepRecentConversation();
         if (removableIndexes.size() <= keepRecent) {
             return CompactionStepResult.noop(session);
         }
+        // removableIndexes 按时间从旧到新排列，只把更早的部分纳入删除候选。
         List<Integer> toRemove = removableIndexes.subList(0, removableIndexes.size() - keepRecent);
         // next存的是留下来的上下文
         List<AgentContextEntry> next = new ArrayList<>();
@@ -755,6 +761,12 @@ public class DefaultAgentContextManager implements AgentContextManager {
         );
     }
 
+    /**
+     * micro compact 是写入时的轻量瘦身：当上下文过久未投影或超过 projectionSoftTokens 时，
+     * 找出较旧的 compactable entry，并把它们的正文替换成可恢复的轻量 marker。
+     * 它和 snip 的区别是：snip 会删除旧 conversation entry，micro compact 保留 entry 但清空大块内容。
+     * keepRecent 只作用于 compactable 候选集合，表示最近 keepRecent 条可压缩 entry 保持原文。
+     */
     private CompactionStepResult applyMicroCompact(AgentContextSession session) {
         long now = System.currentTimeMillis();
         long staleMillis = Duration.ofMinutes(properties.getMicroCompactStaleMinutes()).toMillis();
@@ -772,8 +784,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 compactableIndexes.add(i);
             }
         }
-        // todo 这里为啥不是比较剩余的上下文和keepRecent
-        // todo 这里的keepRecent好像是强制在压缩的里面保存keepRecent条？是不是有问题呢
+        // compactableIndexes代表可被压缩的上下文
         int keepRecent = properties.getMicroCompactKeepRecent();
         if (compactableIndexes.size() <= keepRecent) {
             return CompactionStepResult.noop(session);
@@ -1217,10 +1228,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private int estimateTokens(String content) {
-        if (!StringUtils.hasText(content)) {
-            return 0;
-        }
-        return Math.max(1, content.length() / 4);
+        return tokenEstimator.estimate(content);
     }
 
     private int bytes(String content) {

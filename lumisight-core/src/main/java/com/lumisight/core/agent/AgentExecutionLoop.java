@@ -113,21 +113,21 @@ class AgentExecutionLoop {
         }
         for (int round = startRound; round <= maxRounds; round++) {
             lastRound = round;
+            // 检查当前线程是否被中断
             LoopExecutionResult stopResult = checkStopSignal(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
             if (stopResult != null) {
                 return stopResult;
             }
 
             publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
-            // 新增上下文，并顺便用snip和micro进行压缩
+            // 追加用户输入；写入时可能触发 snip/micro 压缩。
             contextSession = agentContextManager.append(sessionId, contextSession, new AgentContextItem(
                     "conversation",
                     "user_prompt_round_" + round,
                     effectiveQuestion,
                     Map.of("round", round, "role", "user")
             ), AgentContextAppendOptions.conversation());
-            // todo projectForDecision方法里会再做一次snip和micro，和上面重复了
-            // todo 上下文压缩有很大的问题，除了compact以外，snip、micro和project都是裁剪上下文，感觉很重复啊
+            // projection 只生成本轮决策视图，不再重复执行写入时 snip/micro。
             AgentContextProjection decisionProjection = agentContextManager.projectForDecision(
                     sessionId,
                     contextSession,
@@ -401,7 +401,6 @@ class AgentExecutionLoop {
         if (!"final".equalsIgnoreCase(decision.action()) || !StringUtils.hasText(decision.finalAnswer())) {
             return new FinalDecisionOutcome(null, null);
         }
-        // todo 这里验证未通过不是agent自己再验证一遍，而是直接返回给用户吗？感觉不完善
         if (requiresSelfHealPass(request) && hasPendingSelfHealFailure(contextSession)) {
             String reason = "最近一次代码修改的自动编译/lint 验证尚未通过，请继续修复并再次验证。";
             publisher.emit(AgentEvent.verifyResult(traceId, sessionId, round, false, reason));
