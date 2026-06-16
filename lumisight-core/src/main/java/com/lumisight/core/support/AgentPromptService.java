@@ -1,6 +1,7 @@
 package com.lumisight.core.support;
 
 import com.lumisight.core.context.ambient.MultiAgentExecutionScope;
+import com.lumisight.core.context.ambient.OrchestrationContext;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentDialogueMode;
 import com.lumisight.core.model.AgentRequest;
@@ -166,6 +167,34 @@ public class AgentPromptService {
         ));
     }
 
+    public String orchestrationModeSystemPrompt() {
+        return promptTemplateService.render("orchestration_mode_system", Map.of());
+    }
+
+    public String orchestrationModeUserPrompt(OrchestrationContext context, String taskBriefs) {
+        AgentRequest request = context.request();
+        return promptTemplateService.render("orchestration_mode_user", Map.of(
+                "question", safeText(request.question()),
+                "taskType", String.valueOf(request.taskType()),
+                "repoRoot", safeText(request.repoRoot()),
+                "taskBriefs", safeText(taskBriefs)
+        ));
+    }
+
+    public String subAgentTaskPlanSystemPrompt() {
+        return promptTemplateService.render("sub_agent_task_plan_system", Map.of());
+    }
+
+    public String subAgentTaskPlanUserPrompt(OrchestrationContext context, int maxTasks) {
+        AgentRequest request = context.request();
+        return promptTemplateService.render("sub_agent_task_plan_user", Map.of(
+                "question", safeText(request.question()),
+                "taskType", String.valueOf(request.taskType()),
+                "repoRoot", safeText(request.repoRoot()),
+                "maxTasks", Math.max(1, maxTasks)
+        ));
+    }
+
     public String relevantMemorySelectSystemPrompt() {
         return promptTemplateService.render("relevant_memory_select_system", Map.of());
     }
@@ -174,6 +203,28 @@ public class AgentPromptService {
         return promptTemplateService.render("relevant_memory_select_user", Map.of(
                 "query", safeText(query),
                 "headersBlock", safeText(headersBlock)
+        ));
+    }
+
+    public String memoryConsolidateSystemPrompt() {
+        return promptTemplateService.render("memory_consolidate_system", Map.of());
+    }
+
+    public String memoryConsolidateUserPrompt(
+            AgentRequest request,
+            String trigger,
+            String effectiveQuestion,
+            String observedContent,
+            RelevantMemoryBundle memoryContext
+    ) {
+        RelevantMemoryBundle safeMemoryContext = memoryContext == null ? RelevantMemoryBundle.empty() : memoryContext;
+        return promptTemplateService.render("memory_consolidate_user", Map.of(
+                "repoRoot", safeText(request.repoRoot()),
+                "userId", safeText(request.userId()),
+                "trigger", safeText(trigger),
+                "question", safeText(effectiveQuestion),
+                "observedContent", safeText(observedContent),
+                "memoryBlock", safeText(safeMemoryContext.remindersBlock())
         ));
     }
 

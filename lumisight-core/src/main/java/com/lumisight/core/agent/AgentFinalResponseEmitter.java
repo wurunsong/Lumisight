@@ -4,6 +4,7 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentLoopState;
 import com.lumisight.core.model.AgentRequest;
+import com.lumisight.core.support.AgentMemoryAsyncService;
 import com.lumisight.core.support.AgentPromptService;
 import com.lumisight.core.support.AgentSessionContextStore;
 import com.lumisight.core.support.context.AgentContextAppendOptions;
@@ -27,17 +28,20 @@ class AgentFinalResponseEmitter {
     private final AgentPromptService agentPromptService;
     private final AgentSessionContextStore conversationManager;
     private final AgentContextManager agentContextManager;
+    private final AgentMemoryAsyncService agentMemoryAsyncService;
 
     AgentFinalResponseEmitter(
             ChatClient.Builder chatClientBuilder,
             AgentPromptService agentPromptService,
             AgentSessionContextStore conversationManager,
-            AgentContextManager agentContextManager
+            AgentContextManager agentContextManager,
+            AgentMemoryAsyncService agentMemoryAsyncService
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentPromptService = agentPromptService;
         this.conversationManager = conversationManager;
         this.agentContextManager = agentContextManager;
+        this.agentMemoryAsyncService = agentMemoryAsyncService;
     }
 
     void emit(
@@ -87,7 +91,7 @@ class AgentFinalResponseEmitter {
             return;
         }
         publisher.emit(AgentEvent.state(traceId, sessionId, orchestrationResult.finalRound(), AgentLoopState.FINAL.name(), "running", "开始流式生成最终结果"));
-        streamFinalAnswer(request, sessionId, runEpoch, orchestrationResult.finalRound(), finalPrompt, traceId, publisher, memoryContext, shouldInterruptExecution);
+        streamFinalAnswer(request, sessionId, runEpoch, effectiveQuestion, orchestrationResult.finalRound(), finalPrompt, traceId, publisher, nextSession, memoryContext, shouldInterruptExecution);
     }
 
     private AgentContextSession appendDirectAnswerDraftIfNeeded(String sessionId, AgentContextSession contextSession, String directAnswerDraft) {
@@ -106,10 +110,12 @@ class AgentFinalResponseEmitter {
             AgentRequest request,
             String sessionId,
             long runEpoch,
+            String effectiveQuestion,
             int finalRound,
             String finalPrompt,
             String traceId,
             AgentEventPublisher publisher,
+            AgentContextSession contextSession,
             RelevantMemoryBundle memoryContext,
             BooleanSupplier shouldInterruptExecution
     ) {
@@ -129,6 +135,26 @@ class AgentFinalResponseEmitter {
             String finalAnswer = finalAnswerBuffer.toString();
             if (!finalAnswer.isBlank()) {
                 publisher.emit(AgentEvent.finalText(traceId, sessionId, finalRound, finalAnswer));
+                AgentContextSession nextSession = agentContextManager.append(sessionId, contextSession, new AgentContextItem(
+                        "conversation",
+                        "final_answer_round_" + finalRound,
+                        finalAnswer,
+                        Map.of("round", finalRound, "role", "assistant", "source", "final_answer")
+                ), AgentContextAppendOptions.conversation());
+                conversationManager.saveRunning(
+                        sessionId,
+                        effectiveQuestion,
+                        agentContextManager.snapshotContexts(nextSession),
+                        nextSession,
+                        finalRound + 1
+                );
+                // 这里只投递记忆信号；模型反思和落盘都在专用后台队列里串行执行。
+                agentMemoryAsyncService.enqueueFinalAnswer(
+                        request,
+                        effectiveQuestion,
+                        finalAnswer,
+                        memoryContext
+                );
             }
         }
     }

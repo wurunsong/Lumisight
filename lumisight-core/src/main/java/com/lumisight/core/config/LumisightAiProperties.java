@@ -9,6 +9,7 @@ public class LumisightAiProperties {
     private String embeddingApiKey;
     private String taskChatModel = "deepseek-v4-pro";
     private String schedulerChatModel = "deepseek-v4-pro";
+    private String memoryChatModel = "deepseek-v4-pro";
     private int chatConnectTimeoutSeconds = 10;
     private int chatReadTimeoutSeconds = 120;
 
@@ -42,6 +43,14 @@ public class LumisightAiProperties {
 
     public void setSchedulerChatModel(String schedulerChatModel) {
         this.schedulerChatModel = schedulerChatModel;
+    }
+
+    public String getMemoryChatModel() {
+        return memoryChatModel;
+    }
+
+    public void setMemoryChatModel(String memoryChatModel) {
+        this.memoryChatModel = memoryChatModel;
     }
 
     public int getChatConnectTimeoutSeconds() {

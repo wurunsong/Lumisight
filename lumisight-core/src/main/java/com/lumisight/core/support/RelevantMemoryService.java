@@ -1,5 +1,6 @@
 package com.lumisight.core.support;
 
+import com.lumisight.core.config.LumisightChatModelConfig;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.support.memory.RelevantMemorySource;
 import com.lumisight.core.support.memory.RelevantMemorySourceProvider;
@@ -12,6 +13,7 @@ import com.lumisight.memory.dto.RelevantMemoryBundle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -39,13 +41,13 @@ public class RelevantMemoryService {
     private final List<RelevantMemorySourceProvider> sourceProviders;
 
     public RelevantMemoryService(
-            ChatClient.Builder chatClientBuilder,
+            @Qualifier(LumisightChatModelConfig.MEMORY_CHAT_CLIENT_BUILDER) ChatClient.Builder memoryChatClientBuilder,
             AgentPromptService agentPromptService,
             StreamingChatClientSupport streamingChatClientSupport,
             MemoryService memoryService,
             List<RelevantMemorySourceProvider> sourceProviders
     ) {
-        this.selectorChatClient = chatClientBuilder.build();
+        this.selectorChatClient = memoryChatClientBuilder.build();
         this.agentPromptService = agentPromptService;
         this.streamingChatClientSupport = streamingChatClientSupport;
         this.memoryService = memoryService;

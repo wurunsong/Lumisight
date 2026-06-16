@@ -22,6 +22,8 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Stream;
 
 import com.lumisight.memory.dto.MemoryEntry;
@@ -41,22 +43,29 @@ public class MemoryFileService {
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private final MemoryProperties properties;
+    private final ConcurrentMap<String, Object> directoryLocks = new ConcurrentHashMap<>();
 
     public MemoryFileService(MemoryProperties properties) {
         this.properties = properties;
     }
 
     public MemoryEntry write(String repoRoot, String userId, MemoryWriteRequest request) {
+        return write(repoRoot, userId, properties.getRootDir(), request);
+    }
+
+    public MemoryEntry write(String storageRoot, String userId, String memoryRootDir, MemoryWriteRequest request) {
         validateWriteRequest(request);
-        try {
-            Path dir = ensureMemoryDir(repoRoot, userId);
-            Path file = allocateFile(dir, request.type(), request.name());
-            String raw = MemoryFrontmatterParser.render(request);
-            Files.writeString(file, raw, StandardCharsets.UTF_8);
-            rebuildEntrypoint(repoRoot, userId);
-            return readEntry(file);
-        } catch (IOException e) {
-            throw new IllegalStateException("failed to write memory", e);
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            try {
+                Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+                Path file = allocateFile(dir, request.type(), request.name());
+                String raw = MemoryFrontmatterParser.render(request);
+                Files.writeString(file, raw, StandardCharsets.UTF_8);
+                rebuildEntrypoint(storageRoot, userId, memoryRootDir);
+                return readEntry(file);
+            } catch (IOException e) {
+                throw new IllegalStateException("failed to write memory", e);
+            }
         }
     }
 
@@ -65,22 +74,24 @@ public class MemoryFileService {
     }
 
     public List<MemoryHeader> scanHeaders(String storageRoot, String userId, String memoryRootDir) {
-        try {
-            Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
-            List<Path> files = listMemoryFiles(dir);
-            List<MemoryHeader> headers = new ArrayList<>();
-            for (Path file : files) {
-                try {
-                    headers.add(readHeader(file));
-                } catch (Exception e) {
-                    log.warn("memory_header_scan_failed, file={}, error={}", file, e.getMessage());
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            try {
+                Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+                List<Path> files = listMemoryFiles(dir);
+                List<MemoryHeader> headers = new ArrayList<>();
+                for (Path file : files) {
+                    try {
+                        headers.add(readHeader(file));
+                    } catch (Exception e) {
+                        log.warn("memory_header_scan_failed, file={}, error={}", file, e.getMessage());
+                    }
                 }
+                headers.sort(Comparator.comparingLong(MemoryHeader::mtimeMs).reversed());
+                int max = Math.max(1, properties.getMaxScannedFiles());
+                return headers.size() <= max ? headers : headers.subList(0, max);
+            } catch (IOException e) {
+                throw new IllegalStateException("failed to scan memory headers", e);
             }
-            headers.sort(Comparator.comparingLong(MemoryHeader::mtimeMs).reversed());
-            int max = Math.max(1, properties.getMaxScannedFiles());
-            return headers.size() <= max ? headers : headers.subList(0, max);
-        } catch (IOException e) {
-            throw new IllegalStateException("failed to scan memory headers", e);
         }
     }
 
@@ -92,24 +103,26 @@ public class MemoryFileService {
         if (filenames == null || filenames.isEmpty()) {
             return List.of();
         }
-        Path dir = ensureMemoryDirUnchecked(storageRoot, userId, memoryRootDir);
-        List<MemoryEntry> entries = new ArrayList<>();
-        for (String filename : filenames) {
-            if (!StringUtils.hasText(filename) || filename.contains("/") || filename.contains("..")) {
-                continue;
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            Path dir = ensureMemoryDirUnchecked(storageRoot, userId, memoryRootDir);
+            List<MemoryEntry> entries = new ArrayList<>();
+            for (String filename : filenames) {
+                if (!StringUtils.hasText(filename) || filename.contains("/") || filename.contains("..")) {
+                    continue;
+                }
+                Path file = dir.resolve(filename).normalize();
+                if (!file.startsWith(dir) || !Files.isRegularFile(file)) {
+                    continue;
+                }
+                try {
+                    entries.add(readEntry(file));
+                } catch (Exception e) {
+                    log.warn("memory_read_failed, file={}, error={}", file, e.getMessage());
+                }
             }
-            Path file = dir.resolve(filename).normalize();
-            if (!file.startsWith(dir) || !Files.isRegularFile(file)) {
-                continue;
-            }
-            try {
-                entries.add(readEntry(file));
-            } catch (Exception e) {
-                log.warn("memory_read_failed, file={}, error={}", file, e.getMessage());
-            }
+            entries.sort(Comparator.comparingLong(MemoryEntry::mtimeMs).reversed());
+            return entries;
         }
-        entries.sort(Comparator.comparingLong(MemoryEntry::mtimeMs).reversed());
-        return entries;
     }
 
     public List<MemoryHeader> list(String repoRoot, String userId) {
@@ -120,17 +133,19 @@ public class MemoryFileService {
         if (!StringUtils.hasText(filename) || filename.contains("/") || filename.contains("..")) {
             return false;
         }
-        Path dir = ensureMemoryDirUnchecked(repoRoot, userId);
-        Path file = dir.resolve(filename).normalize();
-        if (!file.startsWith(dir) || !Files.exists(file)) {
-            return false;
-        }
-        try {
-            Files.delete(file);
-            rebuildEntrypoint(repoRoot, userId);
-            return true;
-        } catch (IOException e) {
-            throw new IllegalStateException("failed to delete memory", e);
+        synchronized (lockFor(repoRoot, userId, properties.getRootDir())) {
+            Path dir = ensureMemoryDirUnchecked(repoRoot, userId);
+            Path file = dir.resolve(filename).normalize();
+            if (!file.startsWith(dir) || !Files.exists(file)) {
+                return false;
+            }
+            try {
+                Files.delete(file);
+                rebuildEntrypoint(repoRoot, userId);
+                return true;
+            } catch (IOException e) {
+                throw new IllegalStateException("failed to delete memory", e);
+            }
         }
     }
 
@@ -139,16 +154,18 @@ public class MemoryFileService {
     }
 
     public MemoryEntrypoint loadEntrypoint(String storageRoot, String userId, String memoryRootDir) {
-        try {
-            Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
-            Path entrypointFile = dir.resolve(ENTRYPOINT_FILENAME);
-            if (!Files.exists(entrypointFile)) {
-                return rebuildEntrypoint(storageRoot, userId, memoryRootDir);
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            try {
+                Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+                Path entrypointFile = dir.resolve(ENTRYPOINT_FILENAME);
+                if (!Files.exists(entrypointFile)) {
+                    return rebuildEntrypoint(storageRoot, userId, memoryRootDir);
+                }
+                String content = Files.readString(entrypointFile, StandardCharsets.UTF_8);
+                return truncateEntrypoint(content);
+            } catch (IOException e) {
+                throw new IllegalStateException("failed to load MEMORY.md", e);
             }
-            String content = Files.readString(entrypointFile, StandardCharsets.UTF_8);
-            return truncateEntrypoint(content);
-        } catch (IOException e) {
-            throw new IllegalStateException("failed to load MEMORY.md", e);
         }
     }
 
@@ -163,15 +180,17 @@ public class MemoryFileService {
     }
 
     public MemoryEntrypoint rebuildEntrypoint(String storageRoot, String userId, String memoryRootDir) {
-        try {
-            Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
-            List<MemoryHeader> headers = scanHeaders(storageRoot, userId, memoryRootDir);
-            String raw = renderEntrypoint(headers);
-            MemoryEntrypoint entrypoint = truncateEntrypoint(raw);
-            Files.writeString(dir.resolve(ENTRYPOINT_FILENAME), entrypoint.content(), StandardCharsets.UTF_8);
-            return entrypoint;
-        } catch (IOException e) {
-            throw new IllegalStateException("failed to rebuild MEMORY.md", e);
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            try {
+                Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+                List<MemoryHeader> headers = scanHeaders(storageRoot, userId, memoryRootDir);
+                String raw = renderEntrypoint(headers);
+                MemoryEntrypoint entrypoint = truncateEntrypoint(raw);
+                Files.writeString(dir.resolve(ENTRYPOINT_FILENAME), entrypoint.content(), StandardCharsets.UTF_8);
+                return entrypoint;
+            } catch (IOException e) {
+                throw new IllegalStateException("failed to rebuild MEMORY.md", e);
+            }
         }
     }
 
@@ -346,6 +365,14 @@ public class MemoryFileService {
                 .resolve(memoryRootDir)
                 .resolve(safeUserId)
                 .normalize();
+    }
+
+    private Object lockFor(String storageRoot, String userId, String memoryRootDir) {
+        String key = ensureMemoryDirUnchecked(storageRoot, userId, memoryRootDir)
+                .toAbsolutePath()
+                .normalize()
+                .toString();
+        return directoryLocks.computeIfAbsent(key, ignored -> new Object());
     }
 
     private String slugify(String value) {

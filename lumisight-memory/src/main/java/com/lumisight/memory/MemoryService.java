@@ -27,6 +27,10 @@ public class MemoryService {
         return memoryFileService.write(repoRoot, userId, request);
     }
 
+    public MemoryEntry save(String storageRoot, String userId, String memoryRootDir, MemoryWriteRequest request) {
+        return memoryFileService.write(storageRoot, userId, memoryRootDir, request);
+    }
+
     public List<MemoryHeader> list(String repoRoot, String userId) {
         return memoryFileService.list(repoRoot, userId);
     }

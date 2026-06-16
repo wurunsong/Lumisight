@@ -14,8 +14,10 @@ public class LumisightChatModelConfig {
 
     public static final String TASK_CHAT_MODEL = "taskChatModel";
     public static final String SCHEDULER_CHAT_MODEL = "schedulerChatModel";
+    public static final String MEMORY_CHAT_MODEL = "memoryChatModel";
     public static final String TASK_CHAT_CLIENT_BUILDER = "taskChatClientBuilder";
     public static final String SCHEDULER_CHAT_CLIENT_BUILDER = "schedulerChatClientBuilder";
+    public static final String MEMORY_CHAT_CLIENT_BUILDER = "memoryChatClientBuilder";
 
     @Bean(name = TASK_CHAT_MODEL)
     @Primary
@@ -42,6 +44,18 @@ public class LumisightChatModelConfig {
                 .build();
     }
 
+    @Bean(name = MEMORY_CHAT_MODEL)
+    public ChatModel memoryChatModel(
+            @Qualifier("openAiChatModel") OpenAiChatModel baseOpenAiChatModel,
+            LumisightAiProperties properties
+    ) {
+        return baseOpenAiChatModel.mutate()
+                .defaultOptions(OpenAiChatOptions.builder()
+                        .model(properties.getMemoryChatModel())
+                        .build())
+                .build();
+    }
+
     @Bean(name = TASK_CHAT_CLIENT_BUILDER)
     @Primary
     public ChatClient.Builder taskChatClientBuilder(@Qualifier(TASK_CHAT_MODEL) ChatModel taskChatModel) {
@@ -51,5 +65,10 @@ public class LumisightChatModelConfig {
     @Bean(name = SCHEDULER_CHAT_CLIENT_BUILDER)
     public ChatClient.Builder schedulerChatClientBuilder(@Qualifier(SCHEDULER_CHAT_MODEL) ChatModel schedulerChatModel) {
         return ChatClient.builder(schedulerChatModel);
+    }
+
+    @Bean(name = MEMORY_CHAT_CLIENT_BUILDER)
+    public ChatClient.Builder memoryChatClientBuilder(@Qualifier(MEMORY_CHAT_MODEL) ChatModel memoryChatModel) {
+        return ChatClient.builder(memoryChatModel);
     }
 }
