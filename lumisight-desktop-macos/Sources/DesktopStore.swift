@@ -222,7 +222,7 @@ final class DesktopStore: ObservableObject {
         )
         session.events.append(item)
         session.updatedAt = .now
-        session.lastStatus = event.status ?? event.type.lowercased()
+        session.lastStatus = statusLabel(for: event)
         if event.type == "TOKEN" {
             session.finalOutput += event.message
         } else if event.type == "FINAL" {
@@ -247,6 +247,10 @@ final class DesktopStore: ObservableObject {
 
     private func eventTitle(for event: WireAgentEvent) -> String {
         switch event.type {
+        case "LOOP_STATE": return event.step?.titleShellLabel ?? "Loop State"
+        case "DIALOGUE_MODE": return "Dialogue Mode"
+        case "SKILL_SELECTED": return "Skill Selected"
+        case "SKILL_ROUTE": return "Skill Route"
         case "TOKEN": return "Streaming"
         case "FINAL": return "Final Answer"
         case "TOOL_CALL": return event.toolName ?? "Tool Call"
@@ -254,10 +258,55 @@ final class DesktopStore: ObservableObject {
         case "ASK_USER": return "Ask User"
         case "HUMAN_GATE": return "Human Gate"
         case "PLAN": return "Plan"
-        case "ERROR": return "Error"
+        case "CONTEXT_COMPRESSION": return "Context Projection"
+        case "MULTI_AGENT_SELECTED": return "Multi Agent Selected"
+        case "ORCHESTRATION_PLAN": return "Orchestration Plan"
+        case "SUBAGENT_SPAWNED": return taskTitle(prefix: "Subagent Started", event: event)
+        case "SUBAGENT_RESULT": return taskTitle(prefix: "Subagent Result", event: event)
+        case "MULTI_AGENT_TASK_STATUS": return taskTitle(prefix: "Task Status", event: event)
+        case "SUB_AGENT_LIFECYCLE": return lifecycleTitle(event)
+        case "MULTI_AGENT_FALLBACK": return "Multi Agent Fallback"
         case "VERIFY_RESULT": return "Verify"
+        case "INTERRUPTED": return "Interrupted"
+        case "RESUMED": return "Resumed"
+        case "ERROR": return "Error"
         default: return event.type.replacingOccurrences(of: "_", with: " ")
         }
+    }
+
+    private func statusLabel(for event: WireAgentEvent) -> String {
+        if event.type == "FINAL" {
+            return "done"
+        }
+        if event.type == "TOKEN" {
+            return "streaming"
+        }
+        if event.type == "MULTI_AGENT_SELECTED" || event.step == "MULTI_AGENT" {
+            return event.status ?? "multi-agent"
+        }
+        if event.type == "CONTEXT_COMPRESSION" {
+            return "context"
+        }
+        if event.type == "VERIFY_RESULT" {
+            return event.status ?? "verify"
+        }
+        return event.status ?? event.type.lowercased()
+    }
+
+    private func taskTitle(prefix: String, event: WireAgentEvent) -> String {
+        if case .string(let taskId)? = event.payload["taskId"], !taskId.isEmpty {
+            return "\(prefix): \(taskId)"
+        }
+        return prefix
+    }
+
+    private func lifecycleTitle(_ event: WireAgentEvent) -> String {
+        let action = event.payload["action"]?.pretty
+        let agentId = event.payload["agentId"]?.pretty
+        if let action, let agentId, !action.isEmpty, !agentId.isEmpty {
+            return "Subagent \(action): \(agentId)"
+        }
+        return "Subagent Lifecycle"
     }
 
     private func appendLocalEvent(_ type: String, title: String, body: String, sessionID: AgentSession.ID?) {

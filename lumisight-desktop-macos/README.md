@@ -14,8 +14,9 @@ swift run
 - 会话列表
 - WebSocket 连接 / 断开
 - 按会话发送 Agent 命令
+- `NORMAL / PLAN / MULTI_AGENT` 运行模式选择
 - 中断 / 恢复
-- 实时事件流展示
+- 实时事件流展示，包括上下文投影、多 Agent 编排、子任务状态、验证结果和工具调用
 - 最终输出汇总
 - 右侧 Inspector 查看当前状态与最近事件
 

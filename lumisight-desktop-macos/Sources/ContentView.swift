@@ -416,18 +416,6 @@ private struct ComposerView: View {
     }
 }
 
-private extension String {
-    var titleShellLabel: String {
-        replacingOccurrences(of: "_", with: " ")
-            .split(separator: " ")
-            .map { word in
-                guard let first = word.first else { return "" }
-                return first.uppercased() + word.dropFirst().lowercased()
-            }
-            .joined(separator: " ")
-    }
-}
-
 private struct SessionRow: View {
     let session: AgentSession
     let isSelected: Bool
@@ -516,6 +504,10 @@ private struct EventCard: View {
             return LinearGradient(colors: [ShellPalette.success.opacity(0.22), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "ERROR":
             return LinearGradient(colors: [ShellPalette.danger.opacity(0.24), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case "MULTI_AGENT_SELECTED", "ORCHESTRATION_PLAN", "SUBAGENT_SPAWNED", "SUBAGENT_RESULT", "MULTI_AGENT_TASK_STATUS", "SUB_AGENT_LIFECYCLE", "MULTI_AGENT_FALLBACK":
+            return LinearGradient(colors: [ShellPalette.warning.opacity(0.20), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case "CONTEXT_COMPRESSION", "SKILL_SELECTED", "SKILL_ROUTE", "DIALOGUE_MODE":
+            return LinearGradient(colors: [ShellPalette.accent.opacity(0.18), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "TOOL_CALL", "TOOL_RESULT":
             return LinearGradient(colors: [ShellPalette.accentStrong.opacity(0.18), ShellPalette.panelFill], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "ASK_USER", "HUMAN_GATE":
@@ -531,6 +523,10 @@ private struct EventCard: View {
             return ShellPalette.success.opacity(0.30)
         case "ERROR":
             return ShellPalette.danger.opacity(0.34)
+        case "MULTI_AGENT_SELECTED", "ORCHESTRATION_PLAN", "SUBAGENT_SPAWNED", "SUBAGENT_RESULT", "MULTI_AGENT_TASK_STATUS", "SUB_AGENT_LIFECYCLE", "MULTI_AGENT_FALLBACK":
+            return ShellPalette.warning.opacity(0.30)
+        case "CONTEXT_COMPRESSION", "SKILL_SELECTED", "SKILL_ROUTE", "DIALOGUE_MODE":
+            return ShellPalette.accent.opacity(0.24)
         case "TOOL_CALL", "TOOL_RESULT":
             return ShellPalette.accent.opacity(0.22)
         case "ASK_USER", "HUMAN_GATE":

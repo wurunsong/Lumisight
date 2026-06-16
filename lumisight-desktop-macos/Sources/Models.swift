@@ -18,12 +18,14 @@ enum AgentTaskType: String, Codable, CaseIterable, Identifiable {
 enum AgentRunMode: String, Codable, CaseIterable, Identifiable {
     case normal = "NORMAL"
     case plan = "PLAN"
+    case multiAgent = "MULTI_AGENT"
 
     var id: String { rawValue }
     var label: String {
         switch self {
         case .normal: return "Normal"
         case .plan: return "Plan"
+        case .multiAgent: return "Multi Agent"
         }
     }
 }
@@ -234,5 +236,17 @@ struct AgentSession: Identifiable, Codable, Hashable {
             unreadCount: 0,
             events: []
         )
+    }
+}
+
+extension String {
+    var titleShellLabel: String {
+        replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { word in
+                guard let first = word.first else { return "" }
+                return first.uppercased() + word.dropFirst().lowercased()
+            }
+            .joined(separator: " ")
     }
 }

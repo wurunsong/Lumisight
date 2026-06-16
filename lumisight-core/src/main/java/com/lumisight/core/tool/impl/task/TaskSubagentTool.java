@@ -3,7 +3,7 @@ package com.lumisight.core.tool.impl.task;
 import com.lumisight.core.agent.multiagent.model.SubAgentCapability;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
 import com.lumisight.core.agent.multiagent.model.TaskContextEnvelope;
-import com.lumisight.core.agent.multiagent.service.SubAgentExecutionService;
+import com.lumisight.core.agent.multiagent.port.SubAgentLauncher;
 import com.lumisight.core.context.ambient.ToolInvocationScope;
 import com.lumisight.core.context.ambient.ToolRuntimeScope;
 import com.lumisight.core.model.AgentContextItem;
@@ -33,10 +33,10 @@ public class TaskSubagentTool implements PermissionedAgentTool<TaskSubagentTool.
     ) {
     }
 
-    private final SubAgentExecutionService subAgentExecutionService;
+    private final SubAgentLauncher subAgentLauncher;
 
-    public TaskSubagentTool(SubAgentExecutionService subAgentExecutionService) {
-        this.subAgentExecutionService = subAgentExecutionService;
+    public TaskSubagentTool(SubAgentLauncher subAgentLauncher) {
+        this.subAgentLauncher = subAgentLauncher;
     }
 
     @Override
@@ -97,7 +97,7 @@ public class TaskSubagentTool implements PermissionedAgentTool<TaskSubagentTool.
                 StringUtils.hasText(args.expectedOutput()) ? args.expectedOutput() : "返回结构化结论、证据和建议下一步",
                 Map.of("contextLimit", defaultLimit)
         );
-        SubAgentResult result = subAgentExecutionService.execute(envelope, parentSessionId);
+        SubAgentResult result = subAgentLauncher.execute(envelope, parentSessionId);
         return List.of(new AgentContextItem(
                 "subagent",
                 envelope.taskId(),
