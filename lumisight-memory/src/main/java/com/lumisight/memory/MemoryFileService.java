@@ -69,6 +69,26 @@ public class MemoryFileService {
         }
     }
 
+    public MemoryEntry update(String repoRoot, String userId, String filename, MemoryWriteRequest request) {
+        return update(repoRoot, userId, properties.getRootDir(), filename, request);
+    }
+
+    public MemoryEntry update(String storageRoot, String userId, String memoryRootDir, String filename, MemoryWriteRequest request) {
+        validateWriteRequest(request);
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            try {
+                Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+                Path file = resolveMemoryFile(dir, filename);
+                String raw = MemoryFrontmatterParser.render(request);
+                Files.writeString(file, raw, StandardCharsets.UTF_8);
+                rebuildEntrypoint(storageRoot, userId, memoryRootDir);
+                return readEntry(file);
+            } catch (IOException e) {
+                throw new IllegalStateException("failed to update memory", e);
+            }
+        }
+    }
+
     public List<MemoryHeader> scanHeaders(String repoRoot, String userId) {
         return scanHeaders(repoRoot, userId, properties.getRootDir());
     }
@@ -130,21 +150,24 @@ public class MemoryFileService {
     }
 
     public boolean delete(String repoRoot, String userId, String filename) {
+        return delete(repoRoot, userId, properties.getRootDir(), filename);
+    }
+
+    public boolean delete(String storageRoot, String userId, String memoryRootDir, String filename) {
         if (!StringUtils.hasText(filename) || filename.contains("/") || filename.contains("..")) {
             return false;
         }
-        synchronized (lockFor(repoRoot, userId, properties.getRootDir())) {
-            Path dir = ensureMemoryDirUnchecked(repoRoot, userId);
-            Path file = dir.resolve(filename).normalize();
-            if (!file.startsWith(dir) || !Files.exists(file)) {
-                return false;
-            }
+        synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
+            Path dir = ensureMemoryDirUnchecked(storageRoot, userId, memoryRootDir);
             try {
+                Path file = resolveMemoryFile(dir, filename);
                 Files.delete(file);
-                rebuildEntrypoint(repoRoot, userId);
+                rebuildEntrypoint(storageRoot, userId, memoryRootDir);
                 return true;
             } catch (IOException e) {
                 throw new IllegalStateException("failed to delete memory", e);
+            } catch (IllegalArgumentException e) {
+                return false;
             }
         }
     }
@@ -222,6 +245,17 @@ public class MemoryFileService {
         if (!StringUtils.hasText(request.body())) {
             throw new IllegalArgumentException("memory body is required");
         }
+    }
+
+    private Path resolveMemoryFile(Path dir, String filename) {
+        if (!StringUtils.hasText(filename) || filename.contains("/") || filename.contains("..")) {
+            throw new IllegalArgumentException("invalid memory filename");
+        }
+        Path file = dir.resolve(filename).normalize();
+        if (!file.startsWith(dir) || !Files.isRegularFile(file) || !isStructuredMemoryFile(file)) {
+            throw new IllegalArgumentException("memory file not found: " + filename);
+        }
+        return file;
     }
 
     private Path allocateFile(Path dir, MemoryType type, String name) throws IOException {
@@ -357,14 +391,23 @@ public class MemoryFileService {
     }
 
     private Path ensureMemoryDirUnchecked(String storageRoot, String userId, String memoryRootDir) {
-        String safeUserId = StringUtils.hasText(userId) ? userId.trim() : "default-user";
+        String safeUserId = safeUserId(userId);
         Path root = StringUtils.hasText(storageRoot)
-                ? Path.of(storageRoot)
+                ? Path.of(storageRoot).toAbsolutePath().normalize()
                 : Path.of(".").toAbsolutePath().normalize();
-        return root
-                .resolve(memoryRootDir)
+        Path memoryRoot = StringUtils.hasText(memoryRootDir) ? Path.of(memoryRootDir.trim()) : Path.of("");
+        if (memoryRoot.isAbsolute()) {
+            throw new IllegalArgumentException("memory root dir must be relative");
+        }
+        Path dir = root
+                .resolve(memoryRoot)
                 .resolve(safeUserId)
                 .normalize();
+        // userId 和 memoryRootDir 都来自运行时输入/配置，最终目录必须留在 storageRoot 下。
+        if (!dir.startsWith(root)) {
+            throw new IllegalArgumentException("memory path escapes storage root");
+        }
+        return dir;
     }
 
     private Object lockFor(String storageRoot, String userId, String memoryRootDir) {
@@ -381,5 +424,13 @@ public class MemoryFileService {
                 .toLowerCase(Locale.ROOT);
         String slug = normalized.replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
         return slug.isBlank() ? "memory" : slug;
+    }
+
+    private String safeUserId(String userId) {
+        String value = StringUtils.hasText(userId) ? userId.trim() : "default-user";
+        if (value.contains("/") || value.contains("\\") || value.contains("..")) {
+            throw new IllegalArgumentException("invalid memory userId");
+        }
+        return value;
     }
 }

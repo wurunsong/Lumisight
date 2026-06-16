@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.config.LumisightChatModelConfig;
 import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
+import com.lumisight.core.support.memory.MemoryWriteRules;
 import com.lumisight.memory.MemoryService;
 import com.lumisight.memory.dto.MemoryEntry;
 import com.lumisight.memory.dto.MemoryWriteRequest;
@@ -19,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 单次长期记忆沉淀执行器。
@@ -76,24 +78,65 @@ public class AgentMemoryConsolidationService {
                     agentPromptService.memoryConsolidateSystemPrompt(),
                     agentPromptService.memoryConsolidateUserPrompt(request, trigger, effectiveQuestion, observedContent, currentContexts, memoryContext)
             );
-            MemoryWriteRequest writeRequest = parseWriteRequest(raw);
-            if (writeRequest == null) {
+            // 自动记忆不是单纯追加：memory 模型先给出维护动作，再由这里统一做硬校验和落盘。
+            MemoryMaintenanceDecision decision = parseDecision(raw);
+            if (decision == null || decision.action() == MemoryMaintenanceAction.NONE) {
                 return;
             }
-            MemoryEntry entry = saveToLongTermMemory(request, writeRequest);
-            log.info("agent_memory_consolidated, repoRoot={}, userId={}, filename={}, type={}",
-                    request.repoRoot(), request.userId(), entry.filename(), entry.type().wireValue());
+            applyDecision(request, decision);
         } catch (Exception e) {
-            log.debug("agent_memory_consolidation_failed, error={}", e.getMessage());
+            log.warn("agent_memory_consolidation_failed, error={}", e.getMessage());
         }
     }
 
-    private MemoryWriteRequest parseWriteRequest(String raw) throws Exception {
+    private MemoryMaintenanceDecision parseDecision(String raw) throws Exception {
         if (!StringUtils.hasText(raw)) {
             return null;
         }
         JsonNode root = objectMapper.readTree(cleanJson(raw));
-        if (!root.path("shouldWrite").asBoolean(false)) {
+        MemoryMaintenanceAction action = parseAction(root);
+        if (action == MemoryMaintenanceAction.NONE) {
+            return new MemoryMaintenanceDecision(action, "", null);
+        }
+        String targetFilename = text(root, "targetFilename");
+        MemoryWriteRequest writeRequest = parseWriteRequest(root, action);
+        if ((action == MemoryMaintenanceAction.UPDATE || action == MemoryMaintenanceAction.MERGE || action == MemoryMaintenanceAction.DELETE)
+                && !StringUtils.hasText(targetFilename)) {
+            log.warn("agent_memory_consolidation_skipped, action={}, reason=missing_target_filename", action);
+            return null;
+        }
+        if (writeRequest != null) {
+            List<String> errors = MemoryWriteRules.validate(writeRequest);
+            if (!errors.isEmpty()) {
+                log.warn("agent_memory_consolidation_skipped, action={}, reason=invalid_memory, errors={}", action, errors);
+                return null;
+            }
+            MemoryType targetType = typeFromFilename(targetFilename);
+            if ((action == MemoryMaintenanceAction.UPDATE || action == MemoryMaintenanceAction.MERGE)
+                    && targetType != null
+                    && targetType != writeRequest.type()) {
+                log.warn("agent_memory_consolidation_skipped, action={}, reason=target_type_mismatch, targetFilename={}, targetType={}, writeType={}",
+                        action, targetFilename, targetType.wireValue(), writeRequest.type().wireValue());
+                return null;
+            }
+        }
+        return new MemoryMaintenanceDecision(action, targetFilename, writeRequest);
+    }
+
+    private MemoryMaintenanceAction parseAction(JsonNode root) {
+        String actionText = text(root, "action");
+        if (!StringUtils.hasText(actionText)) {
+            return root.path("shouldWrite").asBoolean(false) ? MemoryMaintenanceAction.CREATE : MemoryMaintenanceAction.NONE;
+        }
+        try {
+            return MemoryMaintenanceAction.valueOf(actionText.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return MemoryMaintenanceAction.NONE;
+        }
+    }
+
+    private MemoryWriteRequest parseWriteRequest(JsonNode root, MemoryMaintenanceAction action) {
+        if (action == MemoryMaintenanceAction.DELETE || action == MemoryMaintenanceAction.NONE) {
             return null;
         }
         String name = text(root, "name");
@@ -106,20 +149,78 @@ public class AgentMemoryConsolidationService {
         return new MemoryWriteRequest(name, description, MemoryType.parse(typeText), body);
     }
 
-    private MemoryEntry saveToLongTermMemory(AgentRequest request, MemoryWriteRequest writeRequest) {
-        // 用户画像和明确反馈跨项目复用，落到用户根目录；项目动态和外部参考仍跟随当前仓库。
-        if (writeRequest.type() == MemoryType.USER || writeRequest.type() == MemoryType.FEEDBACK) {
-            String userHome = System.getProperty("user.home");
-            if (StringUtils.hasText(userHome)) {
-                return memoryService.save(
-                        Path.of(userHome, ".lumisight").toAbsolutePath().normalize().toString(),
-                        request.userId(),
-                        "",
-                        writeRequest
-                );
+    private void applyDecision(AgentRequest request, MemoryMaintenanceDecision decision) {
+        switch (decision.action()) {
+            case CREATE -> {
+                MemoryEntry entry = saveToLongTermMemory(request, decision.writeRequest());
+                log.info("agent_memory_created, repoRoot={}, userId={}, filename={}, type={}",
+                        request.repoRoot(), request.userId(), entry.filename(), entry.type().wireValue());
+            }
+            case UPDATE, MERGE -> {
+                MemoryEntry entry = updateLongTermMemory(request, decision.targetFilename(), decision.writeRequest());
+                log.info("agent_memory_updated, action={}, repoRoot={}, userId={}, filename={}, type={}",
+                        decision.action(), request.repoRoot(), request.userId(), entry.filename(), entry.type().wireValue());
+            }
+            case DELETE -> {
+                boolean deleted = deleteLongTermMemory(request, decision.targetFilename());
+                log.info("agent_memory_deleted, repoRoot={}, userId={}, filename={}, deleted={}",
+                        request.repoRoot(), request.userId(), decision.targetFilename(), deleted);
+            }
+            case NONE -> {
             }
         }
+    }
+
+    private MemoryEntry saveToLongTermMemory(AgentRequest request, MemoryWriteRequest writeRequest) {
+        // 用户画像和明确反馈跨项目复用，落到用户根目录；项目动态和外部参考仍跟随当前仓库。
+        if (usesUserProfileStore(writeRequest.type())) {
+            return memoryService.save(userProfileStorageRoot(), request.userId(), "", writeRequest);
+        }
         return memoryService.save(request.repoRoot(), request.userId(), writeRequest);
+    }
+
+    private MemoryEntry updateLongTermMemory(AgentRequest request, String targetFilename, MemoryWriteRequest writeRequest) {
+        // UPDATE/MERGE 必须落回目标文件所属的记忆域，避免把项目记忆误更新到用户画像目录。
+        if (usesUserProfileStore(writeRequest.type())) {
+            return memoryService.update(userProfileStorageRoot(), request.userId(), "", targetFilename, writeRequest);
+        }
+        return memoryService.update(request.repoRoot(), request.userId(), targetFilename, writeRequest);
+    }
+
+    private boolean deleteLongTermMemory(AgentRequest request, String targetFilename) {
+        MemoryType type = typeFromFilename(targetFilename);
+        if (type == null) {
+            throw new IllegalArgumentException("invalid memory filename type: " + targetFilename);
+        }
+        if (usesUserProfileStore(type)) {
+            return memoryService.delete(userProfileStorageRoot(), request.userId(), "", targetFilename);
+        }
+        return memoryService.delete(request.repoRoot(), request.userId(), targetFilename);
+    }
+
+    private boolean usesUserProfileStore(MemoryType type) {
+        return type == MemoryType.USER || type == MemoryType.FEEDBACK;
+    }
+
+    private String userProfileStorageRoot() {
+        String userHome = System.getProperty("user.home");
+        if (!StringUtils.hasText(userHome)) {
+            throw new IllegalStateException("user.home is required for user profile memory");
+        }
+        return Path.of(userHome, ".lumisight").toAbsolutePath().normalize().toString();
+    }
+
+    private MemoryType typeFromFilename(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return MemoryType.PROJECT;
+        }
+        int index = filename.indexOf('_');
+        String prefix = index > 0 ? filename.substring(0, index) : filename;
+        try {
+            return MemoryType.parse(prefix);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String text(JsonNode root, String field) {
@@ -139,5 +240,20 @@ public class AgentMemoryConsolidationService {
             return text.substring(start, end + 1);
         }
         return text;
+    }
+
+    private enum MemoryMaintenanceAction {
+        NONE,
+        CREATE,
+        UPDATE,
+        MERGE,
+        DELETE
+    }
+
+    private record MemoryMaintenanceDecision(
+            MemoryMaintenanceAction action,
+            String targetFilename,
+            MemoryWriteRequest writeRequest
+    ) {
     }
 }

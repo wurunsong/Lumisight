@@ -16,6 +16,7 @@ import com.lumisight.memory.dto.RelevantMemoryBundle;
 import com.lumisight.skills.dto.SkillPlan;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +24,10 @@ import java.util.StringJoiner;
 
 @Component
 public class AgentPromptService {
+
+    private static final int MAX_MEMORY_CONTEXT_ITEMS = 12;
+    private static final int MAX_MEMORY_CONTEXT_CHARS = 12_000;
+    private static final int MAX_MEMORY_ITEM_CHARS = 1_500;
 
     private final PromptTemplateService promptTemplateService;
 
@@ -219,6 +224,7 @@ public class AgentPromptService {
             RelevantMemoryBundle memoryContext
     ) {
         RelevantMemoryBundle safeMemoryContext = memoryContext == null ? RelevantMemoryBundle.empty() : memoryContext;
+        String memoryIndexBlock = safeMemoryContext.entrypoint() == null ? "" : safeMemoryContext.entrypoint().content();
         return promptTemplateService.render("memory_consolidate_user", Map.of(
                 "repoRoot", safeText(request.repoRoot()),
                 "userId", safeText(request.userId()),
@@ -226,6 +232,7 @@ public class AgentPromptService {
                 "question", safeText(effectiveQuestion),
                 "observedContent", safeText(observedContent),
                 "currentContextBlock", memoryCurrentContextBlock(currentContexts),
+                "memoryIndexBlock", safeText(memoryIndexBlock),
                 "memoryBlock", safeText(safeMemoryContext.remindersBlock())
         ));
     }
@@ -298,11 +305,30 @@ public class AgentPromptService {
         if (contexts == null || contexts.isEmpty()) {
             return "- 无";
         }
-        StringJoiner joiner = new StringJoiner("\n");
-        for (AgentContextItem context : contexts) {
-            joiner.add("- [" + context.sourceType() + "] " + context.sourceId() + "\n" + safeText(context.content()));
+        // 记忆沉淀只需要近期稳定信号；不能把完整会话和工具流水原样塞进 memory 模型。
+        List<AgentContextItem> recent = contexts.subList(Math.max(0, contexts.size() - MAX_MEMORY_CONTEXT_ITEMS), contexts.size());
+        List<String> lines = new ArrayList<>();
+        int usedChars = 0;
+        for (AgentContextItem context : recent) {
+            String content = limitText(safeText(context.content()), MAX_MEMORY_ITEM_CHARS);
+            String rendered = "- [" + context.sourceType() + "] " + context.sourceId() + "\n" + content;
+            if (usedChars + rendered.length() > MAX_MEMORY_CONTEXT_CHARS) {
+                break;
+            }
+            lines.add(rendered);
+            usedChars += rendered.length();
         }
-        return joiner.toString();
+        if (lines.isEmpty()) {
+            return "- 无";
+        }
+        return String.join("\n", lines);
+    }
+
+    private String limitText(String text, int maxChars) {
+        if (text == null || text.length() <= maxChars) {
+            return text == null ? "" : text;
+        }
+        return text.substring(0, Math.max(0, maxChars)) + "\n...（已截断）";
     }
 
     private String contextSummary(List<AgentContextItem> contexts) {

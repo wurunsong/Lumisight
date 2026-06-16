@@ -385,12 +385,12 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 记忆与上下文主流程</h1>
-      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆又怎样在旁路支持主流程，并在结束后通过离线反思继续沉淀。</p>
+      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆又怎样在旁路支持主流程，并在结束后进入自动维护决策。</p>
       <div class="hero-badges">
         <span class="badge">Session Ledger</span>
         <span class="badge">Projection Before Prompt</span>
         <span class="badge">Artifact And Compact</span>
-        <span class="badge">Long-Term Memory Sidecar</span>
+        <span class="badge">Memory Maintenance</span>
       </div>
     </section>
 
@@ -430,8 +430,8 @@
         </article>
         <article class="flow-card sky">
           <span class="index">06</span>
-          <h3>沉淀与结束</h3>
-          <p>这一轮结束后，会话上下文继续保留在账本层；真正值得长期保存的事实会被沉淀到长期记忆层，必要时还会触发离线反思，把 task / memory / cron 里的稳定信号再整理一次。</p>
+          <h3>维护与结束</h3>
+          <p>这一轮结束后，会话上下文继续保留在账本层；真正值得长期保存的事实会进入记忆维护决策，判断是新增、更新、合并、删除还是不处理。</p>
         </article>
       </div>
       <div class="presence-strip">
@@ -441,7 +441,7 @@
         </article>
         <article class="presence">
           <h3>长期记忆是旁路支持</h3>
-          <p>长期记忆不会替代当前会话，但会在准备阶段补充跨会话事实，并在结束后继续沉淀真正有价值的信息。</p>
+          <p>长期记忆不会替代当前会话，但会在准备阶段补充跨会话事实，并在结束后用维护决策修正长期记忆，而不是只追加新文件。</p>
         </article>
         <article class="presence">
           <h3>外挂检索是增强层</h3>
@@ -504,8 +504,8 @@
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
-                <strong>执行后再判断沉淀</strong>
-                <span>不是每轮都写长期记忆，只有真正稳定和值得保留的事实才会进入记忆层；必要时还会进入离线反思，再决定是否生成 project memory 或 follow-up tasks。</span>
+                <strong>执行后进入维护决策</strong>
+                <span>不是每轮都写长期记忆，memory 模型会结合本轮上下文、长期记忆索引和相关旧记忆，决定 CREATE / UPDATE / MERGE / DELETE / NONE。</span>
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
@@ -542,8 +542,8 @@
           <p>当 token 预算逼近窗口边界时，系统优先折叠旧对话和可重取工具结果，而不是马上全量摘要。</p>
         </article>
         <article class="signal">
-          <h3>什么时候写记忆</h3>
-          <p>不是每条内容都进长期记忆，而是只有用户偏好、项目事实、稳定经验等更长期的东西才会被沉淀。</p>
+          <h3>什么时候维护记忆</h3>
+          <p>不是每条内容都进长期记忆。系统只在出现用户偏好、项目事实、稳定经验或旧记忆需要修正时，才触发新增、更新、合并或删除。</p>
         </article>
         <article class="signal">
           <h3>什么时候做离线反思</h3>
@@ -618,6 +618,14 @@
             <li>这些证据仍通过同一套上下文准备机制进入 prompt。</li>
             <li>现在这层检索质量还可以用 CodeSearchNet 风格 benchmark 进一步校准。</li>
             <li>所以外挂能力是增强层，而不是与记忆系统割裂的另一条暗线。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>自动记忆维护不是只追加</h3>
+          <ul>
+            <li>最终回答后会异步投递记忆信号，不阻塞用户侧响应。</li>
+            <li>维护模型会同时看到裁剪后的本轮上下文、MEMORY.md 索引和相关旧记忆。</li>
+            <li>输出不再只是 shouldWrite，而是 CREATE / UPDATE / MERGE / DELETE / NONE。</li>
           </ul>
         </article>
         <article class="highlight">

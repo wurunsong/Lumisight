@@ -31,12 +31,24 @@ public class MemoryService {
         return memoryFileService.write(storageRoot, userId, memoryRootDir, request);
     }
 
+    public MemoryEntry update(String repoRoot, String userId, String filename, MemoryWriteRequest request) {
+        return memoryFileService.update(repoRoot, userId, filename, request);
+    }
+
+    public MemoryEntry update(String storageRoot, String userId, String memoryRootDir, String filename, MemoryWriteRequest request) {
+        return memoryFileService.update(storageRoot, userId, memoryRootDir, filename, request);
+    }
+
     public List<MemoryHeader> list(String repoRoot, String userId) {
         return memoryFileService.list(repoRoot, userId);
     }
 
     public boolean delete(String repoRoot, String userId, String filename) {
         return memoryFileService.delete(repoRoot, userId, filename);
+    }
+
+    public boolean delete(String storageRoot, String userId, String memoryRootDir, String filename) {
+        return memoryFileService.delete(storageRoot, userId, memoryRootDir, filename);
     }
 
     public MemoryEntrypoint loadEntrypoint(String repoRoot, String userId) {

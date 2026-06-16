@@ -6,6 +6,7 @@ import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.core.tool.ToolArg;
+import com.lumisight.core.support.memory.MemoryWriteRules;
 import com.lumisight.memory.dto.MemoryEntry;
 import com.lumisight.memory.MemoryService;
 import com.lumisight.memory.enums.MemoryType;
@@ -16,12 +17,9 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 @Component
 public class MemoryWriteTool implements PermissionedAgentTool<MemoryWriteTool.Args> {
-
-    private static final Pattern ABSOLUTE_DATE_PATTERN = Pattern.compile("\\b\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?\\b");
 
     public record Args(
             @ToolArg(description = "记忆名称，简短且可读", required = true, example = "no-mock-database")
@@ -92,17 +90,18 @@ public class MemoryWriteTool implements PermissionedAgentTool<MemoryWriteTool.Ar
         } catch (Exception e) {
             errors.add(e.getMessage());
         }
-        if (type == MemoryType.FEEDBACK && StringUtils.hasText(args.body())) {
-            String lower = args.body().toLowerCase();
-            if (!lower.contains("why:") && !lower.contains("**why:**")) {
-                errors.add("feedback 记忆必须包含 Why");
+        if (type != null) {
+            errors.addAll(MemoryWriteRules.validate(new MemoryWriteRequest(args.name(), args.description(), type, args.body())));
+        } else {
+            if (!StringUtils.hasText(args.name())) {
+                errors.add("name 是必填参数");
             }
-            if (!lower.contains("how to apply:") && !lower.contains("**how to apply:**")) {
-                errors.add("feedback 记忆必须包含 How to apply");
+            if (!StringUtils.hasText(args.description())) {
+                errors.add("description 是必填参数");
             }
-        }
-        if (type == MemoryType.PROJECT && StringUtils.hasText(args.body()) && containsRelativeDate(args.body()) && !ABSOLUTE_DATE_PATTERN.matcher(args.body()).find()) {
-            errors.add("project 记忆涉及日期时必须写绝对日期，例如 2026-03-05");
+            if (!StringUtils.hasText(args.body())) {
+                errors.add("body 是必填参数");
+            }
         }
         return errors;
     }
@@ -122,27 +121,5 @@ public class MemoryWriteTool implements PermissionedAgentTool<MemoryWriteTool.Ar
                 "[" + entry.type().wireValue() + "] " + entry.description() + "\n" + entry.body(),
                 Map.of("filename", entry.filename(), "type", entry.type().wireValue(), "name", entry.name())
         ));
-    }
-
-    private boolean containsRelativeDate(String body) {
-        String lower = body.toLowerCase();
-        return lower.contains("今天")
-                || lower.contains("明天")
-                || lower.contains("昨天")
-                || lower.contains("周一")
-                || lower.contains("周二")
-                || lower.contains("周三")
-                || lower.contains("周四")
-                || lower.contains("周五")
-                || lower.contains("周六")
-                || lower.contains("周日")
-                || lower.contains("下周")
-                || lower.contains("本周")
-                || lower.contains("today")
-                || lower.contains("tomorrow")
-                || lower.contains("yesterday")
-                || lower.contains("thursday")
-                || lower.contains("next week")
-                || lower.contains("this week");
     }
 }

@@ -16,7 +16,10 @@
 本轮会话上下文:
 {{currentContextBlock}}
 
+当前长期记忆索引:
+{{memoryIndexBlock}}
+
 当前已加载的相关长期记忆:
 {{memoryBlock}}
 
-请判断是否需要沉淀一条新的长期记忆。
+请判断是否需要新增、更新、合并或删除长期记忆。
