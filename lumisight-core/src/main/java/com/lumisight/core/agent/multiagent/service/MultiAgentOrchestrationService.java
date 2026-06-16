@@ -50,7 +50,8 @@ public class MultiAgentOrchestrationService {
                 Map.copyOf(attributes)
         );
         OrchestrationPlan plan = orchestrationPlanner.createPlan(context);
-        return new PlannedOrchestration(context, plan, describeWaves(plan));
+        List<List<SubAgentTask>> executionWaves = buildExecutionWaves(plan);
+        return new PlannedOrchestration(context, plan, executionWaves, describeWaves(plan, executionWaves));
     }
 
     public OrchestrationResult execute(PlannedOrchestration plannedOrchestration) {
@@ -58,7 +59,8 @@ public class MultiAgentOrchestrationService {
         // serial / parallel / hybrid 是编排方式；wave 只是调度器把这些方式落到线程池时切出的执行批次。
         SubAgentSchedulingService.ExecutionResult executionResult = subAgentSchedulingService.executePlan(
                 plannedOrchestration.plan(),
-                plannedOrchestration.context()
+                plannedOrchestration.context(),
+                plannedOrchestration.executionWaves()
         );
         OrchestrationPlan plan = plannedOrchestration.plan();
         plan = executionResult.executionState().plan();
@@ -79,11 +81,14 @@ public class MultiAgentOrchestrationService {
         );
     }
 
-    private List<WavePlanBrief> describeWaves(OrchestrationPlan plan) {
-        List<List<SubAgentTask>> waves = wavePlanner.buildExecutionWaves(
+    private List<List<SubAgentTask>> buildExecutionWaves(OrchestrationPlan plan) {
+        return wavePlanner.buildExecutionWaves(
                 plan.tasks() == null ? List.of() : plan.tasks(),
                 plan.orchestrationMode()
         );
+    }
+
+    private List<WavePlanBrief> describeWaves(OrchestrationPlan plan, List<List<SubAgentTask>> waves) {
         List<WavePlanBrief> briefs = new ArrayList<>(waves.size());
         for (int i = 0; i < waves.size(); i++) {
             List<SubAgentTask> wave = waves.get(i);
@@ -100,6 +105,7 @@ public class MultiAgentOrchestrationService {
     public record PlannedOrchestration(
             OrchestrationContext context,
             OrchestrationPlan plan,
+            List<List<SubAgentTask>> executionWaves,
             List<WavePlanBrief> waves
     ) {
     }

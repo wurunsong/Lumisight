@@ -3,6 +3,7 @@ package com.lumisight.core.agent.multiagent.service;
 import com.lumisight.core.agent.multiagent.model.MultiAgentExecutionState;
 import com.lumisight.core.agent.multiagent.model.OrchestrationPlan;
 import com.lumisight.core.agent.multiagent.model.SubAgentResult;
+import com.lumisight.core.agent.multiagent.model.SubAgentTask;
 import com.lumisight.core.context.ambient.OrchestrationContext;
 import org.springframework.stereotype.Component;
 
@@ -26,8 +27,12 @@ public class SubAgentSchedulingService {
         this.waveExecutor = waveExecutor;
     }
 
-    public ExecutionResult executePlan(OrchestrationPlan plan, OrchestrationContext context) {
-        SubAgentExecutionScheduler.ScheduleSession session = scheduler.open(plan, context);
+    public ExecutionResult executePlan(
+            OrchestrationPlan plan,
+            OrchestrationContext context,
+            List<List<SubAgentTask>> executionWaves
+    ) {
+        SubAgentExecutionScheduler.ScheduleSession session = scheduler.open(plan, context, executionWaves);
         while (scheduler.shouldContinue(session)) {
             SubAgentWavePlan wavePlan = scheduler.nextWave(session).orElse(null);
             if (wavePlan == null) {

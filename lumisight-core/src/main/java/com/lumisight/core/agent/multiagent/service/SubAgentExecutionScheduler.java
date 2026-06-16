@@ -36,6 +36,10 @@ class SubAgentExecutionScheduler {
     }
 
     ScheduleSession open(OrchestrationPlan plan, OrchestrationContext context) {
+        return open(plan, context, null);
+    }
+
+    ScheduleSession open(OrchestrationPlan plan, OrchestrationContext context, List<List<SubAgentTask>> plannedWaves) {
         String coordinationId = stableCoordinationId(context);
         String repoRoot = context.request().repoRoot();
         MultiAgentExecutionState resumeState = context.request().resume()
@@ -43,12 +47,15 @@ class SubAgentExecutionScheduler {
                 : null;
         OrchestrationPlan effectivePlan = resumeState != null && resumeState.plan() != null ? resumeState.plan() : plan;
         List<SubAgentTask> tasks = effectivePlan.tasks() == null ? List.of() : effectivePlan.tasks();
+        List<List<SubAgentTask>> executionWaves = resumeState != null && resumeState.plan() != null
+                ? wavePlanner.buildExecutionWaves(tasks, effectivePlan.orchestrationMode())
+                : normalizePlannedWaves(plannedWaves, tasks, effectivePlan);
         ScheduleSession session = new ScheduleSession(
                 context,
                 repoRoot,
                 coordinationId,
                 effectivePlan,
-                wavePlanner.buildExecutionWaves(tasks, effectivePlan.orchestrationMode()),
+                executionWaves,
                 initTaskStates(tasks, resumeState),
                 initCompleted(resumeState),
                 initPermissionsByTask(resumeState),
@@ -60,6 +67,20 @@ class SubAgentExecutionScheduler {
         }
         saveState(session);
         return session;
+    }
+
+    private List<List<SubAgentTask>> normalizePlannedWaves(
+            List<List<SubAgentTask>> plannedWaves,
+            List<SubAgentTask> tasks,
+            OrchestrationPlan effectivePlan
+    ) {
+        if (plannedWaves == null || plannedWaves.isEmpty()) {
+            return wavePlanner.buildExecutionWaves(tasks, effectivePlan.orchestrationMode());
+        }
+        return plannedWaves.stream()
+                .map(wave -> wave == null ? List.<SubAgentTask>of() : List.copyOf(wave))
+                .filter(wave -> !wave.isEmpty())
+                .toList();
     }
 
     Optional<SubAgentWavePlan> nextWave(ScheduleSession session) {
