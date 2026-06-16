@@ -7,7 +7,6 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentEvent;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentRunMode;
-import com.lumisight.core.support.AgentSessionContextStore;
 import com.lumisight.core.support.context.AgentContextAppendOptions;
 import com.lumisight.core.support.context.AgentContextManager;
 import com.lumisight.core.support.context.AgentContextSession;
@@ -27,16 +26,16 @@ class PrimaryMultiAgentExecutionStrategy implements AgentMultiAgentExecutionStra
 
     private final MultiAgentOrchestrationService multiAgentOrchestrationService;
     private final AgentContextManager agentContextManager;
-    private final AgentSessionContextStore conversationManager;
+    private final AgentExecutionInterruptService interruptService;
 
     PrimaryMultiAgentExecutionStrategy(
             MultiAgentOrchestrationService multiAgentOrchestrationService,
             AgentContextManager agentContextManager,
-            AgentSessionContextStore conversationManager
+            AgentExecutionInterruptService interruptService
     ) {
         this.multiAgentOrchestrationService = multiAgentOrchestrationService;
         this.agentContextManager = agentContextManager;
-        this.conversationManager = conversationManager;
+        this.interruptService = interruptService;
     }
 
     @Override
@@ -72,7 +71,7 @@ class PrimaryMultiAgentExecutionStrategy implements AgentMultiAgentExecutionStra
         // 规划多agent的执行计划
         MultiAgentOrchestrationService.PlannedOrchestration plannedOrchestration = multiAgentOrchestrationService.plan(
                 orchestrationRequest,
-                Map.of("shouldStop", (BooleanSupplier) () -> !conversationManager.isActiveEpoch(executionState.sessionId(), executionState.runEpoch()))
+                Map.of("shouldStop", (BooleanSupplier) () -> interruptService.shouldStop(executionState.sessionId(), executionState.runEpoch()))
         );
         Map<String, Object> orchestrationPayload = new LinkedHashMap<>();
         orchestrationPayload.put("planId", plannedOrchestration.plan().planId());

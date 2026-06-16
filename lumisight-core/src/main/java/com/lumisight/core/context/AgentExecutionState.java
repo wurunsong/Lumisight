@@ -11,7 +11,7 @@ import com.lumisight.core.support.context.AgentContextSession;
 public record AgentExecutionState(
         String sessionId,
         long runEpoch,
-        AgentConversationManager.ConversationState resumeState,
+        AgentConversationManager.ConversationState sessionState,
         String effectiveQuestion,
         String resolvedRepoRoot,
         int limit,
@@ -19,10 +19,10 @@ public record AgentExecutionState(
         int startRound
 ) {
     public AgentExecutionState withContextSession(AgentContextSession nextContextSession) {
-        return new AgentExecutionState(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, nextContextSession, startRound);
+        return new AgentExecutionState(sessionId, runEpoch, sessionState, effectiveQuestion, resolvedRepoRoot, limit, nextContextSession, startRound);
     }
 
     public AgentExecutionState withStartRound(int nextStartRound) {
-        return new AgentExecutionState(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, nextStartRound);
+        return new AgentExecutionState(sessionId, runEpoch, sessionState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, nextStartRound);
     }
 }

@@ -58,35 +58,36 @@ class AgentExecutionPreparationService {
     }
 
     private AgentExecutionState prepareExecutionContext(AgentRequest request, String sessionId) {
-        AgentConversationManager.ConversationState resumeState = conversationManager.get(sessionId);
+        AgentConversationManager.ConversationState sessionState = conversationManager.get(sessionId);
         long runEpoch = conversationManager.nextEpoch(sessionId);
         String effectiveQuestion = request.question();
         String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
         int startRound = 1;
-        if (request.resume() && resumeState != null) {
-            resumeState = normalizeResumeState(resumeState);
-            startRound = resumeState.nextRound();
-            if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(resumeState.baseQuestion())) {
-                effectiveQuestion = resumeState.baseQuestion();
+        if (request.resume() && sessionState != null) {
+            sessionState = normalizeResumeState(sessionState);
+            startRound = sessionState.nextRound();
+            if (!StringUtils.hasText(effectiveQuestion) && StringUtils.hasText(sessionState.baseQuestion())) {
+                effectiveQuestion = sessionState.baseQuestion();
             }
         }
-        AgentContextSession contextSession = agentContextManager.restore(sessionId, resumeState);
-        return new AgentExecutionState(sessionId, runEpoch, resumeState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, startRound);
+        // 同一个 sessionId 的下一轮对话默认继承历史上下文；resume 只额外复用上一轮未完成问题和 nextRound。
+        AgentContextSession contextSession = agentContextManager.restore(sessionId, sessionState);
+        return new AgentExecutionState(sessionId, runEpoch, sessionState, effectiveQuestion, resolvedRepoRoot, limit, contextSession, startRound);
     }
 
-    private AgentConversationManager.ConversationState normalizeResumeState(AgentConversationManager.ConversationState resumeState) {
-        if (resumeState == null || !resumeState.interrupted()) {
-            return resumeState;
+    private AgentConversationManager.ConversationState normalizeResumeState(AgentConversationManager.ConversationState sessionState) {
+        if (sessionState == null || !sessionState.interrupted()) {
+            return sessionState;
         }
         return new AgentConversationManager.ConversationState(
                 AgentConversationManager.ConversationStatus.RUNNING,
-                resumeState.baseQuestion(),
-                resumeState.contexts(),
-                resumeState.contextSession(),
-                resumeState.nextRound(),
+                sessionState.baseQuestion(),
+                sessionState.contexts(),
+                sessionState.contextSession(),
+                sessionState.nextRound(),
                 false,
-                resumeState.pendingDecision(),
+                sessionState.pendingDecision(),
                 System.currentTimeMillis()
         );
     }

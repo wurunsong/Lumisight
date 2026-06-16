@@ -57,6 +57,7 @@ class AgentExecutionApplicationCoordinator {
     private final RelevantMemoryService relevantMemoryService;
     private final ChatClient llmChatClient;
     private final AgentExecutionKernel agentExecutionKernel;
+    private final AgentExecutionInterruptService interruptService;
 
     AgentExecutionApplicationCoordinator(
             AgentSessionContextStore conversationManager,
@@ -72,7 +73,8 @@ class AgentExecutionApplicationCoordinator {
             AgentFinalResponseEmitter agentFinalResponseEmitter,
             RelevantMemoryService relevantMemoryService,
             ChatClient.Builder chatClientBuilder,
-            AgentExecutionKernel agentExecutionKernel
+            AgentExecutionKernel agentExecutionKernel,
+            AgentExecutionInterruptService interruptService
     ) {
         this.conversationManager = conversationManager;
         this.skillRegistry = skillRegistry;
@@ -88,6 +90,7 @@ class AgentExecutionApplicationCoordinator {
         this.relevantMemoryService = relevantMemoryService;
         this.llmChatClient = chatClientBuilder.build();
         this.agentExecutionKernel = agentExecutionKernel;
+        this.interruptService = interruptService;
     }
 
     AgentLoopAssemblyContext prepareLoopContext(
@@ -193,14 +196,16 @@ class AgentExecutionApplicationCoordinator {
         }
         executionState = resumeHandling.executionState();
 
-        if (shouldInterruptExecution(executionState.sessionId(), executionState.runEpoch())) {
+        AgentExecutionInterruptService.Signal signal = interruptService.currentSignal(executionState.sessionId(), executionState.runEpoch());
+        if (signal.stop()) {
             appendInterruptedEvents(
                     requestContext.traceId(),
                     executionState.sessionId(),
                     0,
                     executionState.effectiveQuestion(),
                     executionState.contextSession(),
-                    publisher
+                    publisher,
+                    signal
             );
             return PreparedAgentLoopTask.completed(
                     requestContext.sessionId(),
@@ -310,7 +315,7 @@ class AgentExecutionApplicationCoordinator {
     }
 
     private void publishInitState(AgentRequest request, AgentExecutionState context, String traceId, AgentEventPublisher publisher) {
-        if (request.resume() && context.resumeState() != null) {
+        if (request.resume() && context.sessionState() != null) {
             publisher.emit(AgentEvent.resumed(traceId, context.sessionId()));
         }
         publisher.emit(AgentEvent.state(traceId, context.sessionId(), 0, AgentLoopState.INIT.name(), "ok", "Agent启动"));
@@ -364,7 +369,7 @@ class AgentExecutionApplicationCoordinator {
             AgentEventPublisher publisher,
             Set<AgentToolPermission> enabledPermissions
     ) {
-        AgentConversationManager.ConversationState resumeState = context.resumeState();
+        AgentConversationManager.ConversationState resumeState = context.sessionState();
         if (!request.resume() || resumeState == null || resumeState.pendingDecision() == null) {
             return new ResumeHandlingResult(context, false);
         }
@@ -408,8 +413,9 @@ class AgentExecutionApplicationCoordinator {
         if (request.runMode() != AgentRunMode.PLAN) {
             return false;
         }
-        if (shouldInterruptExecution(context.sessionId(), context.runEpoch())) {
-            appendInterruptedEvents(traceId, context.sessionId(), 0, context.effectiveQuestion(), context.contextSession(), publisher);
+        AgentExecutionInterruptService.Signal signal = interruptService.currentSignal(context.sessionId(), context.runEpoch());
+        if (signal.stop()) {
+            appendInterruptedEvents(traceId, context.sessionId(), 0, context.effectiveQuestion(), context.contextSession(), publisher, signal);
             return true;
         }
         publisher.emit(AgentEvent.state(traceId, context.sessionId(), 0, AgentLoopState.PLAN.name(), "running", "开始生成计划"));
@@ -418,7 +424,7 @@ class AgentExecutionApplicationCoordinator {
                 llmChatClient,
                 agentPromptService.systemPrompt(request.taskType(), relevantMemoryContext),
                 agentPromptService.planPrompt(request, skillPlan),
-                () -> !shouldInterruptExecution(context.sessionId(), context.runEpoch()),
+                () -> interruptService.shouldContinue(context.sessionId(), context.runEpoch()),
                 null
         );
         publisher.emit(AgentEvent.plan(traceId, context.sessionId(), plan));
@@ -448,20 +454,17 @@ class AgentExecutionApplicationCoordinator {
                 publisher,
                 relevantMemoryContext,
                 () -> fireHook(AgentHookPoint.BEFORE_FINAL, context.sessionId(), orchestrationResult.finalRound(), context.effectiveQuestion(), null, Map.of("directAnswer", StringUtils.hasText(orchestrationResult.directAnswer()))),
-                () -> shouldInterruptExecution(context.sessionId(), context.runEpoch()),
-                interruptedSession -> appendInterruptedEvents(traceId, context.sessionId(), orchestrationResult.finalRound(), context.effectiveQuestion(), interruptedSession, publisher)
+                () -> interruptService.shouldStop(context.sessionId(), context.runEpoch()),
+                interruptedSession -> appendInterruptedEvents(
+                        traceId,
+                        context.sessionId(),
+                        orchestrationResult.finalRound(),
+                        context.effectiveQuestion(),
+                        interruptedSession,
+                        publisher,
+                        interruptService.currentSignal(context.sessionId(), context.runEpoch())
+                )
         );
-    }
-
-    private boolean shouldInterruptExecution(String sessionId, long runEpoch) {
-        if (Thread.currentThread().isInterrupted()) {
-            return true;
-        }
-        if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
-            return true;
-        }
-        AgentConversationManager.ConversationState state = conversationManager.get(sessionId);
-        return state != null && state.interrupted();
     }
 
     private void appendInterruptedEvents(
@@ -470,9 +473,10 @@ class AgentExecutionApplicationCoordinator {
             int round,
             String effectiveQuestion,
             AgentContextSession contextSession,
-            AgentEventPublisher publisher
+            AgentEventPublisher publisher,
+            AgentExecutionInterruptService.Signal signal
     ) {
-        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
+        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), signal.status(), signal.message()));
         publisher.emit(AgentEvent.interrupted(traceId, sessionId, round));
         saveRunningState(sessionId, effectiveQuestion, contextSession, round);
     }

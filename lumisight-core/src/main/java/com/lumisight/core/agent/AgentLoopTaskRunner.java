@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
@@ -24,8 +25,8 @@ public class AgentLoopTaskRunner {
             return List.of();
         }
         ExecutorService executor = NamedExecutors.newFixedPool("agent-loop-task", Math.max(1, parallelism));
+        List<Future<R>> futures = new ArrayList<>(tasks.size());
         try {
-            List<Future<R>> futures = new ArrayList<>(tasks.size());
             for (AgentLoopTask<R> task : tasks) {
                 futures.add(executor.submit(task.handler()::execute));
             }
@@ -34,10 +35,23 @@ public class AgentLoopTaskRunner {
                 results.add(future.get());
             }
             return List.copyOf(results);
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            cancelPending(futures);
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("agent loop tasks interrupted", e);
+        } catch (ExecutionException e) {
+            cancelPending(futures);
             throw new IllegalStateException("failed to execute agent loop tasks", e);
         } finally {
             executor.shutdownNow();
+        }
+    }
+
+    private <R> void cancelPending(List<Future<R>> futures) {
+        for (Future<R> future : futures) {
+            if (!future.isDone()) {
+                future.cancel(true);
+            }
         }
     }
 }

@@ -59,6 +59,7 @@ class AgentExecutionLoop {
     private final StreamingChatClientSupport streamingChatClientSupport;
     private final AgentContextManager agentContextManager;
     private final AgentSelfHealProperties selfHealProperties;
+    private final AgentExecutionInterruptService interruptService;
 
     AgentExecutionLoop(
             ChatClient.Builder chatClientBuilder,
@@ -72,7 +73,8 @@ class AgentExecutionLoop {
             AgentFinalAnswerVerifier finalAnswerVerifier,
             StreamingChatClientSupport streamingChatClientSupport,
             AgentContextManager agentContextManager,
-            AgentSelfHealProperties selfHealProperties
+            AgentSelfHealProperties selfHealProperties,
+            AgentExecutionInterruptService interruptService
     ) {
         this.llmChatClient = chatClientBuilder.build();
         this.agentToolRegistry = agentToolRegistry;
@@ -86,6 +88,7 @@ class AgentExecutionLoop {
         this.streamingChatClientSupport = streamingChatClientSupport;
         this.agentContextManager = agentContextManager;
         this.selfHealProperties = selfHealProperties;
+        this.interruptService = interruptService;
     }
 
     LoopExecutionResult run(
@@ -110,14 +113,9 @@ class AgentExecutionLoop {
         }
         for (int round = startRound; round <= maxRounds; round++) {
             lastRound = round;
-            if (executionContext != null && executionContext.isDeadlineExceeded()) {
-                publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "timeout", "达到本次子任务的安全时间上限"));
-                return new LoopExecutionResult("已达到当前子任务的安全时间上限，请基于已收集证据收敛结论。", false, false, Math.max(0, round - 1), contextSession);
-            }
-            // todo 中断的逻辑分散在各个地方，如何统一处理？
-            LoopExecutionResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
-            if (interruptedResult != null) {
-                return interruptedResult;
+            LoopExecutionResult stopResult = checkStopSignal(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
+            if (stopResult != null) {
+                return stopResult;
             }
 
             publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.DECIDE.name(), "running", "开始决策"));
@@ -166,13 +164,12 @@ class AgentExecutionLoop {
                             maxRounds,
                             skillPlan
                     ),
-                    () -> !shouldInterruptExecution(sessionId, runEpoch)
-                            && (executionContext == null || !executionContext.isDeadlineExceeded()),
+                    () -> interruptService.shouldContinue(sessionId, runEpoch),
                     null
             );
-            interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
-            if (interruptedResult != null) {
-                return interruptedResult;
+            stopResult = checkStopSignal(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
+            if (stopResult != null) {
+                return stopResult;
             }
             contextSession = agentContextManager.append(sessionId, contextSession, new AgentContextItem(
                     "conversation",
@@ -327,9 +324,9 @@ class AgentExecutionLoop {
                     round,
                     effectiveQuestion
             );
-            LoopExecutionResult interruptedResult = checkInterrupted(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
-            if (interruptedResult != null) {
-                return new ToolBatchOutcome(contextSession, false, interruptedResult);
+            LoopExecutionResult stopResult = checkStopSignal(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, runEpoch);
+            if (stopResult != null) {
+                return new ToolBatchOutcome(contextSession, false, stopResult);
             }
             for (AgentToolExecutionResult batchResult : batchResults) {
                 publisher.emit(AgentEvent.toolResult(traceId, sessionId, round, batchResult));
@@ -536,7 +533,7 @@ class AgentExecutionLoop {
         return new AutoSelfHealOutcome(contextSession, true);
     }
 
-    private LoopExecutionResult checkInterrupted(
+    private LoopExecutionResult checkStopSignal(
             String traceId,
             String sessionId,
             int round,
@@ -545,10 +542,15 @@ class AgentExecutionLoop {
             AgentEventPublisher publisher,
             long runEpoch
     ) {
-        if (!shouldInterruptExecution(sessionId, runEpoch)) {
+        AgentExecutionInterruptService.Signal signal = interruptService.currentSignal(sessionId, runEpoch);
+        if (!signal.stop()) {
             return null;
         }
-        appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contextSession, publisher);
+        if (signal.deadlineExceededSignal()) {
+            publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), signal.status(), signal.message()));
+            return new LoopExecutionResult("已达到当前子任务的安全时间上限，请基于已收集证据收敛结论。", false, false, Math.max(0, round - 1), contextSession);
+        }
+        appendInterruptedEvents(traceId, sessionId, round, effectiveQuestion, contextSession, publisher, signal);
         return new LoopExecutionResult(null, false, true, round, contextSession);
     }
 
@@ -558,22 +560,12 @@ class AgentExecutionLoop {
             int round,
             String effectiveQuestion,
             AgentContextSession contextSession,
-            AgentEventPublisher publisher
+            AgentEventPublisher publisher,
+            AgentExecutionInterruptService.Signal signal
     ) {
-        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), "interrupted", "会话中断"));
+        publisher.emit(AgentEvent.state(traceId, sessionId, round, AgentLoopState.INTERRUPTED.name(), signal.status(), signal.message()));
         publisher.emit(AgentEvent.interrupted(traceId, sessionId, round));
         saveRunningState(sessionId, effectiveQuestion, contextSession, round);
-    }
-
-    private boolean shouldInterruptExecution(String sessionId, long runEpoch) {
-        if (Thread.currentThread().isInterrupted()) {
-            return true;
-        }
-        if (!conversationManager.isActiveEpoch(sessionId, runEpoch)) {
-            return true;
-        }
-        AgentConversationManager.ConversationState state = conversationManager.get(sessionId);
-        return state != null && state.interrupted();
     }
 
     private ToolDecision parseDecision(String raw) {
