@@ -17,6 +17,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -141,18 +142,21 @@ class AgentFinalResponseEmitter {
                         finalAnswer,
                         Map.of("round", finalRound, "role", "assistant", "source", "final_answer")
                 ), AgentContextAppendOptions.conversation());
+                List<AgentContextItem> currentContexts = agentContextManager.snapshotContexts(nextSession);
                 conversationManager.saveRunning(
                         sessionId,
                         effectiveQuestion,
-                        agentContextManager.snapshotContexts(nextSession),
+                        currentContexts,
                         nextSession,
                         finalRound + 1
                 );
                 // 这里只投递记忆信号；模型反思和落盘都在专用后台队列里串行执行。
+                // memoryContext 是本轮开始前检索出的长期记忆，只能做参照；真正沉淀判断还要看当前会话快照。
                 agentMemoryAsyncService.enqueueFinalAnswer(
                         request,
                         effectiveQuestion,
                         finalAnswer,
+                        currentContexts,
                         memoryContext
                 );
             }

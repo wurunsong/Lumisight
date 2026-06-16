@@ -215,6 +215,7 @@ public class AgentPromptService {
             String trigger,
             String effectiveQuestion,
             String observedContent,
+            List<AgentContextItem> currentContexts,
             RelevantMemoryBundle memoryContext
     ) {
         RelevantMemoryBundle safeMemoryContext = memoryContext == null ? RelevantMemoryBundle.empty() : memoryContext;
@@ -224,6 +225,7 @@ public class AgentPromptService {
                 "trigger", safeText(trigger),
                 "question", safeText(effectiveQuestion),
                 "observedContent", safeText(observedContent),
+                "currentContextBlock", memoryCurrentContextBlock(currentContexts),
                 "memoryBlock", safeText(safeMemoryContext.remindersBlock())
         ));
     }
@@ -290,6 +292,17 @@ public class AgentPromptService {
             joiner.add("- [" + context.sourceType() + "] " + context.sourceId() + "\n" + safeText(context.content()));
         }
         return "已检索上下文:\n" + joiner;
+    }
+
+    private String memoryCurrentContextBlock(List<AgentContextItem> contexts) {
+        if (contexts == null || contexts.isEmpty()) {
+            return "- 无";
+        }
+        StringJoiner joiner = new StringJoiner("\n");
+        for (AgentContextItem context : contexts) {
+            joiner.add("- [" + context.sourceType() + "] " + context.sourceId() + "\n" + safeText(context.content()));
+        }
+        return joiner.toString();
     }
 
     private String contextSummary(List<AgentContextItem> contexts) {

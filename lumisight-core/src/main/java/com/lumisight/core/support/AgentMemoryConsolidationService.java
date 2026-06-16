@@ -3,6 +3,7 @@ package com.lumisight.core.support;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumisight.core.config.LumisightChatModelConfig;
+import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.memory.MemoryService;
 import com.lumisight.memory.dto.MemoryEntry;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * 单次长期记忆沉淀执行器。
@@ -51,9 +53,10 @@ public class AgentMemoryConsolidationService {
             AgentRequest request,
             String effectiveQuestion,
             String finalAnswer,
+            List<AgentContextItem> currentContexts,
             RelevantMemoryBundle memoryContext
     ) {
-        consolidateSignal("final_answer", request, effectiveQuestion, finalAnswer, memoryContext);
+        consolidateSignal("final_answer", request, effectiveQuestion, finalAnswer, currentContexts, memoryContext);
     }
 
     public void consolidateSignal(
@@ -61,6 +64,7 @@ public class AgentMemoryConsolidationService {
             AgentRequest request,
             String effectiveQuestion,
             String observedContent,
+            List<AgentContextItem> currentContexts,
             RelevantMemoryBundle memoryContext
     ) {
         if (request == null || !StringUtils.hasText(request.repoRoot()) || !StringUtils.hasText(request.userId()) || !StringUtils.hasText(observedContent)) {
@@ -70,7 +74,7 @@ public class AgentMemoryConsolidationService {
             String raw = streamingChatClientSupport.collect(
                     memoryChatClient,
                     agentPromptService.memoryConsolidateSystemPrompt(),
-                    agentPromptService.memoryConsolidateUserPrompt(request, trigger, effectiveQuestion, observedContent, memoryContext)
+                    agentPromptService.memoryConsolidateUserPrompt(request, trigger, effectiveQuestion, observedContent, currentContexts, memoryContext)
             );
             MemoryWriteRequest writeRequest = parseWriteRequest(raw);
             if (writeRequest == null) {

@@ -13,6 +13,9 @@
 待判断内容:
 {{observedContent}}
 
+本轮会话上下文:
+{{currentContextBlock}}
+
 当前已加载的相关长期记忆:
 {{memoryBlock}}
 

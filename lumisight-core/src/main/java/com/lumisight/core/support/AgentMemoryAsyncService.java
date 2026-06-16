@@ -1,6 +1,7 @@
 package com.lumisight.core.support;
 
 import com.lumisight.common.concurrent.NamedExecutors;
+import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.memory.dto.RelevantMemoryBundle;
 import jakarta.annotation.PreDestroy;
@@ -8,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -32,9 +34,10 @@ public class AgentMemoryAsyncService {
             AgentRequest request,
             String effectiveQuestion,
             String finalAnswer,
+            List<AgentContextItem> currentContexts,
             RelevantMemoryBundle memoryContext
     ) {
-        enqueueSignal("final_answer", request, effectiveQuestion, finalAnswer, memoryContext);
+        enqueueSignal("final_answer", request, effectiveQuestion, finalAnswer, currentContexts, memoryContext);
     }
 
     public void enqueueSignal(
@@ -42,13 +45,16 @@ public class AgentMemoryAsyncService {
             AgentRequest request,
             String effectiveQuestion,
             String observedContent,
+            List<AgentContextItem> currentContexts,
             RelevantMemoryBundle memoryContext
     ) {
+        List<AgentContextItem> capturedCurrentContexts = currentContexts == null ? List.of() : List.copyOf(currentContexts);
         enqueue(trigger, () -> agentMemoryConsolidationService.consolidateSignal(
                 trigger,
                 request,
                 effectiveQuestion,
                 observedContent,
+                capturedCurrentContexts,
                 memoryContext
         ));
     }
