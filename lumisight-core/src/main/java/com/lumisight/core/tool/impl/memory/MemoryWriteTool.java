@@ -14,6 +14,7 @@ import com.lumisight.memory.dto.MemoryWriteRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -110,10 +111,12 @@ public class MemoryWriteTool implements PermissionedAgentTool<MemoryWriteTool.Ar
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         MemoryType type = MemoryType.parse(args.type());
+        MemoryWriteRequest request = new MemoryWriteRequest(args.name(), args.description(), type, args.body());
         MemoryEntry entry = memoryService.save(
-                context.repoRoot(),
+                storageRootFor(type, context.repoRoot()),
                 context.userId(),
-                new MemoryWriteRequest(args.name(), args.description(), type, args.body())
+                memoryRootDirFor(type),
+                request
         );
         return List.of(new AgentContextItem(
                 "memory_write",
@@ -121,5 +124,24 @@ public class MemoryWriteTool implements PermissionedAgentTool<MemoryWriteTool.Ar
                 "[" + entry.type().wireValue() + "] " + entry.description() + "\n" + entry.body(),
                 Map.of("filename", entry.filename(), "type", entry.type().wireValue(), "name", entry.name())
         ));
+    }
+
+    private String storageRootFor(MemoryType type, String repoRoot) {
+        if (usesUserProfileStore(type)) {
+            return userProfileStorageRoot();
+        }
+        return repoRoot;
+    }
+
+    private String memoryRootDirFor(MemoryType type) {
+        return usesUserProfileStore(type) ? "" : ".lumisight/memory";
+    }
+
+    private boolean usesUserProfileStore(MemoryType type) {
+        return type == MemoryType.USER || type == MemoryType.FEEDBACK;
+    }
+
+    private String userProfileStorageRoot() {
+        return Path.of(System.getProperty("user.home"), ".lumisight").toAbsolutePath().normalize().toString();
     }
 }

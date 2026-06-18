@@ -10,6 +10,9 @@ import com.lumisight.memory.dto.MemoryHeader;
 import com.lumisight.memory.MemoryService;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
@@ -51,18 +54,30 @@ public class MemoryListTool implements PermissionedAgentTool<MemoryListTool.Args
 
     @Override
     public String description() {
-        return "列出当前用户在当前仓库下的长期记忆摘要，适合先判断是否已有可复用的画像、反馈、项目动态或参考指针。";
+        return "列出当前用户的长期记忆摘要，包括用户全局画像/反馈，以及当前仓库下的项目动态或参考指针。";
     }
 
     @Override
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         ToolRuntimeScope.Context context = ToolRuntimeScope.required();
         int limit = args == null || args.limit() == null ? 10 : Math.max(1, Math.min(50, args.limit()));
-        List<MemoryHeader> headers = memoryService.list(context.repoRoot(), context.userId());
+        List<MemoryHeader> headers = listCombinedMemory(context.repoRoot(), context.userId());
         StringJoiner joiner = new StringJoiner("\n");
         headers.stream().limit(limit).forEach(header ->
                 joiner.add("- [" + header.type().wireValue() + "] " + header.filename() + ": " + header.description()));
         String content = joiner.length() == 0 ? "暂无长期记忆" : joiner.toString();
         return List.of(new AgentContextItem("memory_index", "MEMORY.md", content, Map.of("count", Math.min(limit, headers.size()))));
+    }
+
+    private List<MemoryHeader> listCombinedMemory(String repoRoot, String userId) {
+        List<MemoryHeader> headers = new ArrayList<>();
+        headers.addAll(memoryService.scanHeaders(userProfileStorageRoot(), userId, ""));
+        headers.addAll(memoryService.list(repoRoot, userId));
+        headers.sort(Comparator.comparingLong(MemoryHeader::mtimeMs).reversed());
+        return headers;
+    }
+
+    private String userProfileStorageRoot() {
+        return Path.of(System.getProperty("user.home"), ".lumisight").toAbsolutePath().normalize().toString();
     }
 }
