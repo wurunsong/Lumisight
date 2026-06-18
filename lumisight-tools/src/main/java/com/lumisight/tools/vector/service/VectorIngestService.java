@@ -287,6 +287,8 @@ public class VectorIngestService {
             return;
         }
         String pkg = cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("default");
+        // Java 仓库入库先按方法粒度切：JavaParser 负责抽出每个方法，
+        // CodeChunkSplitter 只在单个方法太长时继续切方法内部。
         cu.findAll(MethodDeclaration.class).forEach(method -> {
             Optional<ClassOrInterfaceDeclaration> ownerClass = method.findAncestor(ClassOrInterfaceDeclaration.class);
             if (ownerClass.isEmpty()) {

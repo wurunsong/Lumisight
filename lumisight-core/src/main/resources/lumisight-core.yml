@@ -56,6 +56,19 @@ lumisight:
     enabled: false
   vector:
     enabled: false
+  rag-eval:
+    milvus:
+      enabled: ${LUMISIGHT_RAG_EVAL_MILVUS_ENABLED:false}
+      host: ${LUMISIGHT_RAG_EVAL_MILVUS_HOST:127.0.0.1}
+      port: ${LUMISIGHT_RAG_EVAL_MILVUS_PORT:19530}
+      database-name: ${LUMISIGHT_RAG_EVAL_MILVUS_DATABASE:default}
+      collection-name: ${LUMISIGHT_RAG_EVAL_MILVUS_COLLECTION:rag_eval_codesearchnet_1024}
+      username: ${LUMISIGHT_RAG_EVAL_MILVUS_USERNAME:}
+      password: ${LUMISIGHT_RAG_EVAL_MILVUS_PASSWORD:}
+      token: ${LUMISIGHT_RAG_EVAL_MILVUS_TOKEN:}
+      secure: ${LUMISIGHT_RAG_EVAL_MILVUS_SECURE:false}
+      initialize-schema: ${LUMISIGHT_RAG_EVAL_MILVUS_INITIALIZE_SCHEMA:true}
+      clear-before-run: ${LUMISIGHT_RAG_EVAL_MILVUS_CLEAR_BEFORE_RUN:true}
   skills:
     allowed-paths:
       - .lumisight/skills
