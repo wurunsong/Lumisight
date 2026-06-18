@@ -379,12 +379,12 @@
   <div class="wrap">
     <section class="hero">
       <h1>AgentSessionDispatcher 信息流</h1>
-      <p>这页只讲一个主角：会话分发层怎样把同一个 `sessionId` 的命令、订阅、排队、执行和中断串成一条稳定的信息流。重点是把流程讲清楚，不把它写成源码导览。</p>
+      <p>这页只讲一个主角：会话分发层怎样把同一个 `sessionId` 的命令、订阅、排队、执行、STEER 抢占和协议写出串成一条稳定的信息流。重点是把流程讲清楚：任务可以被中断，但 WebSocket/SSE 连接不应该被任务中断顺手带走。</p>
       <div class="hero-badges">
         <span class="badge">Session Mailbox</span>
         <span class="badge">Single DrainLoop Per Session</span>
-        <span class="badge">FOLLOW / COLLECT / STEER</span>
-        <span class="badge">Interrupt And Resume Boundary</span>
+        <span class="badge">STEER Does Not Close Socket</span>
+        <span class="badge">Transport Write Isolation</span>
       </div>
     </section>
 
@@ -410,7 +410,7 @@
         <article class="flow-card gold">
           <div class="index">03</div>
           <h3>把新命令整理成下一步动作</h3>
-          <p>顺序跟进就排队，合并模式就尽量把追加问题并进已有待处理项，抢占模式就丢掉还没启动的旧问题，手动停止则把待处理内容清掉，并准备终止当前这一轮。</p>
+          <p>顺序跟进就排队，合并模式就尽量把追加问题并进已有待处理项，抢占模式只处理待执行队列和当前任务，手动停止才清掉后续内容并明确终止当前这一轮。</p>
         </article>
         <article class="flow-card mint">
           <div class="index">04</div>
@@ -420,7 +420,7 @@
         <article class="flow-card mint">
           <div class="index">05</div>
           <h3>一条条取出并推进执行</h3>
-          <p>会话开始工作后，会按顺序从待处理列表里取出问题，逐条推进执行。执行过程中产生的状态变化和输出，也都会继续回到这个会话自己的事件流里。</p>
+          <p>会话开始工作后，会按顺序从待处理列表里取出问题，逐条推进执行。执行状态和输出继续回到这个会话自己的事件流；协议写出独立调度，不让执行线程的 interrupt 误伤 socket。</p>
         </article>
         <article class="flow-card rose">
           <div class="index">06</div>
@@ -438,8 +438,8 @@
           <p>因为这层真正要处理的是会话生命周期，而不是单个请求。排队、执行、中断、订阅和回收都互相影响，所以每一步都得先确认当前会话处在哪个状态。</p>
         </article>
         <article class="presence">
-          <h3>这页不展开什么</h3>
-          <p>这里不展开模型怎么决策、工具怎么调用、最终答案怎么生成，只把会话分发层自己的流向讲清楚。</p>
+          <h3>为什么 STEER 不等于断线</h3>
+          <p>STEER 改变的是“当前会话接下来做哪个任务”。连接只是观察和投递命令的通道，不能因为某轮任务被抢占就一起被关闭。</p>
         </article>
       </div>
     </section>
@@ -506,7 +506,7 @@
               <article class="lane-step mint">
                 <div class="dot"></div>
                 <h4>需要时打断当前这轮</h4>
-                <span>如果用户主动停止，或者最新问题要抢占当前执行，就会把这轮工作明确停下来，而不是等它自然结束。</span>
+                <span>如果用户主动停止，或者最新问题要抢占当前执行，只中断执行任务本身，不把订阅连接当成被中断对象。</span>
               </article>
               <article class="lane-step rose">
                 <div class="dot"></div>
@@ -529,7 +529,7 @@
             </article>
             <article class="note">
               <h4>STEER</h4>
-              <p>适合“别管前面的了，先做最新这个”。它会先丢掉还没启动的旧问题，必要时再把当前这轮让出来给最新请求。</p>
+              <p>适合“别管前面的了，先做最新这个”。它会先丢掉还没启动的旧问题，必要时再把当前这轮让出来给最新请求；这不是 disconnect，也不把 socket 置为 failed。</p>
             </article>
             <article class="note">
               <h4>INTERRUPT</h4>
@@ -564,6 +564,18 @@
         <article class="highlight">
           <h3>停止是明确动作，不是顺带效果</h3>
           <p>断开观察和停止执行不是一回事。真正的停止必须作为显式流程处理，否则会话层就会出现“看起来停了，其实后台还在跑”的错觉。</p>
+        </article>
+        <article class="highlight">
+          <h3>STEER 隔离任务中断和连接生命周期</h3>
+          <p>STEER 抢占会清理未启动的旧命令，并让当前执行尽快退出，但不会把会话标成全局 interrupted，也不会主动关闭 WebSocket 订阅。</p>
+        </article>
+        <article class="highlight">
+          <h3>事件写出不占用协议线程</h3>
+          <p>事件流写出切到独立调度器，避免执行侧 interrupt 或慢消费者把 Netty event-loop 拖进同一个故障域，连接状态因此更稳定。</p>
+        </article>
+        <article class="highlight">
+          <h3>过期回调不会污染新任务</h3>
+          <p>抢占后旧任务如果晚到达收尾回调，会先确认自己是否仍是当前任务；不是当前任务就安静退出，不再误改新任务的会话状态。</p>
         </article>
       </div>
     </section>

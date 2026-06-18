@@ -385,11 +385,11 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 记忆与上下文主流程</h1>
-      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆又怎样在旁路支持主流程，并在结束后进入自动维护决策。</p>
+      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆怎样按 user / feedback / project / reference 分域落盘，并在结束后进入自动维护决策。</p>
       <div class="hero-badges">
         <span class="badge">Session Ledger</span>
-        <span class="badge">Projection Before Prompt</span>
-        <span class="badge">Artifact And Compact</span>
+        <span class="badge">User Home Memory</span>
+        <span class="badge">Project Repo Memory</span>
         <span class="badge">Memory Maintenance</span>
       </div>
     </section>
@@ -416,7 +416,7 @@
         <article class="flow-card mint">
           <span class="index">03</span>
           <h3>补充相关记忆</h3>
-          <p>长期记忆系统按当前问题挑选相关事实、偏好和项目经验，作为旁路证据补进这轮推理准备阶段。</p>
+          <p>长期记忆系统按当前问题同时查看用户域和项目域，挑选相关事实、偏好和项目经验，作为旁路证据补进这轮推理准备阶段。</p>
         </article>
         <article class="flow-card gold">
           <span class="index">04</span>
@@ -431,7 +431,7 @@
         <article class="flow-card sky">
           <span class="index">06</span>
           <h3>维护与结束</h3>
-          <p>这一轮结束后，会话上下文继续保留在账本层；真正值得长期保存的事实会进入记忆维护决策，判断是新增、更新、合并、删除还是不处理。</p>
+          <p>这一轮结束后，会话上下文继续保留在账本层；真正值得长期保存的事实会进入记忆维护决策，再按作用域写到用户 home 或当前仓库。</p>
         </article>
       </div>
       <div class="presence-strip">
@@ -441,7 +441,7 @@
         </article>
         <article class="presence">
           <h3>长期记忆是旁路支持</h3>
-          <p>长期记忆不会替代当前会话，但会在准备阶段补充跨会话事实，并在结束后用维护决策修正长期记忆，而不是只追加新文件。</p>
+          <p>长期记忆不会替代当前会话，但会在准备阶段补充跨会话事实，并在结束后用维护决策修正长期记忆；用户身份和偏好不再误写到项目仓库。</p>
         </article>
         <article class="presence">
           <h3>外挂检索是增强层</h3>
@@ -495,7 +495,7 @@
               <article class="lane-step memory">
                 <div class="dot"></div>
                 <strong>按问题挑选</strong>
-                <span>相关记忆服务先根据当前问题预取可能有用的长期事实。</span>
+                <span>相关记忆服务先根据当前问题从用户域和仓库域预取可能有用的长期事实。</span>
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
@@ -509,8 +509,8 @@
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
-                <strong>供未来会话再用</strong>
-                <span>下一次相关请求出现时，再被挑选出来支持新的主流程。</span>
+                <strong>按作用域落盘</strong>
+                <span>user / feedback 进入 `~/.lumisight` 用户域；project / reference 进入仓库 `.lumisight/memory` 项目域。</span>
               </article>
             </div>
           </div>
@@ -520,6 +520,10 @@
           <article class="note-card">
             <h3>为什么要分两层</h3>
             <p>因为“这轮会话里发生了什么”和“以后都该记住什么”不是同一类信息。前者要完整、可追溯，后者要更稳定、更克制，否则会把噪音固化成长久事实。</p>
+          </article>
+          <article class="note-card">
+            <h3>为什么还要分作用域</h3>
+            <p>因为“用户是谁、偏好是什么”和“这个仓库里的事实是什么”生命周期不同。用户记忆应该跟着人走，项目记忆应该跟着仓库走；混在一起会让换仓库后的回答变脏。</p>
           </article>
           <article class="note-card">
             <h3>压缩不是为了删历史</h3>
@@ -543,7 +547,7 @@
         </article>
         <article class="signal">
           <h3>什么时候维护记忆</h3>
-          <p>不是每条内容都进长期记忆。系统只在出现用户偏好、项目事实、稳定经验或旧记忆需要修正时，才触发新增、更新、合并或删除。</p>
+          <p>不是每条内容都进长期记忆。系统只在出现用户偏好、项目事实、稳定经验或旧记忆需要修正时，才触发新增、更新、合并或删除，并按类型选择用户域或项目域。</p>
         </article>
         <article class="signal">
           <h3>什么时候做离线反思</h3>
@@ -601,6 +605,14 @@
             <li>会话层追求完整可恢复，记忆层追求长期有效和克制写入。</li>
             <li>两层都服务当前请求，但保留粒度和生命周期不同。</li>
             <li>这避免了把短期噪音直接变成永久知识。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>记忆落盘按作用域分域</h3>
+          <ul>
+            <li>`user` 和 `feedback` 记忆写入用户 home 下的 Lumisight 记忆空间，服务跨仓库连续性。</li>
+            <li>`project` 和 `reference` 记忆仍保留在当前仓库 `.lumisight/memory`，服务项目事实追踪。</li>
+            <li>`memory_list` 会同时合并用户域和项目域，所以读取体验保持统一，写入边界保持清楚。</li>
           </ul>
         </article>
         <article class="highlight">

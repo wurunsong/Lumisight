@@ -441,12 +441,12 @@
   <main class="wrap">
     <section class="hero">
       <h1>Lumisight 多 Agent 主流程</h1>
-      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。现在这条链路收成了同一个执行模型：入口只接请求，准备层先判断单 / 多 Agent，应用层再把公共材料、计划、调度会话、wave 执行和 Lead 收敛拆成显式阶段；只有真正进入 agent loop 时，才封装成任务信息加 loop handler 交给同一个线程池执行器。</p>
+      <p>上半部分只讲信息怎么流，下半部分再讲技术亮点。现在这条链路收成了同一个执行模型：macOS 原生工作台、WebSocket/SSE 协议入口先把命令落到会话层，准备层再判断单 / 多 Agent，应用层把上下文、记忆、浏览器能力、计划调度和 Lead 收敛拆成显式阶段；只有真正进入 agent loop 时，才封装成任务信息加 loop handler 交给同一个线程池执行器。</p>
       <div class="hero-badges">
-        <span class="badge">Unified Loop Task</span>
+        <span class="badge">Native Console To Agent</span>
         <span class="badge">Single Agent by Default</span>
-        <span class="badge">Serial / Parallel / Hybrid</span>
-        <span class="badge">Pure Loop Runtime</span>
+        <span class="badge">Steer-Safe Session</span>
+        <span class="badge">Browser And Memory Aware</span>
       </div>
     </section>
 
@@ -462,7 +462,7 @@
         <article class="flow-card sky">
           <span class="index">01</span>
           <h3>入口接住请求</h3>
-          <p>用户问题、会话上下文和控制动作先进入统一入口，变成同一个 session 视角下的事件流，而不是直接散进后面的执行细节。</p>
+          <p>用户问题、仓库路径、skill 引用和控制动作先从原生客户端或协议入口进入统一会话，变成同一个 session 视角下的事件流，而不是直接散进后面的执行细节。</p>
         </article>
         <article class="flow-card">
           <span class="index">02</span>
@@ -497,11 +497,11 @@
         </article>
         <article class="presence">
           <h3>记忆系统在旁路支持主流程</h3>
-          <p>长期记忆不会替代当前会话，但会在需要时补充用户偏好、项目事实和跨会话经验；结束后再由异步维护决策判断是否新增、更新、合并或删除。</p>
+          <p>长期记忆不会替代当前会话，但会在需要时补充用户偏好、项目事实和跨会话经验；用户/反馈记忆进入用户域，项目/参考记忆留在仓库域，结束后再由异步维护决策判断是否新增、更新、合并或删除。</p>
         </article>
         <article class="presence">
-          <h3>外挂 RAG / 图谱是增强层</h3>
-          <p>向量检索、图谱和源码增强工具不是主流程本体，但在需要额外证据时会被接入，给 Lead 或单 Agent 提供外部知识支持，并可再用公开 benchmark 反向校准检索质量。</p>
+          <h3>浏览器 / RAG / 图谱是增强层</h3>
+          <p>浏览器 DOM 工具、向量检索、图谱和源码增强都不是主流程本体，但在需要外部证据或页面验证时会被权限画像接入，给 Lead 或单 Agent 提供可控补充，并可再用公开 benchmark 反向校准检索质量。</p>
         </article>
       </div>
     </section>
@@ -629,7 +629,7 @@
           </article>
           <article class="note-card">
             <h3>权限边界</h3>
-            <p>single agent 可以带写能力继续推进，但仍要经过 human gate；fan-out 期间的 sub-agent 一律只读；只有 lead 在 fan-in 完成后的收敛阶段，才重新获得有限写权限。</p>
+            <p>single agent 可以带本地写能力和浏览器写能力继续推进，但高风险写盘仍要经过 human gate；fan-out 期间的 sub-agent 一律只读；只有 lead 在 fan-in 完成后的收敛阶段，才重新获得有限写权限。</p>
           </article>
         </div>
       </div>
@@ -707,7 +707,24 @@
           <ul>
             <li>权限判断已经独立成统一策略，而不是继续塞在主执行流程中间。</li>
             <li>single agent、lead 收敛阶段、sub-agent 各自有明确边界。</li>
+            <li>浏览器工具也进入同一套 `BROWSER_READ / BROWSER_WRITE` 权限画像，不再靠工具存在本身隐式暴露。</li>
             <li>这样看流程时能先看信息怎么流，再看不同角色各自能做什么。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>原生客户端成为同一条会话入口</h3>
+          <ul>
+            <li>macOS 客户端不另起一套执行语义，而是把仓库、skill、prompt、模式和会话选择收束成同一份 agent 命令。</li>
+            <li>界面侧保留连接状态、会话列表、实时事件和命令面板，让用户看到的是会话工作台而不是零散请求面板。</li>
+            <li>发送失败不会用隐藏重连掩盖问题，连接状态会明确回到 inspector，方便继续定位协议或后端边界。</li>
+          </ul>
+        </article>
+        <article class="highlight">
+          <h3>STEER 只改变任务，不切断连接</h3>
+          <ul>
+            <li>最新问题抢占时，会话分发器只清理待处理队列并中断当前执行任务，不把 WebSocket 连接当成要关闭的对象。</li>
+            <li>事件写出被移出 Netty event-loop，避免后端执行中断误伤协议写入线程。</li>
+            <li>这让“任务被抢占”和“客户端连接还活着”成为两件清楚分开的事。</li>
           </ul>
         </article>
         <article class="highlight">

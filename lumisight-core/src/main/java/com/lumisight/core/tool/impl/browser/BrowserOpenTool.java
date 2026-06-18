@@ -51,6 +51,7 @@ public class BrowserOpenTool implements PermissionedAgentTool<BrowserOpenTool.Ar
 
     @Override
     public String description() {
+        // TODO(network-tools): keep this scoped to browser automation; add a separate HTTP tool for raw fetch/API calls.
         return "打开网页并为当前会话建立一个可复用的浏览器页面。适合本地页面验证、DOM 调试和后续点击/输入操作。";
     }
 

@@ -19,16 +19,21 @@ public class AgentPermissionProfileResolver {
     private static final EnumSet<AgentToolPermission> BASE_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.LOCAL_FS_READ,
             AgentToolPermission.GIT_READ,
+            AgentToolPermission.BROWSER_READ,
             AgentToolPermission.MEMORY_READ,
             AgentToolPermission.MEMORY_WRITE,
             AgentToolPermission.TODO_WRITE,
             AgentToolPermission.AGENT_SPAWN
     );
+    // TODO(network-tools): wire direct HTTP/network permissions here once http_get/http_post tools exist.
+    // Browser permissions only cover page automation and should not imply raw network access.
     private static final EnumSet<AgentToolPermission> SINGLE_AGENT_WRITE_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.LOCAL_FS_WRITE
+            AgentToolPermission.LOCAL_FS_WRITE,
+            AgentToolPermission.BROWSER_WRITE
     );
     private static final EnumSet<AgentToolPermission> LEAD_CONVERGENCE_WRITE_PERMISSIONS = EnumSet.of(
-            AgentToolPermission.LOCAL_FS_WRITE
+            AgentToolPermission.LOCAL_FS_WRITE,
+            AgentToolPermission.BROWSER_WRITE
     );
 
     private final ChildAgentPermissionPolicy childAgentPermissionPolicy;

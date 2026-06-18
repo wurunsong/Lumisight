@@ -7,6 +7,7 @@ public enum AgentToolPermission {
     MCP_CAPABILITY_CALL,
     BROWSER_READ,
     BROWSER_WRITE,
+    // TODO(network-tools): add NETWORK_READ / NETWORK_WRITE when we introduce direct HTTP fetch tools.
     LOCAL_FS_READ,
     LOCAL_FS_WRITE,
     MEMORY_READ,
