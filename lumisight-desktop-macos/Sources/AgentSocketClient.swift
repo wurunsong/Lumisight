@@ -29,51 +29,68 @@ final class AgentSocketClient: NSObject {
         let task = session.webSocketTask(with: url)
         webSocketTask = task
         task.resume()
-        receiveNext()
+        receiveNext(on: task)
     }
 
     func disconnect() {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        if case .connecting = state {
-            state = .disconnected
-        } else if case .connected = state {
+        if case .disconnected = state {
+            return
+        } else {
             state = .disconnected
         }
     }
 
-    func send(_ command: WireSocketCommand) {
-        guard let task = webSocketTask else {
+    func send(_ command: WireSocketCommand) -> Bool {
+        guard case .connected = state, let task = webSocketTask else {
             onErrorText?("Socket is not connected")
-            return
+            return false
         }
+        return sendNow(command, task: task)
+    }
+
+    private func sendNow(_ command: WireSocketCommand, task: URLSessionWebSocketTask) -> Bool {
         do {
             let data = try encoder.encode(command)
             guard let string = String(data: data, encoding: .utf8) else {
                 onErrorText?("Failed to encode command as UTF-8")
-                return
+                return false
             }
             task.send(.string(string)) { [weak self] error in
                 Task { @MainActor in
+                    guard let self, self.isCurrent(task) else { return }
                     if let error {
-                        self?.state = .failed(error.localizedDescription)
+                        self.webSocketTask = nil
+                        self.onErrorText?("Send failed: \(error.localizedDescription)")
+                        self.state = .failed(error.localizedDescription)
                     }
                 }
             }
+            return true
         } catch {
             onErrorText?("Encode failed: \(error.localizedDescription)")
+            return false
         }
     }
 
-    private func receiveNext() {
-        webSocketTask?.receive { [weak self] result in
+    private func isCurrent(_ task: URLSessionWebSocketTask) -> Bool {
+        guard let current = webSocketTask else { return false }
+        return current === task
+    }
+
+    private func receiveNext(on task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
+                guard self.isCurrent(task) else { return }
                 switch result {
                 case .failure(let error):
                     if case .disconnected = self.state {
                         return
                     }
+                    self.webSocketTask = nil
+                    self.onErrorText?("Receive failed: \(error.localizedDescription)")
                     self.state = .failed(error.localizedDescription)
                 case .success(let message):
                     switch message {
@@ -84,7 +101,7 @@ final class AgentSocketClient: NSObject {
                     @unknown default:
                         self.onErrorText?("Received unsupported WebSocket message")
                     }
-                    self.receiveNext()
+                    self.receiveNext(on: task)
                 }
             }
         }
@@ -115,6 +132,7 @@ extension AgentSocketClient: URLSessionWebSocketDelegate {
         didOpenWithProtocol protocol: String?
     ) {
         Task { @MainActor in
+            guard self.isCurrent(webSocketTask) else { return }
             self.state = .connected
         }
     }
@@ -126,8 +144,16 @@ extension AgentSocketClient: URLSessionWebSocketDelegate {
         reason: Data?
     ) {
         Task { @MainActor in
+            guard self.isCurrent(webSocketTask) else { return }
             if case .failed = self.state {
                 return
+            }
+            self.webSocketTask = nil
+            let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            if !reasonText.isEmpty {
+                self.onErrorText?("Socket closed: \(closeCode.rawValue) \(reasonText)")
+            } else {
+                self.onErrorText?("Socket closed: \(closeCode.rawValue)")
             }
             self.state = .disconnected
         }

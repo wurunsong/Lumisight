@@ -42,6 +42,11 @@ final class DesktopStore: ObservableObject {
         }
     }
 
+    var selectedSessionIndex: Int? {
+        guard let selectedSessionID else { return nil }
+        return sessions.firstIndex(where: { $0.id == selectedSessionID })
+    }
+
     var activeEvent: SessionEvent? {
         selectedSession?.events.last
     }
@@ -90,12 +95,12 @@ final class DesktopStore: ObservableObject {
         persist()
     }
 
-    func sendPrompt() {
-        guard var session = selectedSession else { return }
+    func sendPrompt() -> Bool {
+        guard var session = selectedSession else { return false }
         let question = session.questionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else {
             appendLocalEvent("SYSTEM", title: "Missing Question", body: "请输入问题后再发送。", sessionID: session.id)
-            return
+            return false
         }
         let requestId = UUID().uuidString
         let contextLimit = Int(session.contextLimit.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -119,13 +124,17 @@ final class DesktopStore: ObservableObject {
                 dialogueMode: session.dialogueMode.rawValue
             )
         )
+        guard socketClient.send(command) else {
+            appendLocalEvent("SYSTEM", title: "Send Failed", body: "Socket is not connected. Please reconnect first.", sessionID: session.id)
+            return false
+        }
         session.name = question.shortened(28)
         session.lastStatus = "queued"
         session.updatedAt = .now
         session.questionDraft = ""
         selectedSession = session
         appendLocalEvent("PROMPT", title: "Prompt", body: question, sessionID: session.id)
-        socketClient.send(command)
+        return true
     }
 
     func resumeSelectedSession() {
@@ -142,6 +151,13 @@ final class DesktopStore: ObservableObject {
             active.unreadCount = 0
             selectedSession = active
         }
+    }
+
+    func updateSelectedSession<T>(_ keyPath: WritableKeyPath<AgentSession, T>, value: T) {
+        guard let index = selectedSessionIndex else { return }
+        sessions[index][keyPath: keyPath] = value
+        sessions[index].updatedAt = .now
+        persist()
     }
 
     private func sendControl(type: String, interrupt: Bool, resume: Bool, title: String) {
@@ -166,8 +182,11 @@ final class DesktopStore: ObservableObject {
                 dialogueMode: session.dialogueMode.rawValue
             )
         )
-        appendLocalEvent("SYSTEM", title: title, body: "Command sent for \(session.sessionId)", sessionID: session.id)
-        socketClient.send(command)
+        if socketClient.send(command) {
+            appendLocalEvent("SYSTEM", title: title, body: "Command sent for \(session.sessionId)", sessionID: session.id)
+        } else {
+            appendLocalEvent("SYSTEM", title: "\(title) Failed", body: "Socket is not connected. Please reconnect first.", sessionID: session.id)
+        }
     }
 
     private func wireSocketCallbacks() {

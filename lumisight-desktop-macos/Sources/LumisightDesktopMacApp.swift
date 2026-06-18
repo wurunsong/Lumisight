@@ -1,7 +1,9 @@
 import SwiftUI
+import AppKit
 
 @main
 struct LumisightDesktopMacApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = DesktopStore()
 
     var body: some Scene {
@@ -26,6 +28,16 @@ struct LumisightDesktopMacApp: App {
             }
             .frame(minWidth: 720, minHeight: 420)
             .preferredColorScheme(.dark)
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first?.makeKeyAndOrderFront(nil)
         }
     }
 }
