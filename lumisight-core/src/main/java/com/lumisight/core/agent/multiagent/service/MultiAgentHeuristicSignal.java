@@ -42,7 +42,6 @@ enum MultiAgentHeuristicSignal {
     }
 
     abstract boolean matches(String question);
-    // todo 这里要不要补充更多关键词
     static List<String> collectMatchedSignals(String question) {
         List<String> matchedSignals = new ArrayList<>();
         for (MultiAgentHeuristicSignal signal : values()) {

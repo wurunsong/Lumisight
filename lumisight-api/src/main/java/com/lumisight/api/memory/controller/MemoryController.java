@@ -24,7 +24,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Path;
 import java.util.List;
-// todo 这里记忆管理有问题，增改查都应该是包含在agent loop中，而不是需要单独请求
 @RestController
 @RequestMapping("/api/lumisight/memory")
 public class MemoryController {
