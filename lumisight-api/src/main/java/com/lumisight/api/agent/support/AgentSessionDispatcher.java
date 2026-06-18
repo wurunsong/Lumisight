@@ -133,63 +133,66 @@ public class AgentSessionDispatcher {
                         conversationManager.interrupt(sessionId);
                     }
                     delayedEvents.add(AgentEvent.interrupted("", sessionId, 0));
-                    return;
-                }
-
-                AgentDialogueMode mode = parseMode(envelope.request.dialogueMode());
-                // 当前没有正在执行中的任务，并且消息队列非空
-                if (current == null && !queue.isEmpty()) {
-                    switch (mode) {
-                        // 把新消息合并到queue的第一条消息中
-                        case COLLECT -> {
-                            if (mergeIntoPendingLocked(envelope)) {
-                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已合并到待启动的问题。"));
-                                startWorker = markWorkerStartLocked();
-                                return;
+                } else {
+                    AgentDialogueMode mode = parseMode(envelope.request.dialogueMode());
+                    boolean handled = false;
+                    // 当前没有正在执行中的任务，并且消息队列非空
+                    if (current == null && !queue.isEmpty()) {
+                        switch (mode) {
+                            // 把新消息合并到queue的第一条消息中
+                            case COLLECT -> {
+                                if (mergeIntoPendingLocked(envelope)) {
+                                    delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已合并到待启动的问题。"));
+                                    startWorker = markWorkerStartLocked();
+                                    handled = true;
+                                }
                             }
-                        }
-                        // 把旧消息都丢掉
-                        case STEER -> {
-                            clearPendingLocked(mode.name(), "被新的 STEER 请求替换。", true, delayedEvents);
-                            queue.offer(envelope);
-                            delayedEvents.add(AgentEvent.state("", sessionId, 0, mode.name(), "queued", "STEER: 已替换尚未启动的待处理问题。"));
-                            startWorker = markWorkerStartLocked();
-                            return;
-                        }
-                        // follow走下面的默认逻辑
-                        case FOLLOW -> {
-                            // no-op: keep FIFO ordering
-                        }
-                    }
-                }
-                // 当前有任务正在执行
-                if (current != null) {
-                    switch (mode) {
-                        case FOLLOW -> {
-                            queue.offer(envelope);
-                            delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "FOLLOW: 已进入本地会话队列，等待当前执行完成。"));
-                        }
-                        case COLLECT -> {
-                            if (mergeIntoPendingLocked(envelope)) {
-                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已合并到同会话待处理问题。"));
-                            } else {
+                            // 把旧消息都丢掉
+                            case STEER -> {
+                                clearPendingLocked(mode.name(), "被新的 STEER 请求替换。", true, delayedEvents);
                                 queue.offer(envelope);
-                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已加入待处理队列，等待当前执行完成。"));
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, mode.name(), "queued", "STEER: 已替换尚未启动的待处理问题。"));
+                                startWorker = markWorkerStartLocked();
+                                handled = true;
+                            }
+                            // follow走下面的默认逻辑
+                            case FOLLOW -> {
+                                // no-op: keep FIFO ordering
                             }
                         }
-                        case STEER -> {
-                            clearPendingLocked(mode.name(), "被新的 STEER 请求替换。", true, delayedEvents);
-                            queue.offer(envelope);
-                            delayedEvents.add(AgentEvent.state("", sessionId, 0, mode.name(), "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
-                            runningToInterrupt = current;
-                        }
                     }
-                    startWorker = markWorkerStartLocked();
-                    return;
-                }
 
-                queue.offer(envelope);
-                startWorker = markWorkerStartLocked();
+                    if (!handled && current != null) {
+                        // 当前有任务正在执行
+                        switch (mode) {
+                            case FOLLOW -> {
+                                queue.offer(envelope);
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "FOLLOW: 已进入本地会话队列，等待当前执行完成。"));
+                            }
+                            case COLLECT -> {
+                                if (mergeIntoPendingLocked(envelope)) {
+                                    delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已合并到同会话待处理问题。"));
+                                } else {
+                                    queue.offer(envelope);
+                                    delayedEvents.add(AgentEvent.state("", sessionId, 0, STEP_QUEUE, "queued", "COLLECT: 已加入待处理队列，等待当前执行完成。"));
+                                }
+                            }
+                            case STEER -> {
+                                clearPendingLocked(mode.name(), "被新的 STEER 请求替换。", true, delayedEvents);
+                                queue.offer(envelope);
+                                delayedEvents.add(AgentEvent.state("", sessionId, 0, mode.name(), "queued", "STEER: 已进入优先队列，正在中断当前执行。"));
+                                runningToInterrupt = current;
+                            }
+                        }
+                        startWorker = markWorkerStartLocked();
+                        handled = true;
+                    }
+
+                    if (!handled) {
+                        queue.offer(envelope);
+                        startWorker = markWorkerStartLocked();
+                    }
+                }
             } finally {
                 stateLock.unlock();
             }
@@ -305,7 +308,9 @@ public class AgentSessionDispatcher {
             try {
                 latch.await();
             } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
+                // STEER 会中断当前等待，让旧执行尽快退出；这里不能重新设置中断位，
+                // 否则 drainLoop 下一次 poll 会立刻抛 InterruptedException，新的 STEER 请求就留在队列里跑不起来。
+                log.debug("agent_session run wait interrupted, sessionId={}", sessionId);
             } finally {
                 stateLock.lock();
                 try {
@@ -442,15 +447,29 @@ public class AgentSessionDispatcher {
         }
 
         private void interruptForSteer() {
-            interrupt(AgentDialogueMode.STEER.name(), "interrupting", "STEER: 当前执行即将让出给最新问题。", true);
+            // STEER 的用户可见状态已经在 submit() 里以 queued 事件发出。
+            // 这里不要再发旧执行的 interrupting 事件，否则同 session 的客户端会把最新问题也显示成中断态。
+            interrupt(AgentDialogueMode.STEER.name(), "interrupting", "STEER: 当前执行即将让出给最新问题。", false, false, false);
         }
 
         private void interrupt(String stage, String status, String reason, boolean emitEvents) {
+            interrupt(stage, status, reason, emitEvents, true, true);
+        }
+
+        private void interrupt(String stage, String status, String reason, boolean emitEvents, boolean emitInterruptedEvent) {
+            interrupt(stage, status, reason, emitEvents, emitInterruptedEvent, true);
+        }
+
+        private void interrupt(String stage, String status, String reason, boolean emitEvents, boolean emitInterruptedEvent, boolean markSessionInterrupted) {
             conversationManager.nextEpoch(sessionId);
-            conversationManager.interrupt(sessionId);
+            if (markSessionInterrupted) {
+                conversationManager.interrupt(sessionId);
+            }
             if (emitEvents) {
                 mailbox.emit(AgentEvent.state("", sessionId, 0, stage, status, reason));
-                mailbox.emit(AgentEvent.interrupted("", sessionId, 0));
+                if (emitInterruptedEvent) {
+                    mailbox.emit(AgentEvent.interrupted("", sessionId, 0));
+                }
             }
             Thread executingThread = workerThread;
             if (executingThread != null) {

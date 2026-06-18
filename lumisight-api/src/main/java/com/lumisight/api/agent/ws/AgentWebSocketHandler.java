@@ -14,6 +14,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
 
 import java.util.Map;
@@ -22,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
+@Slf4j
 public class AgentWebSocketHandler extends TextWebSocketHandler implements AgentTransportAdapter {
 
     private final ObjectMapper objectMapper;
@@ -56,28 +58,34 @@ public class AgentWebSocketHandler extends TextWebSocketHandler implements Agent
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        // 检查这条连接/会话有没有超出消息频率限制
-        if (!allowMessage(session.getId())) {
-            sendProtocol(session, new WsAgentMessage("ERROR", "", null, "rate limit exceeded", System.currentTimeMillis()));
-            session.close(CloseStatus.POLICY_VIOLATION);
-            return;
-        }
-        WsAgentCommand command = objectMapper.readValue(message.getPayload(), WsAgentCommand.class);
-        String commandType = normalizeType(command.type());
-        String requestId = StringUtils.hasText(command.requestId()) ? command.requestId() : "";
-        if ("PING".equals(commandType)) {
-            sendProtocol(session, new WsAgentMessage("PONG", requestId, null, "pong", System.currentTimeMillis()));
-            return;
-        }
-        AgentRunRequest req = normalizeRunRequest(commandType, command.request());
-        if (!StringUtils.hasText(req.sessionId())) {
-            sendProtocol(session, new WsAgentMessage("ERROR", requestId, null, "sessionId is required", System.currentTimeMillis()));
-            return;
-        }
+        String requestId = "";
+        try {
+            // 检查这条连接/会话有没有超出消息频率限制
+            if (!allowMessage(session.getId())) {
+                sendProtocol(session, new WsAgentMessage("ERROR", requestId, null, "rate limit exceeded", System.currentTimeMillis()));
+                session.close(CloseStatus.POLICY_VIOLATION);
+                return;
+            }
+            WsAgentCommand command = objectMapper.readValue(message.getPayload(), WsAgentCommand.class);
+            String commandType = normalizeType(command.type());
+            requestId = StringUtils.hasText(command.requestId()) ? command.requestId() : "";
+            if ("PING".equals(commandType)) {
+                sendProtocol(session, new WsAgentMessage("PONG", requestId, null, "pong", System.currentTimeMillis()));
+                return;
+            }
+            AgentRunRequest req = normalizeRunRequest(commandType, command.request());
+            if (!StringUtils.hasText(req.sessionId())) {
+                sendProtocol(session, new WsAgentMessage("ERROR", requestId, null, "sessionId is required", System.currentTimeMillis()));
+                return;
+            }
 
-        ensureSubscription(session, requestId, req.sessionId());
-        sendProtocol(session, new WsAgentMessage("ACK", requestId, null, "accepted", System.currentTimeMillis()));
-        streamGateway.submit(req);
+            ensureSubscription(session, requestId, req.sessionId());
+            sendProtocol(session, new WsAgentMessage("ACK", requestId, null, "accepted", System.currentTimeMillis()));
+            streamGateway.submit(req);
+        } catch (Exception e) {
+            log.warn("agent_websocket command failed, sessionId={}, requestId={}, error={}", session.getId(), requestId, e.getMessage(), e);
+            sendProtocol(session, new WsAgentMessage("ERROR", requestId, null, "command failed: " + e.getMessage(), System.currentTimeMillis()));
+        }
     }
 
     @Override

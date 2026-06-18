@@ -60,6 +60,16 @@ class AgentExecutionPreparationService {
     private AgentExecutionState prepareExecutionContext(AgentRequest request, String sessionId) {
         AgentConversationManager.ConversationState sessionState = conversationManager.get(sessionId);
         long runEpoch = conversationManager.nextEpoch(sessionId);
+        if (sessionState != null && sessionState.interrupted()) {
+            conversationManager.saveRunning(
+                    sessionId,
+                    sessionState.baseQuestion(),
+                    sessionState.contexts() == null ? java.util.List.of() : sessionState.contexts(),
+                    sessionState.contextSession(),
+                    sessionState.nextRound()
+            );
+            sessionState = conversationManager.get(sessionId);
+        }
         String effectiveQuestion = request.question();
         String resolvedRepoRoot = agentFlowSupport.resolveRepoRoot(request.repoRoot(), request.skillPath());
         int limit = request.contextLimit() == null ? DEFAULT_CONTEXT_LIMIT : request.contextLimit();
