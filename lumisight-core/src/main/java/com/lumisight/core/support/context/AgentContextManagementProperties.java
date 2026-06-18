@@ -11,6 +11,8 @@ public class AgentContextManagementProperties {
     private int singleArtifactBytes = 50 * 1024;
     private int toolMessageBytes = 200 * 1024;
     private int previewBytes = 2 * 1024;
+    private int artifactSummaryTriggerBytes = 200 * 1024;
+    private int artifactSummaryInputBytes = 80 * 1024;
     private int snipTriggerTokens = 24_000;
     private int snipTargetTokens = 18_000;
     private int projectionSoftTokens = 28_000;
@@ -57,6 +59,22 @@ public class AgentContextManagementProperties {
 
     public void setPreviewBytes(int previewBytes) {
         this.previewBytes = previewBytes;
+    }
+
+    public int getArtifactSummaryTriggerBytes() {
+        return artifactSummaryTriggerBytes;
+    }
+
+    public void setArtifactSummaryTriggerBytes(int artifactSummaryTriggerBytes) {
+        this.artifactSummaryTriggerBytes = artifactSummaryTriggerBytes;
+    }
+
+    public int getArtifactSummaryInputBytes() {
+        return artifactSummaryInputBytes;
+    }
+
+    public void setArtifactSummaryInputBytes(int artifactSummaryInputBytes) {
+        this.artifactSummaryInputBytes = artifactSummaryInputBytes;
     }
 
     public int getSnipTriggerTokens() {

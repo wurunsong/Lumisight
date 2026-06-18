@@ -4,6 +4,7 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.support.AgentConversationManager;
+import com.lumisight.core.support.PromptTemplateService;
 import com.lumisight.core.support.StreamingChatClientSupport;
 import com.lumisight.skills.dto.SkillPlan;
 import org.slf4j.Logger;
@@ -53,6 +54,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
     private final AgentContextArtifactStore artifactStore;
     private final ChatClient chatClient;
     private final StreamingChatClientSupport streamingChatClientSupport;
+    private final PromptTemplateService promptTemplateService;
     private final AgentTokenEstimator tokenEstimator;
 
     public DefaultAgentContextManager(
@@ -60,12 +62,14 @@ public class DefaultAgentContextManager implements AgentContextManager {
             AgentContextArtifactStore artifactStore,
             ChatClient.Builder chatClientBuilder,
             StreamingChatClientSupport streamingChatClientSupport,
+            PromptTemplateService promptTemplateService,
             AgentTokenEstimator tokenEstimator
     ) {
         this.properties = properties;
         this.artifactStore = artifactStore;
         this.chatClient = chatClientBuilder.build();
         this.streamingChatClientSupport = streamingChatClientSupport;
+        this.promptTemplateService = promptTemplateService;
         this.tokenEstimator = tokenEstimator;
     }
 
@@ -205,8 +209,8 @@ public class DefaultAgentContextManager implements AgentContextManager {
         int autoCompactThreshold = properties.getEffectiveContextWindow()
                 - properties.getResponseReserveTokens()
                 - properties.getAutoCompactBufferTokens();
+        // autoCompact 是极限窗口下的模型摘要压缩；如果token数大于autoCompactThreshold，就先用模型对上下文进行压缩
         if (estimatedTokens > autoCompactThreshold && session.autoCompactFailureCount() < properties.getMaxAutoCompactFailures()) {
-            // autoCompact 是极限窗口下的模型摘要压缩；它先保住长期工作状态，再进入本轮 projection 裁剪。
             CompactionStepResult autoCompactResult = autoCompact(sessionId, session, request, skillPlan, purpose);
             session = autoCompactResult.session();
             estimatedTokens = estimateTokens(session.entries());
@@ -544,14 +548,19 @@ public class DefaultAgentContextManager implements AgentContextManager {
         return builder.toString().trim();
     }
 
+    /**
+     * 读时投影裁剪：不改写 session 账本，只决定本轮 prompt 能看到哪些 entry。
+     * 这里和 autoCompact 不同，autoCompact 会重建账本摘要；这里只是生成一个较小的上下文视图。
+     */
     private ProjectionResult collapseForProjection(AgentContextSession session, ProjectionPurpose purpose) {
         List<AgentContextEntry> entries = new ArrayList<>(session.entries());
         int estimatedTokens = estimateTokens(entries);
-        // 如果token没超限，就不映射直接返回
+        // 如果token没超限，就不剪裁直接返回
         if (estimatedTokens <= properties.getProjectionSoftTokens()) {
             return new ProjectionResult(entries, estimatedTokens, false, List.of(), Map.of());
         }
-        // todo 这个参数何意味，怎么给的10和14
+        // 第一层保护：必须投影的系统/摘要/计划类 entry + 最近若干条对话，先锁进 requiredIds。
+        // DECISION 阶段更偏向给工具决策留空间；FINAL/VERIFY 阶段多保留一点最近对话，方便回答和复核。
         int recentConversationBudget = purpose == ProjectionPurpose.DECISION ? 10 : 14;
         Set<String> recentConversationIds = recentConversationIds(entries, recentConversationBudget);
         LinkedHashSet<String> requiredIds = new LinkedHashSet<>();
@@ -564,7 +573,7 @@ public class DefaultAgentContextManager implements AgentContextManager {
         int targetBudget = estimatedTokens > properties.getProjectionHardTokens()
                 ? properties.getProjectionHardTokens()
                 : properties.getProjectionSoftTokens();
-        // selected是要保留的上下文
+        // 先把 required 全部放入 selected；它们可能已经超过预算，但仍优先保证语义连续性。
         List<AgentContextEntry> selected = new ArrayList<>();
         int usedTokens = 0;
         for (AgentContextEntry entry : entries) {
@@ -573,12 +582,12 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 usedTokens += entry.tokenEstimate();
             }
         }
-        // optional是可选择保留或抛弃的上下文
+        // 第二层回填：剩余 entry 按优先级、最近访问时间、是否可重取排序，尽量把有价值的内容塞回投影视图。
         List<AgentContextEntry> optional = entries.stream()
                 .filter(entry -> !requiredIds.contains(entry.id()))
                 .sorted(this::compareProjectionPriority)
                 .toList();
-        // optional，看看哪些能够保留
+        // priority < 88 的普通内容在预算已满后直接跳过；priority >= 92 的高价值内容允许轻微挤过 targetBudget。
         for (AgentContextEntry entry : optional) {
             if (usedTokens >= targetBudget && entry.priority() < 88) {
                 continue;
@@ -595,13 +604,14 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 .toList();
         List<AgentContextEntry> finalSelected = selected;
         int collapsedCount = Math.max(0, entries.size() - selected.size());
-        // hiddenByKind这是没被选中的上下文集合
+        // 统计被隐藏的 entry 类型，写进 marker，方便模型和调试日志知道“少看了什么”。就是selected以外的上下文
         Map<String, Long> hiddenByKind = entries.stream()
                 .filter(entry -> finalSelected.stream().noneMatch(kept -> kept.id().equals(entry.id())))
                 .collect(Collectors.groupingBy(entry -> entry.kind().name(), LinkedHashMap::new, Collectors.counting()));
 
         List<AgentContextEntry> projected = new ArrayList<>();
         if (collapsedCount > 0) {
+            // 插入一个轻量 marker 代替被隐藏的上下文，避免模型误以为历史本来就不存在。
             projected.add(AgentContextEntry.marker(
                     newEntryId("projection-collapse"),
                     AgentContextEntryKind.ARTIFACT_MARKER,
@@ -617,11 +627,11 @@ public class DefaultAgentContextManager implements AgentContextManager {
                     92
             ));
         }
-        // 投影后的上下文集合
+        // 投影结果仍按原始时间线排列，只是中间少了一部分可隐藏 entry。
         projected.addAll(selected);
 
         int projectedTokens = estimateTokens(projected);
-        // 如果投影后还是超过token限制，再做一次硬裁剪
+        // required + 高优先级回填可能会超过 hard limit，这时再走最后一道硬裁剪兜底。
         if (projectedTokens > properties.getProjectionHardTokens()) {
             projected = trimToHardLimit(projected, recentConversationIds);
             projectedTokens = estimateTokens(projected);
@@ -636,26 +646,31 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private List<AgentContextEntry> trimToHardLimit(List<AgentContextEntry> entries, Set<String> recentConversationIds) {
+        // hard limit 兜底裁剪：collapseForProjection 已经尽量按 targetBudget 选过一轮，
+        // 但 required entry 或高优先级 entry 可能把 projectedTokens 顶过 hardTokens，这里再做最后收口。
         List<AgentContextEntry> required = entries.stream()
                 .filter(entry -> isAlwaysProjected(entry) || recentConversationIds.contains(entry.id()))
                 .sorted(Comparator.comparingLong(AgentContextEntry::createdAt))
                 .toList();
         int used = estimateTokens(required);
         List<AgentContextEntry> kept = new ArrayList<>(required);
-        // todo 这里是不是应该是小于等于？这个方法好奇怪。。。不像是在做压缩
+        // required 是最后防线：如果它们本身已经达到或超过 hard limit，就不再回填 optional。
         if (used >= properties.getProjectionHardTokens()) {
             return kept;
         }
+        // optional 仍按投影优先级排序；能塞进 hard limit 的普通内容才回填。
         List<AgentContextEntry> optional = entries.stream()
                 .filter(entry -> required.stream().noneMatch(requiredEntry -> requiredEntry.id().equals(entry.id())))
                 .sorted(this::compareProjectionPriority)
                 .toList();
         for (AgentContextEntry entry : optional) {
+            // priority >= 90 的内容允许越过 hard limit 一点点；低优先级内容超过上限就跳过。
             if (used + entry.tokenEstimate() > properties.getProjectionHardTokens() && entry.priority() < 90) {
                 continue;
             }
             kept.add(entry);
             used += entry.tokenEstimate();
+            // 达到 hard limit 后停止继续回填，避免后续 optional 把 prompt 撑得更大。
             if (used >= properties.getProjectionHardTokens()) {
                 break;
             }
@@ -898,18 +913,59 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 entry.item().content(),
                 entry.item().metadata() == null ? Map.of() : entry.item().metadata()
         );
-        // 截取部分工具结果，拼到上下文里面
-        // todo 这里是不是要做个摘要，而不是直接截断？
+        // 普通大内容保留 preview；超长内容再额外生成模型摘要，避免只截前半段漏掉关键结论。
         String preview = preview(entry.item().content());
+        String artifactSummary = summarizeArtifactIfNeeded(entry, artifactRef, fullTokens);
+        String contextView = artifactContextView(preview, artifactSummary, artifactRef);
         Map<String, Object> metadata = mergeMetadata(entry.item().metadata(), Map.of(
                 "artifactPath", artifactRef.relativePath(),
                 "artifactId", artifactRef.artifactId(),
                 "artifactized", true,
                 "fullBytes", artifactRef.fullBytes(),
-                "fullTokens", fullTokens
+                "fullTokens", fullTokens,
+                "artifactSummaryGenerated", StringUtils.hasText(artifactSummary)
         ));
-        AgentContextItem previewItem = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), preview, metadata);
-        return entry.withArtifact(previewItem, artifactRef, bytes(preview), estimateTokens(preview));
+        AgentContextItem previewItem = new AgentContextItem(entry.item().sourceType(), entry.item().sourceId(), contextView, metadata);
+        return entry.withArtifact(previewItem, artifactRef, bytes(contextView), estimateTokens(contextView));
+    }
+
+    private String summarizeArtifactIfNeeded(AgentContextEntry entry, AgentContextArtifactRef artifactRef, int fullTokens) {
+        if (artifactRef.fullBytes() < properties.getArtifactSummaryTriggerBytes()) {
+            return "";
+        }
+        String content = entry.item().content();
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        String sample = limitBytes(content, properties.getArtifactSummaryInputBytes());
+        String systemPrompt = promptTemplateService.render("artifact_summary_system", Map.of());
+        String userPrompt = promptTemplateService.render("artifact_summary_user", Map.of(
+                "toolName", entry.toolName() == null ? "" : entry.toolName(),
+                "sourceId", entry.item().sourceId(),
+                "artifactPath", artifactRef.relativePath(),
+                "fullBytes", artifactRef.fullBytes(),
+                "fullTokens", fullTokens,
+                "sample", sample
+        ));
+        try {
+            String summary = streamingChatClientSupport.collect(chatClient, systemPrompt, userPrompt);
+            return StringUtils.hasText(summary) ? summary.trim() : "";
+        } catch (Exception e) {
+            log.warn("artifact summary failed, entryId={}, artifactId={}, error={}", entry.id(), artifactRef.artifactId(), e.getMessage());
+            return "";
+        }
+    }
+
+    private String artifactContextView(String preview, String artifactSummary, AgentContextArtifactRef artifactRef) {
+        StringBuilder builder = new StringBuilder();
+        if (StringUtils.hasText(artifactSummary)) {
+            builder.append("[Artifact summary]\n").append(artifactSummary.trim());
+            builder.append("\n\n[Full content stored as artifact: ").append(artifactRef.relativePath()).append("]");
+            return builder.toString();
+        }
+        builder.append("[Artifact preview]\n").append(preview == null ? "" : preview.trim());
+        builder.append("\n\n[Full content stored as artifact: ").append(artifactRef.relativePath()).append("]");
+        return builder.toString();
     }
 
     private AgentContextEntry decorateToolEntry(AgentContextEntry entry) {
@@ -1027,7 +1083,10 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     private AgentContextSession touch(AgentContextSession session, List<AgentContextEntry> projectedEntries) {
+        // touch 不是投影选择逻辑；它只在投影完成后，把“本轮真的给模型看过”的内容标记为刚访问过。
+        // 后续 hot cache 恢复和投影优先级排序会用 lastAccessedAt 判断哪些上下文仍然活跃。
         Set<String> ids = projectedEntries.stream().map(AgentContextEntry::id).collect(Collectors.toSet());
+        // 同一个文件/方法等资源可能对应多条 entry；用 logicalResourceId 同步刷新 hot cache 里的同资源缓存。
         Set<String> logicalResourceIds = collectLogicalResourceIds(projectedEntries);
         long now = System.currentTimeMillis();
         // 给刚刚投影过的条目加上最后访问时间
@@ -1035,7 +1094,6 @@ public class DefaultAgentContextManager implements AgentContextManager {
                 .map(entry -> ids.contains(entry.id()) ? entry.touch(now) : entry)
                 .toList();
         // 给刚刚投影过的热缓存条目加上最后访问时间
-        // todo logicalResourceIds到底是啥
         List<AgentContextHotCacheEntry> nextCache = (session.hotCacheEntries() == null ? List.<AgentContextHotCacheEntry>of() : session.hotCacheEntries()).stream()
                 .map(entry -> ids.contains(entry.sourceEntryId()) || logicalResourceIds.contains(entry.logicalResourceId()) ? entry.touch(now) : entry)
                 .toList();
@@ -1187,9 +1245,15 @@ public class DefaultAgentContextManager implements AgentContextManager {
     }
 
     /**
-     * todo 啥是逻辑资源？
-     * @param entries
-     * @return
+     * 收集一批上下文已经覆盖过的“逻辑资源”。
+     * entry.id() 表示这条上下文记录本身；logicalResourceId 表示它背后的同一个资源。
+     *
+     * 例子：用户连续两次读取同一个文件，可能产生两条不同 entry：
+     * - entry.id = "tool_result_round_3_cat_abc"，logicalResourceId = "file:/repo/src/App.java"
+     * - entry.id = "tool_result_round_8_cat_xyz"，logicalResourceId = "file:/repo/src/App.java"
+     *
+     * 对恢复逻辑来说，这两条都指向同一个文件资源。只要 recentTail 已经保留了其中一条，
+     * hot cache 恢复时就不应该再恢复另一条旧结果，否则 prompt 里会重复出现同一份文件内容。
      */
     private Set<String> collectLogicalResourceIds(Collection<AgentContextEntry> entries) {
         Set<String> ids = new LinkedHashSet<>();
@@ -1247,6 +1311,17 @@ public class DefaultAgentContextManager implements AgentContextManager {
             return content;
         }
         return new String(bytes, 0, properties.getPreviewBytes(), StandardCharsets.UTF_8) + "\n...(preview truncated, full content stored as artifact)";
+    }
+
+    private String limitBytes(String content, int maxBytes) {
+        if (!StringUtils.hasText(content) || maxBytes <= 0) {
+            return "";
+        }
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length <= maxBytes) {
+            return content;
+        }
+        return new String(bytes, 0, maxBytes, StandardCharsets.UTF_8) + "\n...(summary input truncated; full content stored as artifact)";
     }
 
     private String safeText(String content) {
