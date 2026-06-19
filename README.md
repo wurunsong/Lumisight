@@ -322,10 +322,34 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - RAG EVAL：`/api/lumisight/rag-eval/codesearchnet/run`
 - GRAPH：`fetchOneHopByKgNodeId`
 - SOURCE：`fetchMethodSourceByLocation`
-- MCP：`callMcpCapability`（默认仅保留抽象扩展入口，不再内置具体 capability）
+- MCP：通过 Spring AI MCP Client 动态发现外部 MCP tools，并以 `mcp_*` 工具名直接暴露给 Agent；旧的 `callMcpCapability` 默认关闭
 - BROWSER：`browser_open / browser_snapshot / browser_click / browser_type / browser_screenshot / browser_close`
 - MEMORY：`memory_list / memory_write`
 - PLANNING：`todo_write / task_create / task_list / task_get / task_claim / task_release / task_complete / task_resume / task_board`
+
+### Local MCP Smoke Test
+
+如果只是想验证 MCP 主链路是否打通，先用本地 echo MCP，不需要 Docker，也不需要 GitHub token：
+
+```bash
+JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home \
+  mvn -pl lumisight-api -am spring-boot:run -Dspring-boot.run.profiles=local-mcp
+```
+
+启动日志里应该能看到 `mcp_local_echo`。然后问 Agent：`调用 mcp_local_echo 回显 hello mcp`。如果返回 `Lumisight local MCP echo: hello mcp`，说明外部 MCP tool 发现、注册和调用链路是通的。
+
+### GitHub MCP Demo
+
+项目内置了一个可选 profile，用 GitHub 官方 MCP Server 验证外部 MCP tool 调用链路。它默认不启用，避免没 token 或没 Docker 时影响本地启动。
+
+```bash
+export GITHUB_PERSONAL_ACCESS_TOKEN=你的 GitHub PAT
+export GITHUB_TOOLSETS=repos,issues,pull_requests,users
+JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home \
+  mvn -pl lumisight-api -am spring-boot:run -Dspring-boot.run.profiles=github-mcp
+```
+
+启动后，Agent 会看到带 `mcp_github_` 前缀的外部 MCP 工具，例如 GitHub 官方 server 暴露的仓库、issue、PR、用户相关工具。读类工具会直接执行；看起来像写操作的 MCP 工具会走人工确认。
 
 ## 线程与会话治理
 
@@ -349,6 +373,7 @@ Lumisight 的工具与 Hook 已统一到同一套受限执行链路：
 - `lumisight.agent.conversation.*`
 - `lumisight.agent.cron.*`
 - `lumisight.browser.*`
+- `spring.ai.mcp.client.*` / `lumisight.mcp.*`
 - `lumisight.task.*`
 
 ## 目录速览

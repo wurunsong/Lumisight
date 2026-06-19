@@ -1,0 +1,16 @@
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: true
+        stdio:
+          connections:
+            local-echo:
+              command: ${LUMISIGHT_LOCAL_MCP_PYTHON:python3}
+              args:
+                - ${LUMISIGHT_LOCAL_MCP_SCRIPT:../scripts/mcp-echo-server.py}
+
+lumisight:
+  mcp:
+    tools:
+      name-prefix: mcp_local_

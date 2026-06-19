@@ -79,6 +79,10 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.lumisight.api.LumisightApplication</mainClass>
+          <skip>false</skip>
+        </configuration>
       </plugin>
     </plugins>
   </build>

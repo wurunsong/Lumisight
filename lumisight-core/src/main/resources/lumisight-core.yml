@@ -18,6 +18,15 @@ spring:
           model: ${CHAT_MODEL:deepseek-v4-pro}
     retry:
       max-attempts: ${SPRING_AI_RETRY_MAX_ATTEMPTS:1}
+    mcp:
+      client:
+        enabled: ${LUMISIGHT_MCP_CLIENT_ENABLED:false}
+        name: lumisight-mcp-client
+        version: 1.0.0
+        type: SYNC
+        request-timeout: ${LUMISIGHT_MCP_CLIENT_REQUEST_TIMEOUT:30s}
+        toolcallback:
+          enabled: true
       embedding:
         base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
         embeddings-path: ${EMBEDDING_PATH:/v1/embeddings}
@@ -56,6 +65,12 @@ lumisight:
     enabled: false
   vector:
     enabled: false
+  mcp:
+    legacy-capability:
+      enabled: ${LUMISIGHT_MCP_LEGACY_CAPABILITY_ENABLED:false}
+    tools:
+      enabled: ${LUMISIGHT_MCP_TOOLS_ENABLED:true}
+      name-prefix: ${LUMISIGHT_MCP_TOOL_PREFIX:mcp_}
   rag-eval:
     milvus:
       enabled: ${LUMISIGHT_RAG_EVAL_MILVUS_ENABLED:false}

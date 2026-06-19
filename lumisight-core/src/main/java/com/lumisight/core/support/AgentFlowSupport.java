@@ -63,7 +63,9 @@ public class AgentFlowSupport {
             return false;
         }
         PermissionedAgentTool tool = agentToolRegistry.get(decision.toolName());
-        return tool != null && tool.permission() == AgentToolPermission.LOCAL_FS_WRITE;
+        return tool != null
+                && (tool.permission() == AgentToolPermission.LOCAL_FS_WRITE
+                || (tool.permission() == AgentToolPermission.MCP_CAPABILITY_CALL && !tool.isReadOnly()));
     }
 
     public boolean shouldVerifyFinalAnswer(

@@ -8,6 +8,7 @@ import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.core.tool.ToolArg;
 import com.lumisight.mcp.capability.McpCapability;
 import com.lumisight.mcp.registry.McpCapabilityRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 @Component
+@ConditionalOnProperty(prefix = "lumisight.mcp.legacy-capability", name = "enabled", havingValue = "true")
 public class McpCapabilityTool implements PermissionedAgentTool<McpCapabilityTool.Args> {
 
     public record Args(

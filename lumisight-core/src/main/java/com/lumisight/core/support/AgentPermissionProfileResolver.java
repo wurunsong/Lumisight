@@ -19,6 +19,7 @@ public class AgentPermissionProfileResolver {
     private static final EnumSet<AgentToolPermission> BASE_TOOL_PERMISSIONS = EnumSet.of(
             AgentToolPermission.LOCAL_FS_READ,
             AgentToolPermission.GIT_READ,
+            AgentToolPermission.MCP_CAPABILITY_CALL,
             AgentToolPermission.BROWSER_READ,
             AgentToolPermission.MEMORY_READ,
             AgentToolPermission.MEMORY_WRITE,
