@@ -3,23 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lumisight Memory And Context Flow</title>
+  <title>Lumisight Memory Atlas</title>
   <style>
     :root {
-      --bg: #edf2f7;
-      --ink: #14263c;
-      --muted: #607186;
-      --line: rgba(22, 48, 81, 0.12);
-      --paper: rgba(255, 255, 255, 0.84);
+      --bg: #f5efe4;
+      --ink: #16314b;
+      --muted: #627182;
+      --line: rgba(30, 58, 92, 0.12);
+      --paper: rgba(255, 251, 245, 0.82);
       --navy: #0f2745;
-      --blue: #2d74ff;
-      --sky: #dbe9ff;
-      --mint: #ddf5ec;
-      --gold: #fff0d9;
-      --rose: #f4e9ff;
-      --slate: #eef3f9;
-      --teal: #0f8a74;
-      --shadow: 0 24px 60px rgba(18, 42, 72, 0.09);
+      --blue: #2f6fff;
+      --teal: #0e8c7f;
+      --amber: #d79a1a;
+      --plum: #8e6ad8;
+      --mist: #eef3fb;
+      --sea: #dcecff;
+      --foam: #e3f7ef;
+      --sand: #fff3db;
+      --lavender: #f2ebff;
+      --shadow: 0 26px 72px rgba(35, 49, 70, 0.11);
     }
     * { box-sizing: border-box; }
     body {
@@ -27,49 +29,78 @@
       color: var(--ink);
       font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
       background:
-        radial-gradient(circle at 10% 12%, rgba(45, 116, 255, 0.15), transparent 22%),
-        radial-gradient(circle at 88% 10%, rgba(15, 138, 116, 0.12), transparent 18%),
-        linear-gradient(180deg, #f7faff 0%, #edf2f7 52%, #e8eef5 100%);
+        radial-gradient(circle at 12% 10%, rgba(47, 111, 255, 0.16), transparent 24%),
+        radial-gradient(circle at 82% 12%, rgba(14, 140, 127, 0.13), transparent 20%),
+        radial-gradient(circle at 50% 92%, rgba(215, 154, 26, 0.11), transparent 26%),
+        linear-gradient(180deg, #fcf8f2 0%, #f4ecdf 48%, #efe7db 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: radial-gradient(circle at center, rgba(0,0,0,0.45), transparent 78%);
+      opacity: 0.4;
     }
     .wrap {
-      max-width: 1280px;
+      max-width: 1320px;
       margin: 0 auto;
-      padding: 28px 20px 54px;
+      padding: 28px 20px 64px;
     }
     .hero {
       position: relative;
       overflow: hidden;
-      border-radius: 32px;
-      padding: 34px 36px 36px;
-      color: #f4f8ff;
+      border-radius: 36px;
+      padding: 40px;
+      color: #f6fbff;
       background:
-        radial-gradient(circle at top right, rgba(135, 188, 255, 0.34), transparent 24%),
-        linear-gradient(135deg, #0b203a 0%, #17426c 54%, #2d74a6 100%);
+        radial-gradient(circle at 18% 22%, rgba(255, 228, 173, 0.22), transparent 22%),
+        radial-gradient(circle at 88% 18%, rgba(179, 219, 255, 0.28), transparent 24%),
+        linear-gradient(135deg, #10233b 0%, #1f4d76 42%, #128979 100%);
       box-shadow: var(--shadow);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.24), transparent 70%);
+      pointer-events: none;
     }
     .hero::after {
       content: "";
       position: absolute;
-      right: -70px;
-      bottom: -70px;
-      width: 260px;
-      height: 260px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 68%);
+      left: 34px;
+      right: 34px;
+      bottom: 26px;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.42), rgba(255,255,255,0.08));
       pointer-events: none;
     }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(290px, 0.72fr);
+      gap: 24px;
+      align-items: end;
+    }
     .hero h1 {
-      margin: 0 0 10px;
-      font-size: 40px;
-      line-height: 1.05;
-      letter-spacing: -0.03em;
+      margin: 0 0 12px;
+      font-size: 42px;
+      line-height: 1.03;
+      letter-spacing: -0.04em;
     }
     .hero p {
-      max-width: 860px;
       margin: 0;
-      color: rgba(236, 244, 255, 0.9);
+      max-width: 880px;
+      color: rgba(238, 246, 255, 0.92);
       font-size: 15px;
-      line-height: 1.8;
+      line-height: 1.85;
     }
     .hero-badges {
       display: flex;
@@ -82,37 +113,55 @@
       border-radius: 999px;
       border: 1px solid rgba(255,255,255,0.18);
       background: rgba(255,255,255,0.08);
-      color: #eef5ff;
+      color: #edf6ff;
       font-size: 12px;
-      letter-spacing: 0.01em;
+      letter-spacing: 0.02em;
+    }
+    .hero-panel {
+      padding: 18px 18px 16px;
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.08);
+      backdrop-filter: blur(12px);
+    }
+    .hero-panel strong {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 14px;
+      color: #ffffff;
+    }
+    .hero-panel span {
+      display: block;
+      color: rgba(237, 245, 255, 0.84);
+      font-size: 13px;
+      line-height: 1.75;
     }
     .section {
+      position: relative;
       margin-top: 24px;
-      padding: 24px;
-      border-radius: 28px;
+      padding: 26px;
+      border-radius: 30px;
       border: 1px solid var(--line);
       background: var(--paper);
-      backdrop-filter: blur(10px);
+      backdrop-filter: blur(12px);
       box-shadow: var(--shadow);
     }
+    .section::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.26), transparent 34%);
+    }
     .section-head {
+      position: relative;
+      z-index: 1;
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      gap: 16px;
-      margin-bottom: 18px;
-    }
-    .section-head h2 {
-      margin: 0 0 8px;
-      font-size: 24px;
-      color: var(--navy);
-    }
-    .section-head p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.75;
-      max-width: 780px;
+      gap: 18px;
+      margin-bottom: 20px;
     }
     .eyebrow {
       display: inline-block;
@@ -120,44 +169,56 @@
       color: var(--blue);
       font-size: 12px;
       font-weight: 700;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
     }
+    .section-head h2 {
+      margin: 0 0 8px;
+      font-size: 25px;
+      color: var(--navy);
+    }
+    .section-head p {
+      margin: 0;
+      max-width: 800px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
     .timeline {
+      position: relative;
+      z-index: 1;
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 12px;
+      gap: 14px;
       align-items: stretch;
-      position: relative;
     }
     .timeline::before {
       content: "";
       position: absolute;
-      left: 3%;
-      right: 3%;
-      top: 58px;
+      left: 4%;
+      right: 4%;
+      top: 62px;
       height: 2px;
-      background: linear-gradient(90deg, rgba(45, 116, 255, 0.1), rgba(45, 116, 255, 0.45), rgba(15, 138, 116, 0.22));
+      background: linear-gradient(90deg, rgba(47, 111, 255, 0.14), rgba(14, 140, 127, 0.4), rgba(215, 154, 26, 0.28));
       z-index: 0;
     }
     .flow-card {
       position: relative;
       z-index: 1;
-      min-height: 188px;
+      min-height: 220px;
       padding: 18px 16px 16px;
-      border-radius: 24px;
+      border-radius: 26px;
       border: 1px solid var(--line);
       background: rgba(255,255,255,0.92);
-      box-shadow: 0 12px 28px rgba(22, 45, 76, 0.06);
+      box-shadow: 0 12px 28px rgba(23, 49, 77, 0.06);
     }
-    .flow-card.sky { background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); }
-    .flow-card.mint { background: linear-gradient(180deg, #ebfaf4 0%, #ffffff 100%); }
-    .flow-card.gold { background: linear-gradient(180deg, #fff5e7 0%, #ffffff 100%); }
-    .flow-card.rose { background: linear-gradient(180deg, #f7f0ff 0%, #ffffff 100%); }
-    .flow-card.slate { background: linear-gradient(180deg, #f3f6fb 0%, #ffffff 100%); }
+    .flow-card.sea { background: linear-gradient(180deg, #edf5ff 0%, #ffffff 100%); }
+    .flow-card.foam { background: linear-gradient(180deg, #ebfaf4 0%, #ffffff 100%); }
+    .flow-card.sand { background: linear-gradient(180deg, #fff7e8 0%, #ffffff 100%); }
+    .flow-card.lavender { background: linear-gradient(180deg, #f6f0ff 0%, #ffffff 100%); }
     .index {
-      width: 34px;
-      height: 34px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       display: inline-flex;
       align-items: center;
@@ -172,50 +233,65 @@
     .flow-card h3 {
       margin: 0 0 10px;
       font-size: 17px;
-      line-height: 1.3;
+      line-height: 1.35;
       color: var(--navy);
     }
     .flow-card p {
       margin: 0;
       color: var(--muted);
       font-size: 13px;
-      line-height: 1.7;
+      line-height: 1.72;
+    }
+    .mini-tag {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(15, 39, 69, 0.06);
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
     }
     .presence-strip {
+      position: relative;
+      z-index: 1;
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
       margin-top: 18px;
     }
     .presence {
-      padding: 16px 18px;
-      border-radius: 22px;
+      padding: 18px 18px 16px;
+      border-radius: 24px;
       border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.9));
-      box-shadow: 0 10px 24px rgba(20, 44, 72, 0.04);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,243,238,0.92));
+      box-shadow: 0 10px 24px rgba(24, 43, 67, 0.04);
     }
     .presence h3 {
       margin: 0 0 8px;
-      color: var(--navy);
       font-size: 15px;
+      color: var(--navy);
     }
     .presence p {
       margin: 0;
       color: var(--muted);
       font-size: 13px;
-      line-height: 1.7;
+      line-height: 1.74;
     }
-    .dual {
+    .atlas {
+      position: relative;
+      z-index: 1;
       display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.85fr);
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.82fr);
       gap: 18px;
       align-items: start;
     }
     .diagram {
-      border-radius: 26px;
+      border-radius: 28px;
       padding: 20px;
       border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,248,253,0.96));
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(244, 240, 233, 0.95));
     }
     .diagram h3 {
       margin: 0 0 14px;
@@ -224,17 +300,17 @@
     }
     .swimlane {
       display: grid;
-      grid-template-columns: 132px 1fr;
+      grid-template-columns: 146px 1fr;
       gap: 14px;
       align-items: stretch;
       margin-top: 14px;
     }
     .swimlane:first-of-type { margin-top: 0; }
     .swimlane-label {
-      padding: 16px 14px;
-      border-radius: 22px;
+      padding: 18px 14px;
+      border-radius: 24px;
       border: 1px solid var(--line);
-      background: #f3f7fc;
+      background: linear-gradient(180deg, #f2f5fa 0%, #fffdfa 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -254,7 +330,7 @@
       position: absolute;
       left: 6%;
       right: 6%;
-      top: 46px;
+      top: 48px;
       height: 1px;
       background: rgba(34, 74, 123, 0.14);
       z-index: 0;
@@ -262,7 +338,7 @@
     .lane-step {
       position: relative;
       z-index: 1;
-      min-height: 126px;
+      min-height: 146px;
       padding: 16px 14px 14px;
       border-radius: 22px;
       border: 1px solid var(--line);
@@ -274,10 +350,17 @@
       height: 14px;
       border-radius: 50%;
       background: var(--blue);
-      box-shadow: 0 0 0 6px rgba(45, 116, 255, 0.12);
+      box-shadow: 0 0 0 6px rgba(47, 111, 255, 0.12);
       margin-bottom: 16px;
     }
-    .lane-step.memory .dot { background: var(--teal); box-shadow: 0 0 0 6px rgba(15, 138, 116, 0.12); }
+    .lane-step.memory .dot {
+      background: var(--teal);
+      box-shadow: 0 0 0 6px rgba(14, 140, 127, 0.12);
+    }
+    .lane-step.forgetting .dot {
+      background: var(--amber);
+      box-shadow: 0 0 0 6px rgba(215, 154, 26, 0.12);
+    }
     .lane-step strong {
       display: block;
       margin-bottom: 8px;
@@ -288,7 +371,7 @@
     .lane-step span {
       color: var(--muted);
       font-size: 12px;
-      line-height: 1.6;
+      line-height: 1.64;
     }
     .side-panel {
       display: grid;
@@ -298,7 +381,7 @@
       padding: 18px;
       border-radius: 24px;
       border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(245,249,255,0.98), rgba(255,255,255,0.96));
+      background: linear-gradient(180deg, rgba(249,251,255,0.98), rgba(255,252,247,0.94));
     }
     .note-card h3 {
       margin: 0 0 10px;
@@ -309,11 +392,95 @@
       margin: 0;
       color: var(--muted);
       font-size: 14px;
-      line-height: 1.75;
+      line-height: 1.76;
     }
-    .signal-grid {
+    .forget-grid {
+      position: relative;
+      z-index: 1;
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .forget-canvas {
+      border-radius: 28px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 10% 18%, rgba(47, 111, 255, 0.08), transparent 20%),
+        radial-gradient(circle at 90% 14%, rgba(14, 140, 127, 0.08), transparent 18%),
+        linear-gradient(180deg, rgba(255,255,255,0.95), rgba(248,243,236,0.94));
+    }
+    .forget-canvas h3 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: var(--navy);
+    }
+    .horizon {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      position: relative;
+    }
+    .horizon::before {
+      content: "";
+      position: absolute;
+      left: 4%;
+      right: 4%;
+      top: 64px;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(47, 111, 255, 0.18), rgba(14, 140, 127, 0.24), rgba(215, 154, 26, 0.32), rgba(142, 106, 216, 0.24));
+    }
+    .horizon-step {
+      position: relative;
+      z-index: 1;
+      min-height: 190px;
+      padding: 18px 16px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.94);
+      box-shadow: 0 12px 28px rgba(20, 44, 72, 0.05);
+    }
+    .horizon-step strong {
+      display: block;
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 16px;
+    }
+    .horizon-step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.72;
+    }
+    .tone {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .tone::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.9;
+    }
+    .tone.blue { color: var(--blue); }
+    .tone.teal { color: var(--teal); }
+    .tone.amber { color: var(--amber); }
+    .tone.plum { color: var(--plum); }
+    .signal-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 14px;
       margin-top: 18px;
     }
@@ -332,9 +499,11 @@
       margin: 0;
       color: var(--muted);
       font-size: 13px;
-      line-height: 1.75;
+      line-height: 1.72;
     }
     .highlights {
+      position: relative;
+      z-index: 1;
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
@@ -359,24 +528,31 @@
       line-height: 1.75;
     }
     .highlight li + li { margin-top: 6px; }
-    @media (max-width: 1120px) {
+    @media (max-width: 1180px) {
+      .hero-grid,
+      .atlas,
+      .forget-grid,
+      .section-head {
+        display: block;
+      }
+      .hero-panel {
+        margin-top: 20px;
+      }
       .timeline,
       .presence-strip,
       .signal-grid,
       .highlights,
-      .swimlane-track {
+      .swimlane-track,
+      .horizon {
         grid-template-columns: 1fr;
       }
       .timeline::before,
-      .swimlane-track::before {
+      .swimlane-track::before,
+      .horizon::before {
         display: none;
       }
-      .dual,
       .swimlane {
         grid-template-columns: 1fr;
-      }
-      .section-head {
-        display: block;
       }
     }
   </style>
@@ -384,13 +560,21 @@
 <body>
   <main class="wrap">
     <section class="hero">
-      <h1>Lumisight 记忆与上下文主流程</h1>
-      <p>这张图和多 Agent 架构页保持同一风格，但主题换成“记忆与上下文系统”。先看主信息流：当前会话的上下文如何入账、压缩、投影给模型；长期记忆怎样按 user / feedback / project / reference 分域落盘，并在结束后进入自动维护决策。</p>
-      <div class="hero-badges">
-        <span class="badge">Session Ledger</span>
-        <span class="badge">User Home Memory</span>
-        <span class="badge">Project Repo Memory</span>
-        <span class="badge">Memory Maintenance</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Lumisight 记忆地形图</h1>
+          <p>这页把记忆系统画成一张会流动、会沉积、也会主动退潮的地图。上半部分先讲一次请求里，上下文账本如何被恢复、压缩、投影给模型；长期记忆如何在 user / feedback / project / reference 四个域里被挑选、维护，以及为什么只有工程记忆会在过旧时进入遗忘衰减与自动归档。</p>
+          <div class="hero-badges">
+            <span class="badge">Session Ledger</span>
+            <span class="badge">Projection Before Model</span>
+            <span class="badge">Soft Forgetting</span>
+            <span class="badge">Archive To .forgotten</span>
+          </div>
+        </div>
+        <aside class="hero-panel">
+          <strong>这页重点讲什么</strong>
+          <span>讲“会话上下文怎样变成模型真正看到的视图”，也讲“长期记忆为什么不会无限堆积”。它不展开多 Agent 编排细节，那部分仍留给多 Agent 专项页。</span>
+        </aside>
       </div>
     </section>
 
@@ -398,54 +582,60 @@
       <div class="section-head">
         <div>
           <span class="eyebrow">Main Flow</span>
-          <h2>端到端主流程</h2>
+          <h2>一次请求里的记忆主潮汐</h2>
         </div>
-        <p>这是“上下文和记忆如何服务一次请求”的总流程。重点不是配置名，而是用户输入、历史上下文、相关记忆和外挂证据如何一步步变成真正给模型看的 prompt 视图。</p>
+        <p>先看主潮汐，而不是配置表。这里讲的是：一个请求进入系统以后，短期上下文如何先被恢复和瘦身，长期记忆如何只在需要时补进来，最后又怎样把新事实谨慎地回收到可持续复用的层里。</p>
       </div>
       <div class="timeline">
-        <article class="flow-card sky">
+        <article class="flow-card sea">
           <span class="index">01</span>
-          <h3>请求进入会话</h3>
-          <p>用户输入先回到当前 session，而不是直接裸奔给模型；这一步决定后续要恢复哪份上下文状态。</p>
+          <h3>请求回到当前会话</h3>
+          <p>用户输入不会直接裸奔给模型，而是先回到 `sessionId` 对应的会话账本。这样系统才能知道这轮应该接着哪段工作面继续。</p>
+          <span class="mini-tag">session first</span>
         </article>
-        <article class="flow-card slate">
+        <article class="flow-card">
           <span class="index">02</span>
-          <h3>恢复上下文账本</h3>
-          <p>系统恢复会话账本、历史 entry、artifact 引用和当前轮次状态，建立这一轮的工作上下文基线。</p>
+          <h3>恢复账本与热区</h3>
+          <p>系统恢复历史 entry、artifact 引用、hot cache 和本轮状态，重新拼出当前最可能有用的上下文地形，而不是机械回放整段对话。</p>
+          <span class="mini-tag">restore + hot cache</span>
         </article>
-        <article class="flow-card mint">
+        <article class="flow-card foam">
           <span class="index">03</span>
-          <h3>补充相关记忆</h3>
-          <p>长期记忆系统按当前问题同时查看用户域和项目域，挑选相关事实、偏好和项目经验，作为旁路证据补进这轮推理准备阶段。</p>
+          <h3>预取相关长期记忆</h3>
+          <p>Relevant memory service 会从用户域和仓库域挑选与当前问题最相关的长期事实，把它们作为旁路证据补入准备阶段。</p>
+          <span class="mini-tag">prefetch lane</span>
         </article>
-        <article class="flow-card gold">
+        <article class="flow-card sand">
           <span class="index">04</span>
-          <h3>投影与压缩</h3>
-          <p>不是把完整历史都喂给模型，而是先做 artifact 落盘、Snip、Micro-Compact、Projection，生成一份更值钱的上下文视图。</p>
+          <h3>投影、落盘与压缩</h3>
+          <p>大结果先 artifact 化，老内容按预算进入 snip、micro-compact 和 projection。模型拿到的是高价值视图，不是全量历史副本。</p>
+          <span class="mini-tag">projection first</span>
         </article>
-        <article class="flow-card rose">
+        <article class="flow-card lavender">
           <span class="index">05</span>
-          <h3>模型推理与回写</h3>
-          <p>模型基于投影视图完成决策；工具结果、验证信息和新结论再回写到账本，而不是只停留在瞬时响应里。</p>
+          <h3>推理后回写账本</h3>
+          <p>工具结果、验证证据和新结论会继续回写到账本里，让下一轮恢复时仍保留连续工作感，而不是只剩最终回答。</p>
+          <span class="mini-tag">write back</span>
         </article>
-        <article class="flow-card sky">
+        <article class="flow-card sea">
           <span class="index">06</span>
-          <h3>维护与结束</h3>
-          <p>这一轮结束后，会话上下文继续保留在账本层；真正值得长期保存的事实会进入记忆维护决策，再按作用域写到用户 home 或当前仓库。</p>
+          <h3>维护、遗忘与结束</h3>
+          <p>真正值得跨会话保存的事实才会进入长期记忆维护；只有过老的 `project / reference` 记忆才会先衰减权重，再进入 `.forgotten` 归档，不让工程记忆库无限膨胀。</p>
+          <span class="mini-tag">decay + archive</span>
         </article>
       </div>
       <div class="presence-strip">
         <article class="presence">
           <h3>上下文是主链路</h3>
-          <p>会话账本、artifact 和投影不是可选项，而是每一轮模型调用前都会经过的核心路径。</p>
+          <p>会话账本、artifact、projection 和压缩是每轮调用前都要经过的主链路，不是聊天框旁边的附加功能。</p>
         </article>
         <article class="presence">
           <h3>长期记忆是旁路支持</h3>
-          <p>长期记忆不会替代当前会话，但会在准备阶段补充跨会话事实，并在结束后用维护决策修正长期记忆；用户身份和偏好不再误写到项目仓库。</p>
+          <p>长期记忆不会替代当前会话，但会在准备阶段补入跨会话稳定事实；写回时也不是无脑追加，而是经过维护决策和类型分域。</p>
         </article>
         <article class="presence">
-          <h3>外挂检索是增强层</h3>
-          <p>RAG、图谱和源码增强工具不是记忆系统本体，但会在需要更多证据时被接到同一套上下文准备链路里；检索质量也可以再用公开 benchmark 做校准。</p>
+          <h3>遗忘现在是显式机制</h3>
+          <p>记忆不再只是“陈旧提醒”。现在只有旧的工程记忆会先衰减召回权重，超过硬阈值后把 `project / reference` 自动移入 `.forgotten`，把空间留给真正还在流动的项目知识。</p>
         </article>
       </div>
     </section>
@@ -454,12 +644,12 @@
       <div class="section-head">
         <div>
           <span class="eyebrow">Two Layers</span>
-          <h2>会话上下文与长期记忆</h2>
+          <h2>会话层与长期层如何分工</h2>
         </div>
-        <p>这两层都服务于同一次请求，但职责不同：会话上下文负责“这一轮现在要看什么”，长期记忆负责“跨会话该记住什么”。</p>
+        <p>这两层都服务同一个请求，但职责完全不同。会话层负责“这一轮现在要看什么”，长期层负责“跨会话仍值得留下什么”；遗忘机制则负责“哪些事实应该慢慢退出主记忆海面”。</p>
       </div>
 
-      <div class="dual">
+      <div class="atlas">
         <div class="diagram">
           <h3>双层信息流</h3>
 
@@ -469,22 +659,22 @@
               <article class="lane-step">
                 <div class="dot"></div>
                 <strong>接收新输入</strong>
-                <span>用户消息、工具结果和验证结果进入会话账本。</span>
+                <span>用户消息、工具结果和验证证据先进入结构化账本，而不是直接拼成一长段聊天历史。</span>
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
-                <strong>判断是否过大</strong>
-                <span>大结果先落盘，老内容根据预算进入压缩链。</span>
+                <strong>预算触发瘦身</strong>
+                <span>大块内容优先落到 `.lumisight/context-artifacts`，旧 entry 根据 token 预算走 snip 和 micro-compact。</span>
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
-                <strong>生成投影视图</strong>
-                <span>真正给模型看的不是全量账本，而是读时挑选后的高价值视图。</span>
+                <strong>读时生成投影</strong>
+                <span>模型看到的是本轮读时投影后的视图，不是账本原文。真正昂贵的内容只在需要时恢复。</span>
               </article>
               <article class="lane-step">
                 <div class="dot"></div>
                 <strong>推理后继续回写</strong>
-                <span>新决策、新工具证据和新结论重新进入账本，供下一轮继续使用。</span>
+                <span>新结论不会悬空留在最终回答里，而是回到账本中，给下一轮恢复、验证和离线反思继续复用。</span>
               </article>
             </div>
           </div>
@@ -495,22 +685,22 @@
               <article class="lane-step memory">
                 <div class="dot"></div>
                 <strong>按问题挑选</strong>
-                <span>相关记忆服务先根据当前问题从用户域和仓库域预取可能有用的长期事实。</span>
+                <span>Relevant memory service 会同时看用户域和项目域，只把当前问题真正可能用到的长期事实补进本轮准备阶段。</span>
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
-                <strong>补进准备阶段</strong>
-                <span>相关结果作为旁路上下文参与本轮决策准备，而不是混在整段对话历史里。</span>
+                <strong>按类型落盘</strong>
+                <span>`user / feedback` 跟着人走，落到 `~/.lumisight`；`project / reference` 跟着仓库走，落到 `.lumisight/memory`。</span>
               </article>
               <article class="lane-step memory">
                 <div class="dot"></div>
-                <strong>执行后进入维护决策</strong>
-                <span>不是每轮都写长期记忆，memory 模型会结合本轮上下文、长期记忆索引和相关旧记忆，决定 CREATE / UPDATE / MERGE / DELETE / NONE。</span>
+                <strong>异步维护决策</strong>
+                <span>最终回答后，维护模型会判断 CREATE / UPDATE / MERGE / DELETE / NONE，而不是把所有东西都 append 成新记忆文件。</span>
               </article>
-              <article class="lane-step memory">
+              <article class="lane-step forgetting">
                 <div class="dot"></div>
-                <strong>按作用域落盘</strong>
-                <span>user / feedback 进入 `~/.lumisight` 用户域；project / reference 进入仓库 `.lumisight/memory` 项目域。</span>
+                <strong>进入遗忘通道</strong>
+                <span>旧的 `project / reference` 先降召回权重，再在超过 hard window 后进入 `.forgotten`，让长期层保持活性而不是越堆越脏。</span>
               </article>
             </div>
           </div>
@@ -518,40 +708,93 @@
 
         <div class="side-panel">
           <article class="note-card">
-            <h3>为什么要分两层</h3>
-            <p>因为“这轮会话里发生了什么”和“以后都该记住什么”不是同一类信息。前者要完整、可追溯，后者要更稳定、更克制，否则会把噪音固化成长久事实。</p>
+            <h3>为什么必须分两层</h3>
+            <p>因为“这轮发生了什么”和“以后都该记住什么”本来就不是同一种资产。前者需要完整可回放，后者需要克制、稳定、可跨会话复用。</p>
           </article>
           <article class="note-card">
-            <h3>为什么还要分作用域</h3>
-            <p>因为“用户是谁、偏好是什么”和“这个仓库里的事实是什么”生命周期不同。用户记忆应该跟着人走，项目记忆应该跟着仓库走；混在一起会让换仓库后的回答变脏。</p>
+            <h3>为什么还要分域</h3>
+            <p>用户身份和偏好应该跟着人走，项目事实和参考资料应该跟着仓库走。把两者混成一个目录，会让换项目后的回答带上旧仓库的脏上下文。</p>
           </article>
           <article class="note-card">
-            <h3>压缩不是为了删历史</h3>
-            <p>压缩的目标不是抹掉发生过的内容，而是把大结果、老内容和可重取证据转成更轻的视图，让模型上下文预算花在当前最有价值的信息上。</p>
+            <h3>压缩不是删除历史</h3>
+            <p>压缩只是把高体积、低即时价值的内容变成更轻的工作视图；完整证据仍通过 artifact 和 hot cache 保留下来，必要时还能恢复。</p>
           </article>
           <article class="note-card">
-            <h3>外挂检索插在哪里</h3>
-            <p>RAG、图谱和方法源码增强不直接替代记忆，也不替代会话账本。它们更像证据放大器，在准备阶段提供外部补充，再通过同一套上下文链路进入模型视图；现在还可以用公开代码检索 benchmark 校准这层增强质量。</p>
+            <h3>遗忘也不是粗暴删库</h3>
+            <p>这版遗忘先做软衰减，再做硬归档，并且只默认处理 `project / reference`。用户偏好和明确反馈不会因为久一点没用就被自动清掉。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Forgetting Flow</span>
+          <h2>记忆如何退潮，而不是永远堆高</h2>
+        </div>
+          <p>这部分专门讲新加的遗忘机制。重点不是“系统终于会删文件”，而是它现在开始把工程记忆当成一个有生命周期的层：先提醒、再降权、最后归档，给新项目知识腾出主航道；用户画像和明确反馈不走这条衰减通道。</p>
+      </div>
+
+      <div class="forget-grid">
+        <div class="forget-canvas">
+          <h3>遗忘时间线</h3>
+          <div class="horizon">
+            <article class="horizon-step">
+              <span class="tone blue">Fresh Zone</span>
+              <strong>新记忆保持全权重</strong>
+              <p>刚写入或最近仍被更新的长期记忆，会以完整权重参与启发式召回，也会继续出现在 `MEMORY.md` 的主索引里。</p>
+            </article>
+            <article class="horizon-step">
+              <span class="tone teal">Stale Reminder</span>
+              <strong>先出现陈旧提醒</strong>
+              <p>超过 `stale-after-days` 后，系统先把它标成“某个时间点的观察”。这一步不删除记忆，但会提醒使用方先对照当前代码或事实验证。</p>
+            </article>
+            <article class="horizon-step">
+              <span class="tone amber">Soft Forgetting</span>
+              <strong>进入召回衰减期</strong>
+              <p>超过 `soft-forget-after-days` 后，旧记忆不再因为 `mtime` 老而自然吃分，反而会逐步降低检索权重。长期经验还能被用，但不再轻易压过更新鲜的事实。</p>
+            </article>
+            <article class="horizon-step">
+              <span class="tone plum">Hard Archive</span>
+              <strong>超期归档到 `.forgotten`</strong>
+              <p>超过 `hard-forget-after-days` 且类型属于 `project / reference` 时，文件会从主记忆目录移到 `.forgotten`。它不是彻底销毁，而是退出主航道。</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="side-panel">
+          <article class="note-card">
+            <h3>默认只归档哪些类型</h3>
+            <p>当前默认只对 `project` 和 `reference` 做自动归档和软衰减，因为它们更容易随着项目推进变旧。`user` 和 `feedback` 更偏长期人格与约束，不应轻易被时间因素削弱。</p>
+          </article>
+          <article class="note-card">
+            <h3>为什么选归档而不是直接删</h3>
+            <p>归档保留了恢复可能性，也让系统能把“退出主记忆面”与“永久删除”分开。这样记忆库会更干净，但不会因为一次激进清理就丢掉潜在有用的历史背景。</p>
+          </article>
+          <article class="note-card">
+            <h3>这条链路接在哪</h3>
+            <p>自动归档发生在记忆扫描与加载入口附近，也就是说每次系统重新看主记忆目录时，都会顺手把已超期的旧项目记忆退到归档层。</p>
           </article>
         </div>
       </div>
 
       <div class="signal-grid">
         <article class="signal">
-          <h3>什么时候落盘</h3>
-          <p>当单条结果或单轮工具输出过大时，完整正文先写 artifact，prompt 里只保留 preview 和引用。</p>
+          <h3>什么时候 artifact 化</h3>
+          <p>当单条结果或单轮工具输出过大时，完整正文先写 artifact，prompt 里只保留 preview 和引用，把上下文预算留给当前轮真正要判断的东西。</p>
         </article>
         <article class="signal">
           <h3>什么时候压缩</h3>
-          <p>当 token 预算逼近窗口边界时，系统优先折叠旧对话和可重取工具结果，而不是马上全量摘要。</p>
+          <p>当投影预算逼近窗口边界，系统优先折叠旧对话和可恢复证据，而不是等模型已经超窗后再补救。</p>
         </article>
         <article class="signal">
-          <h3>什么时候维护记忆</h3>
-          <p>不是每条内容都进长期记忆。系统只在出现用户偏好、项目事实、稳定经验或旧记忆需要修正时，才触发新增、更新、合并或删除，并按类型选择用户域或项目域。</p>
+          <h3>什么时候写长期记忆</h3>
+          <p>只有出现稳定偏好、持续项目事实、明确反馈或长期参考时，系统才会写入长期层；普通工具流水和一次性状态不会直接固化。</p>
         </article>
         <article class="signal">
-          <h3>什么时候做离线反思</h3>
-          <p>当任务看板、近期记忆和 cron 历史里已经积累出阶段性模式时，系统可以在主执行链外再整理一次，产出更稳定的 project memory。</p>
+          <h3>什么时候触发遗忘</h3>
+          <p>当工程记忆足够久未更新时，系统先用陈旧度提醒和召回衰减降低影响；超过 hard window 后，再把 `project / reference` 移入 `.forgotten`。</p>
         </article>
       </div>
     </section>
@@ -560,92 +803,52 @@
       <div class="section-head">
         <div>
           <span class="eyebrow">Technical Highlights</span>
-          <h2>技术亮点</h2>
+          <h2>工程亮点</h2>
         </div>
-        <p>上面先让人看懂记忆系统和上下文系统如何存在于主流程里，下面再保留工程层真正关键的实现亮点。</p>
+        <p>上面先把记忆系统讲成一张信息流地图，下面再保留真正有工程密度的差异点。它们是补充层，不抢主潮汐的视觉位置。</p>
       </div>
 
       <div class="highlights">
         <article class="highlight">
-          <h3>会话账本不是字符串列表</h3>
+          <h3>会话账本不是字符串堆</h3>
           <ul>
-            <li>系统保存的是结构化上下文 entry，而不是一串不断膨胀的消息文本。</li>
-            <li>这样后续投影、压缩、artifact 引用和恢复都有统一抓手。</li>
-            <li>上下文决策从“堆历史”升级成了“管理账本”。</li>
+            <li>上下文保存的是结构化 entry、artifact 引用和热区信息，而不是一段不断膨胀的聊天文本。</li>
+            <li>这让恢复、投影、压缩和回写都有统一抓手。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>Artifact 让大结果可追溯</h3>
+          <h3>Projection 发生在模型前</h3>
           <ul>
-            <li>大结果先落盘，再在 prompt 里保留轻视图。</li>
-            <li>模型不需要吞完整正文，但系统也不会失去完整证据。</li>
-            <li>这解决了“完整保留”和“上下文预算”之间的冲突。</li>
+            <li>系统先决定“模型这轮真正该看到什么”，再去调用模型。</li>
+            <li>预算管理因此发生在调用前，而不是超窗后才亡羊补牢。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>Projection 先于模型调用</h3>
+          <h3>Artifact 保留完整证据</h3>
           <ul>
-            <li>模型看到的是读时投影后的视图，而不是原样账本。</li>
-            <li>不同阶段可以共享同一账本，但拿到不同视图。</li>
-            <li>Artifact、Snip、Micro-Compact 和 Auto-Compact 会在投影前后协同工作。</li>
-            <li>这让预算管理发生在模型调用前，而不是调用失败后。</li>
+            <li>大结果先落到 `.lumisight/context-artifacts`，prompt 里只保留 preview、summary 和定位信息。</li>
+            <li>这同时解决了“完整保留”和“上下文预算有限”的冲突。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>记忆检索是预取型旁路</h3>
+          <h3>长期记忆是预取型旁路</h3>
           <ul>
-            <li>相关记忆会在请求准备阶段提前挑选，而不是等模型临时想起再补。</li>
-            <li>这让长期经验更自然地进入一次推理，而不打乱主会话结构。</li>
-            <li>长期记忆因此更像稳定支撑层，而不是另一本对话日志。</li>
+            <li>相关记忆会在请求准备阶段预先挑选，而不是等模型生成到一半才临时追问“有没有旧经验”。</li>
+            <li>长期层因此更像稳定支撑面，而不是第二本对话日志。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>会话层和记忆层职责分离</h3>
+          <h3>自动维护不再只有追加</h3>
           <ul>
-            <li>会话层追求完整可恢复，记忆层追求长期有效和克制写入。</li>
-            <li>两层都服务当前请求，但保留粒度和生命周期不同。</li>
-            <li>这避免了把短期噪音直接变成永久知识。</li>
+            <li>记忆维护模型会综合当前上下文、`MEMORY.md` 索引和已选旧记忆，输出 CREATE / UPDATE / MERGE / DELETE / NONE。</li>
+            <li>系统开始把长期层当成需要整理的知识库，而不是 append-only 文本堆。</li>
           </ul>
         </article>
         <article class="highlight">
-          <h3>记忆落盘按作用域分域</h3>
+          <h3>遗忘机制开始进入主设计</h3>
           <ul>
-            <li>`user` 和 `feedback` 记忆写入用户 home 下的 Lumisight 记忆空间，服务跨仓库连续性。</li>
-            <li>`project` 和 `reference` 记忆仍保留在当前仓库 `.lumisight/memory`，服务项目事实追踪。</li>
-            <li>`memory_list` 会同时合并用户域和项目域，所以读取体验保持统一，写入边界保持清楚。</li>
-          </ul>
-        </article>
-        <article class="highlight">
-          <h3>Hot Cache 让恢复更像连续工作</h3>
-          <ul>
-            <li>Auto-Compact 后系统会优先记住最近访问的文件、工具证据和活跃工作面。</li>
-            <li>下一轮恢复时不必把所有老内容重新展开，而是先把最热的上下文片段捞回来。</li>
-            <li>这让压缩后的会话仍然保留“工作连续性”，而不是只剩一段冷摘要。</li>
-          </ul>
-        </article>
-        <article class="highlight">
-          <h3>外挂 RAG / 图谱并入同一准备链路</h3>
-          <ul>
-            <li>向量检索、图谱和源码增强会在需要时为主流程补证据。</li>
-            <li>这些证据仍通过同一套上下文准备机制进入 prompt。</li>
-            <li>现在这层检索质量还可以用 CodeSearchNet 风格 benchmark 进一步校准。</li>
-            <li>所以外挂能力是增强层，而不是与记忆系统割裂的另一条暗线。</li>
-          </ul>
-        </article>
-        <article class="highlight">
-          <h3>自动记忆维护不是只追加</h3>
-          <ul>
-            <li>最终回答后会异步投递记忆信号，不阻塞用户侧响应。</li>
-            <li>维护模型会同时看到裁剪后的本轮上下文、MEMORY.md 索引和相关旧记忆。</li>
-            <li>输出不再只是 shouldWrite，而是 CREATE / UPDATE / MERGE / DELETE / NONE。</li>
-          </ul>
-        </article>
-        <article class="highlight">
-          <h3>离线反思复用同一份账本与记忆信号</h3>
-          <ul>
-            <li>离线反思不会绕开主系统，而是回看 task board、近期记忆和 cron 历史这些已有信号。</li>
-            <li>输出仍会回到 project memory，必要时再转成少量 follow-up tasks。</li>
-            <li>这让“执行后的整理”也复用同一套上下文和记忆资产，而不是另起一套孤立流程。</li>
+            <li>旧的工程记忆先做陈旧提醒，再做召回衰减，最后把超期 `project / reference` 归档到 `.forgotten`。</li>
+            <li>这让记忆系统第一次具备“退出主记忆面”的显式机制，而不只是永远保留所有历史文件。</li>
           </ul>
         </article>
       </div>

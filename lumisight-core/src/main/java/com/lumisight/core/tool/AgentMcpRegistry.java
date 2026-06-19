@@ -12,14 +12,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Component
-public class AgentToolRegistry {
+public class AgentMcpRegistry {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentToolRegistry.class);
+    private static final Logger log = LoggerFactory.getLogger(AgentMcpRegistry.class);
 
     private final Map<String, PermissionedAgentTool<?>> toolsByName;
     private final Map<AgentToolCategory, List<PermissionedAgentTool<?>>> toolsByCategory;
 
-    public AgentToolRegistry(List<PermissionedAgentTool<?>> tools, List<AgentToolProvider> toolProviders) {
+    public AgentMcpRegistry(List<PermissionedAgentTool<?>> tools, List<AgentToolProvider> toolProviders) {
         List<PermissionedAgentTool<?>> allTools = new ArrayList<>(tools == null ? List.of() : tools);
         if (toolProviders != null) {
             for (AgentToolProvider provider : toolProviders) {

@@ -4,7 +4,7 @@ import com.lumisight.core.model.AgentContextItem;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.tool.AgentToolPermission;
-import com.lumisight.core.tool.AgentToolRegistry;
+import com.lumisight.core.tool.AgentMcpRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
 
 import org.springframework.stereotype.Component;
@@ -19,10 +19,10 @@ import java.util.Locale;
 @Component
 public class AgentFlowSupport {
 
-    private final AgentToolRegistry agentToolRegistry;
+    private final AgentMcpRegistry agentMcpRegistry;
 
-    public AgentFlowSupport(AgentToolRegistry agentToolRegistry) {
-        this.agentToolRegistry = agentToolRegistry;
+    public AgentFlowSupport(AgentMcpRegistry agentMcpRegistry) {
+        this.agentMcpRegistry = agentMcpRegistry;
     }
 
     public String resolveRepoRoot(String repoRoot, String skillPath) {
@@ -62,7 +62,7 @@ public class AgentFlowSupport {
         if (decision == null) {
             return false;
         }
-        PermissionedAgentTool tool = agentToolRegistry.get(decision.toolName());
+        PermissionedAgentTool tool = agentMcpRegistry.get(decision.toolName());
         return tool != null
                 && (tool.permission() == AgentToolPermission.LOCAL_FS_WRITE
                 || (tool.permission() == AgentToolPermission.MCP_CAPABILITY_CALL && !tool.isReadOnly()));

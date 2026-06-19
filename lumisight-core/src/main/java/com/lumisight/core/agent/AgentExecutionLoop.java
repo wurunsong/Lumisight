@@ -8,7 +8,6 @@ import com.lumisight.core.model.AgentLoopState;
 import com.lumisight.core.model.AgentRequest;
 import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
-import com.lumisight.core.support.AgentConversationManager;
 import com.lumisight.core.support.AgentDecisionParser;
 import com.lumisight.core.support.AgentFinalAnswerVerifier;
 import com.lumisight.core.support.AgentFlowSupport;
@@ -21,7 +20,7 @@ import com.lumisight.core.support.context.AgentContextManager;
 import com.lumisight.core.support.context.AgentContextProjection;
 import com.lumisight.core.support.context.AgentContextSession;
 import com.lumisight.core.tool.AgentToolPermission;
-import com.lumisight.core.tool.AgentToolRegistry;
+import com.lumisight.core.tool.AgentMcpRegistry;
 import com.lumisight.hooks.dto.AgentHookContext;
 import com.lumisight.hooks.dispatcher.AgentHookDispatcher;
 import com.lumisight.hooks.enums.AgentHookPoint;
@@ -48,7 +47,7 @@ class AgentExecutionLoop {
     private static final String AUTO_SELF_HEAL_SOURCE_ID = "auto_self_heal";
 
     private final ChatClient llmChatClient;
-    private final AgentToolRegistry agentToolRegistry;
+    private final AgentMcpRegistry agentMcpRegistry;
     private final AgentPromptService agentPromptService;
     private final AgentSessionContextStore conversationManager;
     private final AgentHookDispatcher agentHookDispatcher;
@@ -63,7 +62,7 @@ class AgentExecutionLoop {
 
     AgentExecutionLoop(
             ChatClient.Builder chatClientBuilder,
-            AgentToolRegistry agentToolRegistry,
+            AgentMcpRegistry agentMcpRegistry,
             AgentPromptService agentPromptService,
             AgentSessionContextStore conversationManager,
             AgentHookDispatcher agentHookDispatcher,
@@ -77,7 +76,7 @@ class AgentExecutionLoop {
             AgentExecutionInterruptService interruptService
     ) {
         this.llmChatClient = chatClientBuilder.build();
-        this.agentToolRegistry = agentToolRegistry;
+        this.agentMcpRegistry = agentMcpRegistry;
         this.agentPromptService = agentPromptService;
         this.conversationManager = conversationManager;
         this.agentHookDispatcher = agentHookDispatcher;
@@ -152,7 +151,7 @@ class AgentExecutionLoop {
                             request.runMode(),
                             request.dialogueMode(),
                             enabledPermissions,
-                            agentToolRegistry,
+                            agentMcpRegistry,
                             skillPlan,
                             memoryContext
                     ),

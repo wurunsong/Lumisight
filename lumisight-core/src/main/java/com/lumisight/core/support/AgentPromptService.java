@@ -10,7 +10,7 @@ import com.lumisight.core.model.AgentTaskType;
 import com.lumisight.core.model.ToolArgumentSpec;
 import com.lumisight.core.tool.AgentToolCategory;
 import com.lumisight.core.tool.AgentToolPermission;
-import com.lumisight.core.tool.AgentToolRegistry;
+import com.lumisight.core.tool.AgentMcpRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import com.lumisight.memory.dto.RelevantMemoryBundle;
 import com.lumisight.skills.dto.SkillPlan;
@@ -78,7 +78,7 @@ public class AgentPromptService {
             AgentRunMode runMode,
             AgentDialogueMode dialogueMode,
             Set<AgentToolPermission> enabledPermissions,
-            AgentToolRegistry registry,
+            AgentMcpRegistry registry,
             SkillPlan skillPlan,
             RelevantMemoryBundle memoryContext
     ) {
@@ -237,7 +237,7 @@ public class AgentPromptService {
         ));
     }
 
-    private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentToolRegistry registry) {
+    private String enabledToolHints(Set<AgentToolPermission> enabledPermissions, AgentMcpRegistry registry) {
         StringJoiner joiner = new StringJoiner("\n");
         List<AgentToolCategory> categories = List.of(
                 AgentToolCategory.RAG,

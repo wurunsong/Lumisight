@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
+@Deprecated
 @Component
 @ConditionalOnProperty(prefix = "lumisight.mcp.legacy-capability", name = "enabled", havingValue = "true")
 public class McpCapabilityTool implements PermissionedAgentTool<McpCapabilityTool.Args> {

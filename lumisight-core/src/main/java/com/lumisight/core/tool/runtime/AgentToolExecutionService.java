@@ -8,7 +8,7 @@ import com.lumisight.core.model.AgentToolExecutionResult;
 import com.lumisight.core.model.ToolDecision;
 import com.lumisight.core.support.ToolSchemaValidator;
 import com.lumisight.core.tool.AgentToolPermission;
-import com.lumisight.core.tool.AgentToolRegistry;
+import com.lumisight.core.tool.AgentMcpRegistry;
 import com.lumisight.core.tool.PermissionedAgentTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +26,11 @@ public class AgentToolExecutionService {
     private static final int TOOL_MAX_RETRY = 2;
     private static final Logger log = LoggerFactory.getLogger(AgentToolExecutionService.class);
 
-    private final AgentToolRegistry agentToolRegistry;
+    private final AgentMcpRegistry agentMcpRegistry;
     private final ObjectMapper objectMapper;
 
-    public AgentToolExecutionService(AgentToolRegistry agentToolRegistry, ObjectMapper objectMapper) {
-        this.agentToolRegistry = agentToolRegistry;
+    public AgentToolExecutionService(AgentMcpRegistry agentMcpRegistry, ObjectMapper objectMapper) {
+        this.agentMcpRegistry = agentMcpRegistry;
         this.objectMapper = objectMapper;
     }
 
@@ -42,7 +42,7 @@ public class AgentToolExecutionService {
         String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
         String toolName = normalizeToolName(requestedToolName);
         Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
-        PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
+        PermissionedAgentTool<?> tool = agentMcpRegistry.get(toolName);
         return tool != null
                 && enabledPermissions.contains(tool.permission())
                 && isConcurrencySafe(tool, args);
@@ -53,7 +53,7 @@ public class AgentToolExecutionService {
             String requestedToolName = decision.toolName() == null ? "" : decision.toolName().trim();
             String toolName = normalizeToolName(requestedToolName);
             Map<String, Object> args = normalizeArgsForTool(requestedToolName, toolName, decision.args() == null ? Map.of() : decision.args());
-            PermissionedAgentTool<?> tool = agentToolRegistry.get(toolName);
+            PermissionedAgentTool<?> tool = agentMcpRegistry.get(toolName);
             if (tool == null) {
                 return errorToolResult(toolName, "unknown_tool", "未知工具: " + toolName, Map.of("toolName", toolName, "requestedToolName", requestedToolName), hookContext, args);
             }
@@ -192,7 +192,7 @@ public class AgentToolExecutionService {
         if (!StringUtils.hasText(fallbackName)) {
             return null;
         }
-        PermissionedAgentTool<?> fallback = agentToolRegistry.get(fallbackName);
+        PermissionedAgentTool<?> fallback = agentMcpRegistry.get(fallbackName);
         if (fallback == null || !enabledPermissions.contains(fallback.permission())) {
             return null;
         }

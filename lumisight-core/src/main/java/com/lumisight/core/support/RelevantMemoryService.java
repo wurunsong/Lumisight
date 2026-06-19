@@ -174,7 +174,8 @@ public class RelevantMemoryService {
                 }
             }
             if (score > 0) {
-                score += memoryHeader.mtimeMs() / 1_000_000_000_000.0;
+                score = score * memoryService.retrievalFreshnessWeight(memoryHeader.type(), memoryHeader.mtimeMs());
+                score += recencyBonus(memoryHeader.mtimeMs());
                 scored.add(new ScoredHeader(header, score));
             }
         }
@@ -188,12 +189,13 @@ public class RelevantMemoryService {
     private String renderHeaders(List<SourceHeader> headers) {
         StringJoiner joiner = new StringJoiner("\n");
         for (SourceHeader header : headers) {
+            String freshnessHint = freshnessLabel(header.header().type(), header.header().mtimeMs());
             joiner.add("- [%s] (%s) %s / %s: %s".formatted(
                     header.selectorKey(),
                     header.source().displayName(),
                     header.header().type().wireValue(),
                     header.header().filename(),
-                    header.header().description()
+                    header.header().description() + (StringUtils.hasText(freshnessHint) ? " [freshness=" + freshnessHint + "]" : "")
             ));
         }
         return joiner.length() == 0 ? "- none" : joiner.toString();
@@ -271,7 +273,7 @@ public class RelevantMemoryService {
                     .append(entry.name()).append(" (").append(entry.filename()).append(")\n");
             builder.append(entry.description()).append("\n\n");
             builder.append(entry.body()).append("\n");
-            String freshness = memoryService.freshnessText(entry.mtimeMs());
+            String freshness = memoryService.freshnessText(entry.type(), entry.mtimeMs());
             if (StringUtils.hasText(freshness)) {
                 builder.append("\n").append(freshness).append("\n");
             }
@@ -298,6 +300,19 @@ public class RelevantMemoryService {
             }
         }
         return false;
+    }
+
+    private double recencyBonus(long mtimeMs) {
+        long ageDays = Math.max(0L, (System.currentTimeMillis() - mtimeMs) / 86_400_000L);
+        return 1.0D / (1.0D + ageDays);
+    }
+
+    private String freshnessLabel(MemoryType type, long mtimeMs) {
+        double weight = memoryService.retrievalFreshnessWeight(type, mtimeMs);
+        if (weight >= 0.95D) {
+            return "";
+        }
+        return weight >= 0.5D ? "decayed" : "stale";
     }
 
     private List<String> tokenize(String query) {

@@ -11,12 +11,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.text.Normalizer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -97,6 +99,7 @@ public class MemoryFileService {
         synchronized (lockFor(storageRoot, userId, memoryRootDir)) {
             try {
                 Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
+                archiveExpiredMemories(dir);
                 List<Path> files = listMemoryFiles(dir);
                 List<MemoryHeader> headers = new ArrayList<>();
                 for (Path file : files) {
@@ -181,7 +184,8 @@ public class MemoryFileService {
             try {
                 Path dir = ensureMemoryDir(storageRoot, userId, memoryRootDir);
                 Path entrypointFile = dir.resolve(ENTRYPOINT_FILENAME);
-                if (!Files.exists(entrypointFile)) {
+                int archived = archiveExpiredMemories(dir);
+                if (archived > 0 || !Files.exists(entrypointFile)) {
                     return rebuildEntrypoint(storageRoot, userId, memoryRootDir);
                 }
                 String content = Files.readString(entrypointFile, StandardCharsets.UTF_8);
@@ -221,12 +225,41 @@ public class MemoryFileService {
         return MemorySelectorManifest.render(scanHeaders(repoRoot, userId));
     }
 
-    public String freshnessText(long mtimeMs) {
+    public String freshnessText(MemoryType type, long mtimeMs) {
         long ageDays = Math.max(0, Duration.between(Instant.ofEpochMilli(mtimeMs), Instant.now()).toDays());
         if (ageDays <= properties.getStaleAfterDays()) {
             return "";
         }
+        if (isSoftForgetType(type) && ageDays >= properties.getSoftForgetAfterDays()) {
+            int hardForgetAfterDays = properties.getHardForgetAfterDays();
+            if (hardForgetAfterDays > properties.getSoftForgetAfterDays()) {
+                long remaining = Math.max(0, hardForgetAfterDays - ageDays);
+                return "这条记忆已经有 " + ageDays + " 天了，已进入遗忘衰减期。它仍可被召回，但相关性权重会下降；如果持续未更新，约 "
+                        + remaining + " 天后会进入自动归档候选。";
+            }
+            return "这条记忆已经有 " + ageDays + " 天了，已进入遗忘衰减期。它仍可被召回，但相关性权重会下降。";
+        }
         return "这条记忆已经有 " + ageDays + " 天了。记忆是某个时间点的观察，不是实时状态；其中关于代码行为或 file:line 引用的断言可能已经过时，引用前请先对照当前代码验证。";
+    }
+
+    public double retrievalFreshnessWeight(MemoryType type, long mtimeMs) {
+        if (!isSoftForgetType(type)) {
+            return 1.0D;
+        }
+        long ageDays = Math.max(0, Duration.between(Instant.ofEpochMilli(mtimeMs), Instant.now()).toDays());
+        int softForgetAfterDays = Math.max(0, properties.getSoftForgetAfterDays());
+        int hardForgetAfterDays = Math.max(softForgetAfterDays, properties.getHardForgetAfterDays());
+        if (ageDays <= softForgetAfterDays) {
+            return 1.0D;
+        }
+        if (hardForgetAfterDays <= softForgetAfterDays) {
+            return 0.25D;
+        }
+        if (ageDays >= hardForgetAfterDays) {
+            return 0.15D;
+        }
+        double progress = (double) (ageDays - softForgetAfterDays) / (double) (hardForgetAfterDays - softForgetAfterDays);
+        return 1.0D - (0.85D * progress);
     }
 
     private void validateWriteRequest(MemoryWriteRequest request) {
@@ -432,5 +465,96 @@ public class MemoryFileService {
             throw new IllegalArgumentException("invalid memory userId");
         }
         return value;
+    }
+
+    private boolean isSoftForgetType(MemoryType type) {
+        // 用户画像和明确反馈属于跨项目长期约束，不能因为时间久了就自动降权；
+        // 软遗忘只作用于更容易随着工程推进而过时的 project/reference 记忆。
+        return type == MemoryType.PROJECT || type == MemoryType.REFERENCE;
+    }
+
+    private int archiveExpiredMemories(Path dir) throws IOException {
+        if (!properties.isAutoArchiveEnabled()) {
+            return 0;
+        }
+        int hardForgetAfterDays = properties.getHardForgetAfterDays();
+        if (hardForgetAfterDays <= 0) {
+            return 0;
+        }
+        Set<MemoryType> autoForgetTypes = configuredAutoForgetTypes();
+        if (autoForgetTypes.isEmpty()) {
+            return 0;
+        }
+        List<Path> files = listMemoryFiles(dir);
+        if (files.isEmpty()) {
+            return 0;
+        }
+        Path archiveDir = ensureArchiveDir(dir);
+        int archived = 0;
+        for (Path file : files) {
+            try {
+                MemoryHeader header = readHeader(file);
+                if (!autoForgetTypes.contains(header.type()) || !shouldHardForget(header.mtimeMs(), hardForgetAfterDays)) {
+                    continue;
+                }
+                Path archivedFile = uniqueArchivePath(archiveDir, file.getFileName().toString());
+                Files.move(file, archivedFile, StandardCopyOption.REPLACE_EXISTING);
+                archived++;
+            } catch (Exception e) {
+                log.warn("memory_archive_failed, file={}, error={}", file, e.getMessage());
+            }
+        }
+        return archived;
+    }
+
+    private boolean shouldHardForget(long mtimeMs, int hardForgetAfterDays) {
+        long ageDays = Math.max(0, Duration.between(Instant.ofEpochMilli(mtimeMs), Instant.now()).toDays());
+        return ageDays >= hardForgetAfterDays;
+    }
+
+    private Set<MemoryType> configuredAutoForgetTypes() {
+        Set<MemoryType> types = new HashSet<>();
+        for (String value : properties.getAutoForgetTypes()) {
+            if (!StringUtils.hasText(value)) {
+                continue;
+            }
+            try {
+                types.add(MemoryType.parse(value));
+            } catch (Exception ignored) {
+                // Skip bad config values instead of breaking memory retrieval.
+            }
+        }
+        return types;
+    }
+
+    private Path ensureArchiveDir(Path dir) throws IOException {
+        String archiveDirName = StringUtils.hasText(properties.getArchiveDirName())
+                ? properties.getArchiveDirName().trim()
+                : ".forgotten";
+        if (archiveDirName.contains("/") || archiveDirName.contains("\\") || archiveDirName.contains("..")) {
+            throw new IllegalArgumentException("invalid memory archive dir");
+        }
+        Path archiveDir = dir.resolve(archiveDirName).normalize();
+        if (!archiveDir.startsWith(dir)) {
+            throw new IllegalArgumentException("memory archive path escapes memory root");
+        }
+        Files.createDirectories(archiveDir);
+        return archiveDir;
+    }
+
+    private Path uniqueArchivePath(Path archiveDir, String filename) {
+        Path candidate = archiveDir.resolve(filename);
+        if (!Files.exists(candidate)) {
+            return candidate;
+        }
+        int dot = filename.lastIndexOf('.');
+        String base = dot > 0 ? filename.substring(0, dot) : filename;
+        String ext = dot > 0 ? filename.substring(dot) : "";
+        int index = 2;
+        while (Files.exists(candidate)) {
+            candidate = archiveDir.resolve(base + "_" + index + ext);
+            index++;
+        }
+        return candidate;
     }
 }

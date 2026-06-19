@@ -47,6 +47,8 @@ public class SpringAiMcpToolProvider implements AgentToolProvider {
 
     @Override
     public List<PermissionedAgentTool<?>> tools() {
+        // 这是新的 MCP 主接入点：不再像 legacy capability 那样走一个总入口工具，
+        // 而是把 Spring AI MCP Client 暴露出来的每个外部 tool 动态包装成独立 AgentTool。
         if (!properties.isEnabled()) {
             log.info("spring_ai_mcp tools disabled by lumisight.mcp.tools.enabled=false");
             return List.of();
@@ -61,6 +63,8 @@ public class SpringAiMcpToolProvider implements AgentToolProvider {
             log.info("spring_ai_mcp tool callback provider returned no tools");
             return List.of();
         }
+        // 对 Agent 侧来说，后面只关心 PermissionedAgentTool；
+        // 这里负责把 MCP callback 的协议细节收口成 Lumisight 自己的 tool 抽象。
         List<PermissionedAgentTool<?>> tools = new ArrayList<>();
         for (ToolCallback callback : callbacks) {
             ToolDefinition definition = callback.getToolDefinition();
@@ -75,6 +79,8 @@ public class SpringAiMcpToolProvider implements AgentToolProvider {
     }
 
     private String agentToolName(String mcpToolName, int index) {
+        // MCP 原始 toolName 不一定适合直接暴露给 Agent，
+        // 这里统一补前缀并归一化，避免和本地内置工具重名。
         String prefix = StringUtils.hasText(properties.getNamePrefix()) ? properties.getNamePrefix().trim() : "mcp_";
         String normalized = (prefix + mcpToolName)
                 .replaceAll("[^A-Za-z0-9_]", "_")
@@ -150,6 +156,8 @@ public class SpringAiMcpToolProvider implements AgentToolProvider {
             try {
                 ToolRuntimeScope.Context runtime = ToolRuntimeScope.required();
                 String payload = objectMapper.writeValueAsString(safeArgs);
+                // repoRoot / limit 这类运行时上下文不强依赖模型自己传，
+                // 而是由 Lumisight 在调用 MCP tool 前统一注入到 ToolContext。
                 String result = callback.call(payload, new ToolContext(Map.of(
                         "repoRoot", runtime.repoRoot(),
                         "limit", defaultLimit,
@@ -177,6 +185,8 @@ public class SpringAiMcpToolProvider implements AgentToolProvider {
                 return List.of();
             }
             try {
+                // 这里不是做完整 JSON Schema 支持，只抽取 Agent prompt 真正需要的参数骨架：
+                // 字段名、类型、是否必填、描述。
                 JsonNode root = objectMapper.readTree(inputSchema);
                 JsonNode properties = root.path("properties");
                 if (!properties.isObject()) {
@@ -221,6 +231,8 @@ public class SpringAiMcpToolProvider implements AgentToolProvider {
         }
 
         private static boolean inferReadOnly(String name, String description) {
+            // MCP 工具没有统一的“只读”标记时，只能先做启发式判断，
+            // 供权限画像和调度层区分 read/write 风险。
             String text = (safeText(name) + " " + safeText(description)).toLowerCase(Locale.ROOT);
             if (text.matches(".*\\b(create|update|delete|remove|write|patch|merge|close|reopen|assign|unassign|lock|unlock|run|cancel|rerun|trigger)\\b.*")) {
                 return false;

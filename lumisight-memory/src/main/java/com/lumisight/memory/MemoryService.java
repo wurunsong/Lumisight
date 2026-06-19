@@ -5,6 +5,7 @@ import com.lumisight.memory.dto.MemoryEntry;
 import com.lumisight.memory.dto.MemoryEntrypoint;
 import com.lumisight.memory.dto.MemoryHeader;
 import com.lumisight.memory.dto.MemoryWriteRequest;
+import com.lumisight.memory.enums.MemoryType;
 
 import org.springframework.stereotype.Service;
 
@@ -79,7 +80,11 @@ public class MemoryService {
         return memoryFileService.renderSelectorManifest(repoRoot, userId);
     }
 
-    public String freshnessText(long mtimeMs) {
-        return memoryFileService.freshnessText(mtimeMs);
+    public String freshnessText(MemoryType type, long mtimeMs) {
+        return memoryFileService.freshnessText(type, mtimeMs);
+    }
+
+    public double retrievalFreshnessWeight(MemoryType type, long mtimeMs) {
+        return memoryFileService.retrievalFreshnessWeight(type, mtimeMs);
     }
 }
