@@ -3,7 +3,22 @@
 这是一个只面向 `macOS` 的 Lumisight 原生客户端壳子，使用 `SwiftUI` 编写，默认连接本地运行的 Agent WebSocket：
 
 - 默认地址：`ws://127.0.0.1:8080/ws/lumisight/agent`
-- 启动方式：
+- 推荐启动方式：先打包成可双击打开的 `.app`
+
+```bash
+cd lumisight-desktop-macos
+./scripts/package-app.sh
+```
+
+打包完成后，直接在 Finder 双击 `lumisight-desktop-macos/dist/Lumisight.app` 即可启动。
+
+也可以从仓库根目录一键打包：
+
+```bash
+./scripts/package-mac-app.sh
+```
+
+开发调试时仍然可以继续用 `swift run`：
 
 ```bash
 cd lumisight-desktop-macos
