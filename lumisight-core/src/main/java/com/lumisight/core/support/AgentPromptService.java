@@ -244,6 +244,7 @@ public class AgentPromptService {
                 AgentToolCategory.GRAPH,
                 AgentToolCategory.SOURCE,
                 AgentToolCategory.MCP,
+                AgentToolCategory.BROWSER,
                 AgentToolCategory.LOCAL,
                 AgentToolCategory.MEMORY,
                 AgentToolCategory.PLANNING,

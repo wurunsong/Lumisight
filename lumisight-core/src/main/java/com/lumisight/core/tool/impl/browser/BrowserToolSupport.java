@@ -48,14 +48,19 @@ final class BrowserToolSupport {
             return joiner.toString();
         }
         for (BrowserElementSummary element : elements) {
-            joiner.add("- selector=%s tag=%s role=%s type=%s text=%s href=%s placeholder=%s".formatted(
+            joiner.add("- elementId=%s selector=%s tag=%s role=%s type=%s text=%s href=%s placeholder=%s ariaLabel=%s value=%s enabled=%s visible=%s".formatted(
+                    blank(element.elementId()),
                     blank(element.selector()),
                     blank(element.tag()),
                     blank(element.role()),
                     blank(element.type()),
                     oneLine(element.text()),
                     blank(element.href()),
-                    oneLine(element.placeholder())
+                    oneLine(element.placeholder()),
+                    oneLine(element.ariaLabel()),
+                    oneLine(element.value()),
+                    element.enabled(),
+                    element.visible()
             ));
         }
         return joiner.toString();

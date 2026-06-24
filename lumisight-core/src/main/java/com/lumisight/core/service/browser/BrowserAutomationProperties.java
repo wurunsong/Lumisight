@@ -10,10 +10,15 @@ public class BrowserAutomationProperties {
     private boolean enabled = true;
     private boolean headless = true;
     private String artifactDir = ".lumisight/browser-artifacts";
+    private String userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+    private String locale = "zh-CN";
+    private String timezoneId = "Asia/Shanghai";
     private int viewportWidth = 1440;
     private int viewportHeight = 960;
     private int navigationTimeoutMs = 15000;
     private int actionTimeoutMs = 10000;
+    private int networkIdleTimeoutMs = 4000;
+    private int postActionDelayMs = 600;
     private int maxSnapshotElements = 40;
     private int maxSnapshotTextChars = 4000;
 
@@ -39,6 +44,30 @@ public class BrowserAutomationProperties {
 
     public void setArtifactDir(String artifactDir) {
         this.artifactDir = artifactDir;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
+    }
+
+    public void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
+    }
+
+    public String getLocale() {
+        return locale;
+    }
+
+    public void setLocale(String locale) {
+        this.locale = locale;
+    }
+
+    public String getTimezoneId() {
+        return timezoneId;
+    }
+
+    public void setTimezoneId(String timezoneId) {
+        this.timezoneId = timezoneId;
     }
 
     public int getViewportWidth() {
@@ -71,6 +100,22 @@ public class BrowserAutomationProperties {
 
     public void setActionTimeoutMs(int actionTimeoutMs) {
         this.actionTimeoutMs = actionTimeoutMs;
+    }
+
+    public int getNetworkIdleTimeoutMs() {
+        return networkIdleTimeoutMs;
+    }
+
+    public void setNetworkIdleTimeoutMs(int networkIdleTimeoutMs) {
+        this.networkIdleTimeoutMs = networkIdleTimeoutMs;
+    }
+
+    public int getPostActionDelayMs() {
+        return postActionDelayMs;
+    }
+
+    public void setPostActionDelayMs(int postActionDelayMs) {
+        this.postActionDelayMs = postActionDelayMs;
     }
 
     public int getMaxSnapshotElements() {

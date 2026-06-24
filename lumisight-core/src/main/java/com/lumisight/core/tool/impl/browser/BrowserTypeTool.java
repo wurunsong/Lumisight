@@ -17,7 +17,9 @@ import java.util.Map;
 public class BrowserTypeTool implements PermissionedAgentTool<BrowserTypeTool.Args> {
 
     public record Args(
-            @ToolArg(description = "要填入内容的 CSS selector", required = true, example = "input[name='email']")
+            @ToolArg(description = "来自最近一次 browser_snapshot 的元素 ID；优先使用它避免填错输入框", example = "el-1")
+            String elementId,
+            @ToolArg(description = "要填入内容的 CSS selector；仅在没有 elementId 时作为兼容兜底", example = "input[name='email']")
             String selector,
             @ToolArg(description = "要输入的文本", required = true, example = "test@example.com")
             String text,
@@ -56,7 +58,7 @@ public class BrowserTypeTool implements PermissionedAgentTool<BrowserTypeTool.Ar
 
     @Override
     public String description() {
-        return "向 input/textarea 等元素填入文本，可选清空后输入，也可在输入后按 Enter 提交。";
+        return "向 input/textarea 等元素填入文本。优先使用最近一次 browser_snapshot 返回的 elementId，避免把文本填进错误输入框。";
     }
 
     @Override
@@ -65,8 +67,8 @@ public class BrowserTypeTool implements PermissionedAgentTool<BrowserTypeTool.Ar
             return List.of("browser type args is required");
         }
         List<String> errors = new java.util.ArrayList<>();
-        if (!StringUtils.hasText(args.selector())) {
-            errors.add("selector 是必填参数");
+        if (!StringUtils.hasText(args.selector()) && !StringUtils.hasText(args.elementId())) {
+            errors.add("elementId 或 selector 至少填一个");
         }
         if (args.text() == null) {
             errors.add("text 是必填参数");
@@ -78,6 +80,7 @@ public class BrowserTypeTool implements PermissionedAgentTool<BrowserTypeTool.Ar
     public List<AgentContextItem> invoke(Args args, int defaultLimit) {
         BrowserActionResult result = browserAutomationService.type(
                 BrowserToolSupport.sessionId(),
+                args.elementId(),
                 args.selector(),
                 args.text(),
                 args.clearFirst() == null || args.clearFirst(),
@@ -87,7 +90,12 @@ public class BrowserTypeTool implements PermissionedAgentTool<BrowserTypeTool.Ar
                 "browser_type",
                 result.url(),
                 "%s selector=%s url=%s title=%s".formatted(result.message(), result.selector(), result.url(), result.title()),
-                Map.of("selector", result.selector(), "url", result.url(), "title", result.title())
+                Map.of(
+                        "elementId", args.elementId() == null ? "" : args.elementId(),
+                        "selector", result.selector(),
+                        "url", result.url(),
+                        "title", result.title()
+                )
         ));
     }
 }

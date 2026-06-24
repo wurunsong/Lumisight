@@ -260,7 +260,8 @@ Lead + team workers 的当前能力：
 行为模型：
 
 - 每个 Agent `sessionId` 会复用一页浏览器上下文
-- `browser_snapshot` 会返回标题、URL、可见文本和一组可操作 DOM 元素摘要
+- `browser_snapshot` 会返回标题、URL、可见文本和一组带 `elementId` 的可操作 DOM 元素摘要
+- `browser_click` / `browser_type` 优先使用最近一次 `browser_snapshot` 返回的 `elementId`，避免宽泛 selector 命中多个元素
 - 截图默认保存在 `.lumisight/browser-artifacts/<sessionId>/`
 
 当前更适合：

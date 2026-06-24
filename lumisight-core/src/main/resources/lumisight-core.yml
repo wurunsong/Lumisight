@@ -107,10 +107,15 @@ lumisight:
     enabled: ${LUMISIGHT_BROWSER_ENABLED:true}
     headless: ${LUMISIGHT_BROWSER_HEADLESS:true}
     artifact-dir: ${LUMISIGHT_BROWSER_ARTIFACT_DIR:.lumisight/browser-artifacts}
+    user-agent: ${LUMISIGHT_BROWSER_USER_AGENT:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36}
+    locale: ${LUMISIGHT_BROWSER_LOCALE:zh-CN}
+    timezone-id: ${LUMISIGHT_BROWSER_TIMEZONE_ID:Asia/Shanghai}
     viewport-width: ${LUMISIGHT_BROWSER_VIEWPORT_WIDTH:1440}
     viewport-height: ${LUMISIGHT_BROWSER_VIEWPORT_HEIGHT:960}
     navigation-timeout-ms: ${LUMISIGHT_BROWSER_NAVIGATION_TIMEOUT_MS:15000}
     action-timeout-ms: ${LUMISIGHT_BROWSER_ACTION_TIMEOUT_MS:10000}
+    network-idle-timeout-ms: ${LUMISIGHT_BROWSER_NETWORK_IDLE_TIMEOUT_MS:4000}
+    post-action-delay-ms: ${LUMISIGHT_BROWSER_POST_ACTION_DELAY_MS:600}
     max-snapshot-elements: ${LUMISIGHT_BROWSER_MAX_SNAPSHOT_ELEMENTS:40}
     max-snapshot-text-chars: ${LUMISIGHT_BROWSER_MAX_SNAPSHOT_TEXT_CHARS:4000}
   agent:
